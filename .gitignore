@@ -1,0 +1,20 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+*.egg-info/
+dist/
+build/
+.ruff_cache/
+.pytest_cache/
+output/
+
+# Agent-local lockfiles (workspace root uv.lock is the canonical one)
+email-agent/uv.lock
+document-agent/uv.lock
+
+# Local/custom scripts and test files (not part of the package)
+local-tests/
+
+# Form templates (may contain org-specific data)
+**/forms/templates/*.json

@@ -1,0 +1,15 @@
+{
+  "name": "document-agent-tools",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Node.js CLI tools for document-agent (marp, mermaid, drawio)",
+  "dependencies": {
+    "@marp-team/marp-cli": "^4",
+    "@mermaid-js/mermaid-cli": "^11",
+    "draw.io-export": "^0.3",
+    "playwright": "^1"
+  },
+  "scripts": {
+    "postinstall": "npx playwright install chromium"
+  }
+}
