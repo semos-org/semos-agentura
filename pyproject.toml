@@ -9,4 +9,5 @@ members = [
     "agentura-commons",
     "email-agent",
     "document-agent",
+    "agentura-ui",
 ]

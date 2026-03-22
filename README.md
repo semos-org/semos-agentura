@@ -37,15 +37,21 @@ A modular multi-agent system for professional and scientific workflows, built on
 
 ```mermaid
 graph TD
+    User -->|chat| UI[Agentura UI]
     User -->|email| Orchestrator
 
-    subgraph Orchestrator
+    UI -->|MCP SSE| EA[Email Agent]
+    UI -->|MCP SSE| DA[Document Agent]
+    UI -.->|A2A planned| EA
+    UI -.->|A2A planned| DA
+
+    subgraph Orchestrator[Orchestrator - planned]
         Monitor[Email Monitor] --> Router[LLM Router]
         Router --> Registry[MCP Registry]
     end
 
-    Orchestrator -->|MCP / A2A| EA[Email Agent]
-    Orchestrator -->|MCP / A2A| DA[Document Agent]
+    Orchestrator -->|MCP / A2A| EA
+    Orchestrator -->|MCP / A2A| DA
     Orchestrator -->|MCP / A2A| More[...]
 ```
 
@@ -53,13 +59,32 @@ Each agent is a FastAPI app exposing both protocols:
 - **MCP** - LLM selects and calls agent tools (tool-use pattern)
 - **A2A** - agents invoke each other directly in workflows (no LLM needed)
 
-## Agents
+## Components
 
-| Agent | Port | Description |
-|-------|------|-------------|
+| Component | Port | Description |
+|-----------|------|-------------|
+| **agentura-ui** | 5006 | Reference chat client (Panel/panelini) - MCP tools, file middleware, LLM orchestration |
 | **email-agent** | 8001 | Email + calendar - search, read, send, draft, reply (IMAP/COM/Graph) |
-| **document-agent** | 8002 | Document processing - OCRdigest, compose, diagrams, form fill |
+| **document-agent** | 8002 | Document processing - OCR digest, compose, diagrams, form fill |
 | **orchestrator** | 8000 | Email UI + LLM routing + workflow engine (planned) |
+
+### Agentura UI
+
+`agentura-ui` is a **reference implementation** of a chat client for MCP+A2A agent systems. It demonstrates how a client should:
+
+- **Discover tools** from multiple MCP agents via SSE and present them to an LLM
+- **Handle files** per the [file handling spec](docs/file-handling-spec.md) - the LLM never sees binary data; client middleware resolves filenames to base64 on input and fetches download URLs on output
+- **Manage a file registry** - uploads and tool-produced files in one place, with preview, download, re-use, and delete
+- **Resolve inline references** - markdown image/link references to registered files become inline data URIs so they render in the chat
+
+Currently connects via **MCP SSE**. **A2A support** (task-based interaction, streaming progress, agent-to-agent file transfer via `FilePart`) is planned as a second protocol path, allowing the UI to use whichever protocol fits the interaction pattern.
+
+Built on [panelini](https://github.com/opensemanticworld/panelini) which provides the chat interface, LLM provider management, and tool execution loop via LangChain.
+
+```bash
+# Start agents, then:
+uv run python -m agentura_ui
+```
 
 ## Quick Start
 
@@ -124,6 +149,7 @@ mcpServers:
 ```
 semos-agentura/
   pyproject.toml              # uv workspace root
+  docs/file-handling-spec.md  # File transfer specification
   agentura-commons/           # Shared MCP + A2A base classes
     src/agentura_commons/
       base.py                 # BaseAgentService ABC, ToolDef, SkillDef
@@ -131,6 +157,16 @@ semos-agentura/
       a2a_server.py           # A2A Agent Card + handler factory
       transport.py            # Unified FastAPI app (MCP SSE + A2A + /health)
       settings.py             # CommonSettings base
+  agentura-ui/                # Reference chat client (MCP + A2A planned)
+    config.yml                # LLM provider config (panelini format)
+    src/agentura_ui/
+      __main__.py             # Entry point - MCP discovery, Panel serve
+      mcp_hub.py              # Multi-agent SSE connection manager
+      mcp_tools.py            # LangChain tool wrappers with file middleware
+      file_registry.py        # File registry + pre/post middleware
+      file_manager.py         # Sidebar file manager widget
+      renderers.py            # File preview/download + markdown ref resolution
+    tests/                    # Unit, integration, and Playwright browser tests
   email-agent/                # Email + calendar agent
     src/email_agent/
       service.py              # MCP+A2A wrapper (9 tools, 1 skill)

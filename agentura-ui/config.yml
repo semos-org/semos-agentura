@@ -1,0 +1,10 @@
+providers:
+  azure_anthropic:
+    display_name: "Azure AI Foundry (Claude)"
+    client_type: "anthropic"
+    env_vars:
+      api_key: "${AZURE_API_KEY}"
+      endpoint: "${AZURE_API_BASE}"
+    models:
+      - name: "Claude Sonnet 4"
+        value: "anthropic/claude-sonnet-4-6"
