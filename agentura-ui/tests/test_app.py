@@ -225,19 +225,22 @@ class TestFileUploadThenDigest:
         ):
             describe_chunks.append(chunk)
 
-        # 6. Verify: hub.call_tool received base64, not filename
+        # 6. Verify: hub.call_tool received FileAttachment
         hub.call_tool.assert_called_once()
         call_args = hub.call_tool.call_args[0]
         tool_name = call_args[0]
         tool_args = call_args[1]
 
         assert tool_name == "digest_document"
-        assert tool_args["source"].startswith(
+        att = tool_args["source"]
+        assert isinstance(att, dict)
+        assert att["name"] == "Checklist.pdf"
+        assert att["content"].startswith(
             "data:application/pdf;base64,"
         )
 
         # Base64 decodes back to original PDF bytes
-        _, b64 = tool_args["source"].split(",", 1)
+        _, b64 = att["content"].split(",", 1)
         assert base64.b64decode(b64) == pdf_bytes
 
         # 7. Tool result reaches the user

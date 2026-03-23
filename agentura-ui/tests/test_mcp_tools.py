@@ -136,11 +136,15 @@ class TestMakeMcpToolClass:
         tool = _make_mcp_tool_class(digest_tool, hub, registry)
         result = await tool._arun(source="test.pdf")
 
-        # Verify hub.call_tool was called with base64, not filename
+        # Verify hub.call_tool was called with FileAttachment,
+        # not raw filename
         hub.call_tool.assert_called_once()
         call_args = hub.call_tool.call_args
         processed_args = call_args[0][1]  # positional arg 1
-        assert processed_args["source"].startswith(
+        att = processed_args["source"]
+        assert isinstance(att, dict)
+        assert att["name"] == "test.pdf"
+        assert att["content"].startswith(
             "data:application/pdf;base64,"
         )
         assert "Result" in result

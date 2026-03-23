@@ -267,17 +267,27 @@ class ToolExecutor:
                 return cal.free_slots(start, end)
 
             case "create_draft":
-                to, errs = _validate_email_list(args["to"])
+                to_raw = args.get("to", "")
+                if isinstance(to_raw, list):
+                    to_raw = "; ".join(to_raw)
+                to, errs = _validate_email_list(str(to_raw))
                 if errs:
                     return {"error": errs}
                 if not to:
                     return {"error": "No valid recipients"}
-                cc, cc_errs = _validate_email_list(args.get("cc", ""))
+                cc_raw = args.get("cc", "")
+                if isinstance(cc_raw, list):
+                    cc_raw = "; ".join(cc_raw)
+                cc, cc_errs = _validate_email_list(str(cc_raw))
                 if cc_errs:
                     return {"error": cc_errs}
+                att = args.get("attachments")
+                if isinstance(att, str):
+                    att = [a.strip() for a in att.split(",") if a.strip()] or None
                 entry_id = self._backend.create_draft(
                     to=to, subject=args["subject"],
                     body=md_to_plain(args["body"]), cc=cc,
+                    attachments=att,
                 )
                 return {"status": "draft created", "entry_id": entry_id}
 

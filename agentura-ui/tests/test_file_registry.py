@@ -67,6 +67,32 @@ class TestFileRegistry:
         registry.register("f.pdf", b"new", "application/pdf", "upload")
         assert registry.get("f.pdf").blob == b"new"
 
+    def test_get_fuzzy_suffix_match(self, registry):
+        """LLM drops UUID prefix: 'iter_01.png' matches
+        '5e922231_iter_01.png'."""
+        registry.register(
+            "5e922231_iter_01.png", b"img",
+            "image/png", "tool:gen",
+        )
+        entry = registry.get("iter_01.png")
+        assert entry is not None
+        assert entry.filename == "5e922231_iter_01.png"
+
+    def test_get_fuzzy_reverse_suffix(self, registry):
+        """Registry has short name, lookup has longer name."""
+        registry.register(
+            "report.pdf", b"pdf", "application/pdf", "upload",
+        )
+        entry = registry.get("abc_report.pdf")
+        assert entry is not None
+        assert entry.filename == "report.pdf"
+
+    def test_get_fuzzy_no_match(self, registry):
+        registry.register(
+            "foo.pdf", b"x", "application/pdf", "upload",
+        )
+        assert registry.get("bar.pdf") is None
+
     def test_delete_existing(self, registry):
         registry.register("f.pdf", b"data", "application/pdf", "upload")
         assert registry.delete("f.pdf") is True
@@ -136,8 +162,9 @@ class TestIdentifyFileParams:
 
 
 class TestPreProcess:
-    def test_resolves_to_base64(self, registry, digest_tool):
-        """CRITICAL: filename in registry => replaced with data URI."""
+    def test_resolves_to_file_attachment(self, registry, digest_tool):
+        """x-file param with FileAttachment schema produces
+        {"name": ..., "content": data_uri}."""
         registry.register(
             "report.pdf", b"PDF-CONTENT", "application/pdf",
             "upload",
@@ -146,14 +173,38 @@ class TestPreProcess:
         processed = pre_process_tool_call(
             "digest_document", args, digest_tool, registry,
         )
-        assert processed["source"].startswith(
+        # Should be a FileAttachment dict
+        att = processed["source"]
+        assert isinstance(att, dict)
+        assert att["name"] == "report.pdf"
+        assert att["content"].startswith(
             "data:application/pdf;base64,"
         )
         # Decode and verify round-trip
-        _, b64 = processed["source"].split(",", 1)
+        _, b64 = att["content"].split(",", 1)
         assert base64.b64decode(b64) == b"PDF-CONTENT"
         # output_mode unchanged
         assert processed["output_mode"] == "text"
+
+    def test_resolves_dict_value(self, registry, digest_tool):
+        """LLM sends FileAttachment dict with filename as content."""
+        registry.register(
+            "report.pdf", b"PDF-CONTENT", "application/pdf",
+            "upload",
+        )
+        args = {
+            "source": {
+                "name": "report.pdf",
+                "content": "report.pdf",
+            },
+        }
+        processed = pre_process_tool_call(
+            "digest_document", args, digest_tool, registry,
+        )
+        att = processed["source"]
+        assert isinstance(att, dict)
+        assert att["name"] == "report.pdf"
+        assert att["content"].startswith("data:")
 
     def test_missing_file_passes_through(
         self, registry, digest_tool,
@@ -177,6 +228,68 @@ class TestPreProcess:
             "digest_document", args, digest_tool, registry,
         )
         assert processed["source"] == 12345
+
+    def test_list_of_attachments(
+        self, registry, create_draft_tool,
+    ):
+        """REGRESSION: create_draft attachments is a list
+        of FileAttachment dicts. LLM sends filename or
+        'filename (size)' as content."""
+        registry.register(
+            "MCP_Tool_Architecture.docx", b"DOCX-BYTES",
+            "application/vnd.openxmlformats-officedocument"
+            ".wordprocessingml.document",
+            "tool:compose_document",
+        )
+        args = {
+            "to": "test@example.com",
+            "subject": "Test",
+            "body": "See attached.",
+            "attachments": [
+                {
+                    "name": "MCP_Tool_Architecture.docx",
+                    "content": "MCP_Tool_Architecture.docx"
+                    " (228.3 KB)",
+                },
+            ],
+        }
+        processed = pre_process_tool_call(
+            "create_draft", args, create_draft_tool, registry,
+        )
+        atts = processed["attachments"]
+        assert isinstance(atts, list)
+        assert len(atts) == 1
+        att = atts[0]
+        assert att["name"] == "MCP_Tool_Architecture.docx"
+        assert att["content"].startswith("data:")
+        # Other params unchanged
+        assert processed["to"] == "test@example.com"
+
+    def test_markdown_with_embedded_image_ref(
+        self, registry, digest_tool,
+    ):
+        """REGRESSION: compose_document receives markdown
+        containing ![](iter_01.png) where iter_01.png is in
+        the registry from a prior generate_diagram call."""
+        registry.register(
+            "iter_01.png", b"\x89PNG-DIAGRAM",
+            "image/png", "tool:generate_diagram",
+        )
+        md = (
+            "# Architecture\n\n"
+            "![diagram](iter_01.png)\n\n"
+            "*Document generated automatically.*"
+        )
+        args = {"source": md}
+        processed = pre_process_tool_call(
+            "compose_document", args, digest_tool, registry,
+        )
+        # The markdown image ref should be replaced with base64
+        assert "iter_01.png" not in processed["source"]
+        assert "data:image/png;base64," in processed["source"]
+        # The rest of the markdown is preserved
+        assert "# Architecture" in processed["source"]
+        assert "Document generated" in processed["source"]
 
 
 # post_process_tool_result

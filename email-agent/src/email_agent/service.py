@@ -7,13 +7,16 @@ Usage:
 from __future__ import annotations
 
 import asyncio
+import base64
 import logging
 import os
 import queue
 import threading
+import uuid
+from pathlib import Path
 from typing import Any
 
-from agentura_commons import BaseAgentService, SkillDef, ToolDef, create_app
+from agentura_commons import BaseAgentService, FileAttachment, SkillDef, ToolDef, create_app
 
 from .backend import create_backend
 from .config import Settings
@@ -95,13 +98,43 @@ class EmailAgentService(BaseAgentService):
     def agent_version(self) -> str:
         return "0.2.0"
 
+    def _resolve_file(self, source: str, default_ext: str = ".bin", filename: str = "") -> Path:
+        """Resolve source as a file path, base64, or data URI.
+
+        If filename is provided, the temp file preserves that name
+        (important for email attachments where the recipient sees it).
+        """
+        p = Path(source)
+        if p.exists():
+            return p
+        raw = source
+        if raw.startswith("data:"):
+            _, encoded = raw.split(",", 1)
+            raw = encoded
+        try:
+            data = base64.b64decode(raw, validate=True)
+            if len(data) > 4:
+                if filename:
+                    # Preserve original filename in a UUID-prefixed subdir
+                    subdir = self.output_dir / f"_att_{uuid.uuid4().hex[:8]}"
+                    subdir.mkdir(exist_ok=True)
+                    tmp = subdir / filename
+                else:
+                    tmp = self.output_dir / f"_upload_{uuid.uuid4().hex[:8]}{default_ext}"
+                tmp.write_bytes(data)
+                return tmp
+        except Exception:
+            pass
+        return p
+
     def get_tools(self) -> list[ToolDef]:
+        _fh = "Accepts absolute file paths or base64-encoded content."
         return [
             ToolDef(name="search_emails", description="Search emails by subject keyword.", fn=self._search_emails),
             ToolDef(name="read_email", description="Read the full content of the most recent email matching a query.", fn=self._read_email),
             ToolDef(name="list_events", description="List calendar events for the next N days.", fn=self._list_events),
             ToolDef(name="free_slots", description="Calculate free meeting slots for the next N weekdays.", fn=self._free_slots),
-            ToolDef(name="create_draft", description="Create an email draft.", fn=self._create_draft),
+            ToolDef(name="create_draft", description=f"Create an email draft with optional attachments. {_fh}", fn=self._create_draft, file_params=["attachments"]),
             ToolDef(name="draft_event", description="Create a calendar event draft (invitations NOT sent).", fn=self._draft_event),
             ToolDef(name="send_event", description="Create a calendar event and send invitations immediately.", fn=self._send_event),
             ToolDef(name="draft_reply", description="Create a reply draft to the most recent email matching a query.", fn=self._draft_reply),
@@ -149,9 +182,34 @@ class EmailAgentService(BaseAgentService):
         """Calculate free meeting slots for the next N weekdays."""
         return await self._exec("free_slots", {"days": days})
 
-    async def _create_draft(self, to: str, subject: str, body: str, cc: str = "") -> str:
-        """Create an email draft."""
-        return await self._exec("create_draft", {"to": to, "subject": subject, "body": body, "cc": cc})
+    async def _create_draft(
+        self, to: str, subject: str, body: str, cc: str = "",
+        attachments: list[FileAttachment] | None = None,
+    ) -> str:
+        """Create an email draft with optional attachments.
+
+        Args:
+            to: Recipient email address(es), semicolon-separated.
+            subject: Email subject line.
+            body: Email body text.
+            cc: CC recipients, semicolon-separated.
+            attachments: Array of file objects with 'name' and 'content' fields.
+                Example: [{"name": "report.docx", "content": "/path/to/file.docx"}]
+                The content field accepts a file path, base64, or data URI.
+        """
+        att_paths = []
+        for item in (attachments or []):
+            name = item.get("name", "")
+            content = item.get("content", name)  # fallback: name is the path
+            ext = Path(name).suffix if name else ".bin"
+            resolved = self._resolve_file(content, default_ext=ext, filename=name)
+            logger.info("Resolved attachment: %s -> %s", name, resolved)
+            att_paths.append(str(resolved))
+
+        args = {"to": to, "subject": subject, "body": body, "cc": cc}
+        if att_paths:
+            args["attachments"] = att_paths
+        return await self._exec("create_draft", args)
 
     async def _draft_event(self, subject: str, start: str, end: str, location: str = "", body: str = "", attendees: str = "") -> str:
         """Create a calendar event draft (invitations NOT sent)."""

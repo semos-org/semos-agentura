@@ -61,7 +61,19 @@ class FileRegistry:
         return entry
 
     def get(self, filename: str) -> FileEntry | None:
-        return self._files.get(filename)
+        """Look up a file by name. Tries exact match first,
+        then falls back to suffix/substring matching for cases
+        where the LLM drops UUID prefixes or paraphrases names.
+        """
+        # Exact match
+        entry = self._files.get(filename)
+        if entry:
+            return entry
+        # Suffix match: "iter_01.png" matches "5e922231_iter_01.png"
+        for key, entry in self._files.items():
+            if key.endswith(filename) or filename.endswith(key):
+                return entry
+        return None
 
     def delete(self, filename: str) -> bool:
         """Remove a file from the registry. Returns True if found."""
@@ -107,13 +119,72 @@ def _identify_file_params(tool: Tool) -> set[str]:
     return file_params
 
 
+def _resolve_embedded_refs(value: str, registry: FileRegistry) -> str:
+    """Resolve embedded file references inside a string value.
+
+    Handles markdown like ![alt](filename.png) and also bare
+    filenames that appear in longer text. Used when a tool
+    parameter contains markdown with references to registered
+    files (e.g. compose_document with source=<markdown>).
+    """
+    from .renderers import resolve_file_references
+
+    resolved = resolve_file_references(value, registry)
+    if resolved != value:
+        return resolved
+
+    # Also try bare filename matches anywhere in the text
+    for fname, entry in registry._files.items():
+        if fname in value:
+            b64 = base64.b64encode(entry.blob).decode()
+            data_uri = f"data:{entry.mime};base64,{b64}"
+            value = value.replace(fname, data_uri)
+            logger.info(
+                "Pre-middleware: resolved embedded '%s' "
+                "(%s)",
+                fname, human_size(entry.size),
+            )
+    return value
+
+
+def _has_file_attachment_schema(mcp_tool: Tool, param: str) -> bool:
+    """Check if the param's schema uses the FileAttachment type."""
+    schema = mcp_tool.inputSchema or {}
+    prop = schema.get("properties", {}).get(param, {})
+    for variant in prop.get("anyOf", []):
+        if "$ref" in variant and "FileAttachment" in variant["$ref"]:
+            return True
+        # Array of FileAttachment
+        items = variant.get("items", {})
+        if "$ref" in items and "FileAttachment" in items["$ref"]:
+            return True
+    return False
+
+
+def _make_file_attachment(
+    filename: str, entry: FileEntry,
+) -> dict:
+    """Build a FileAttachment dict {name, content} for MCP."""
+    b64 = base64.b64encode(entry.blob).decode()
+    return {
+        "name": filename,
+        "content": f"data:{entry.mime};base64,{b64}",
+    }
+
+
 def pre_process_tool_call(
     tool_name: str,
     arguments: dict,
     mcp_tool: Tool,
     registry: FileRegistry,
 ) -> dict:
-    """Replace filename references with base64 data URIs for file parameters."""
+    """Replace filename references with resolved file content.
+
+    For params with FileAttachment schema (x-file + anyOf),
+    produces {"name": filename, "content": data_uri}.
+    For plain string params, replaces with the data URI directly.
+    Also resolves embedded markdown file references in longer text.
+    """
     file_params = _identify_file_params(mcp_tool)
     if not file_params:
         return arguments
@@ -121,26 +192,94 @@ def pre_process_tool_call(
     processed = dict(arguments)
     for param_name in file_params:
         value = processed.get(param_name)
+        uses_attachment = _has_file_attachment_schema(
+            mcp_tool, param_name,
+        )
+
+        # List of FileAttachments (e.g. create_draft attachments)
+        if isinstance(value, list):
+            resolved_list = []
+            for item in value:
+                resolved_item = _resolve_attachment_item(
+                    item, registry, param_name,
+                )
+                resolved_list.append(resolved_item)
+            processed[param_name] = resolved_list
+            continue
+
+        # Single FileAttachment dict from the LLM
+        if isinstance(value, dict):
+            processed[param_name] = _resolve_attachment_item(
+                value, registry, param_name,
+            )
+            continue
+
         if not isinstance(value, str):
             continue
+
+        # Exact filename match
         entry = registry.get(value)
         if entry:
-            b64 = base64.b64encode(entry.blob).decode()
-            processed[param_name] = (
-                f"data:{entry.mime};base64,{b64}"
-            )
+            if uses_attachment:
+                processed[param_name] = _make_file_attachment(
+                    entry.filename, entry,
+                )
+            else:
+                b64 = base64.b64encode(entry.blob).decode()
+                processed[param_name] = (
+                    f"data:{entry.mime};base64,{b64}"
+                )
             logger.info(
-                "Pre-middleware: resolved %s='%s' -> "
-                "data URI (%s)",
+                "Pre-middleware: resolved %s='%s' (%s)",
                 param_name, value, human_size(entry.size),
             )
-        else:
-            logger.warning(
-                "Pre-middleware: '%s' NOT in registry. "
-                "Keys: %s",
-                value, list(registry._files.keys()),
-            )
+        elif registry._files:
+            # Not an exact filename - might be markdown or
+            # other text with embedded file references.
+            resolved = _resolve_embedded_refs(value, registry)
+            if resolved != value:
+                processed[param_name] = resolved
     return processed
+
+
+def _resolve_attachment_item(
+    item: dict | str, registry: FileRegistry, param_name: str,
+) -> dict:
+    """Resolve a single FileAttachment dict or string."""
+    if isinstance(item, str):
+        entry = registry.get(item)
+        if entry:
+            logger.info(
+                "Pre-middleware: resolved %s='%s' (%s)",
+                param_name, entry.filename,
+                human_size(entry.size),
+            )
+            return _make_file_attachment(entry.filename, entry)
+        return {"name": item, "content": item}
+
+    if not isinstance(item, dict):
+        return item
+
+    # Try name field, then content field for registry lookup
+    fname = item.get("name", "")
+    content = item.get("content", "")
+    entry = registry.get(fname)
+    if not entry:
+        # Content might be "filename (size)" from post-middleware
+        # or just the filename
+        clean = content.split(" (")[0].strip()
+        entry = registry.get(clean)
+    if not entry:
+        entry = registry.get(content)
+    if entry:
+        logger.info(
+            "Pre-middleware: resolved attachment "
+            "%s='%s' (%s)",
+            param_name, entry.filename,
+            human_size(entry.size),
+        )
+        return _make_file_attachment(entry.filename, entry)
+    return item
 
 
 # ---------------------------------------------------------------------------

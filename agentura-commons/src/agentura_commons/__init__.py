@@ -1,6 +1,6 @@
 """Shared MCP + A2A base classes for Semos Agentura agents."""
 
-from .base import BaseAgentService, SkillDef, ToolDef
+from .base import BaseAgentService, FileAttachment, SkillDef, ToolDef
 from .settings import CommonSettings
 from .transport import create_app
 

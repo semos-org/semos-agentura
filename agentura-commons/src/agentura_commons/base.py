@@ -11,7 +11,18 @@ import mimetypes
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
+
+
+class FileAttachment(TypedDict):
+    """A file reference with its original name and content.
+
+    Used in MCP tool parameters that accept file input.
+    The content field accepts a file path, base64 string, or data URI.
+    Client middleware resolves file registry names to content before sending.
+    """
+    name: str
+    content: str
 
 
 @dataclass

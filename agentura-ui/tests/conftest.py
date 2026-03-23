@@ -46,6 +46,18 @@ def sample_pdf(tmp_path, sample_pdf_bytes):
     return p
 
 
+_FILE_ATTACHMENT_DEF = {
+    "description": "A file reference with name and content.",
+    "properties": {
+        "name": {"title": "Name", "type": "string"},
+        "content": {"title": "Content", "type": "string"},
+    },
+    "required": ["name", "content"],
+    "title": "FileAttachment",
+    "type": "object",
+}
+
+
 @pytest.fixture
 def digest_tool():
     """MCP Tool matching document-agent's digest_document."""
@@ -53,11 +65,16 @@ def digest_tool():
         name="digest_document",
         description="Digest document via OCR",
         inputSchema={
+            "$defs": {"FileAttachment": _FILE_ATTACHMENT_DEF},
             "type": "object",
             "properties": {
                 "source": {
                     "title": "Source",
-                    "type": "string",
+                    "x-file": True,
+                    "anyOf": [
+                        {"$ref": "#/$defs/FileAttachment"},
+                        {"type": "string"},
+                    ],
                 },
                 "output_mode": {
                     "default": "text",
@@ -72,17 +89,20 @@ def digest_tool():
 
 @pytest.fixture
 def fill_form_tool():
-    """MCP Tool with x-file annotation."""
+    """MCP Tool with x-file + FileAttachment schema."""
     return MCPTool(
         name="fill_form",
         description="Fill form fields",
         inputSchema={
+            "$defs": {"FileAttachment": _FILE_ATTACHMENT_DEF},
             "type": "object",
             "properties": {
                 "file_path": {
-                    "type": "string",
                     "x-file": True,
-                    "description": "PDF file to fill.",
+                    "anyOf": [
+                        {"$ref": "#/$defs/FileAttachment"},
+                        {"type": "string"},
+                    ],
                 },
                 "data": {
                     "type": "string",
@@ -113,6 +133,38 @@ def search_tool():
                 },
             },
             "required": ["query"],
+        },
+    )
+
+
+@pytest.fixture
+def create_draft_tool():
+    """MCP Tool with list-of-FileAttachment attachments."""
+    return MCPTool(
+        name="create_draft",
+        description="Create email draft",
+        inputSchema={
+            "$defs": {"FileAttachment": _FILE_ATTACHMENT_DEF},
+            "type": "object",
+            "properties": {
+                "to": {"type": "string"},
+                "subject": {"type": "string"},
+                "body": {"type": "string"},
+                "attachments": {
+                    "x-file": True,
+                    "anyOf": [
+                        {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/$defs/FileAttachment",
+                            },
+                        },
+                        {"type": "null"},
+                    ],
+                    "default": None,
+                },
+            },
+            "required": ["to", "subject", "body"],
         },
     )
 

@@ -48,7 +48,11 @@ def _json_schema_to_pydantic(
     fields: dict[str, Any] = {}
 
     for name, prop in props.items():
-        py_type = _TYPE_MAP.get(prop.get("type", "string"), str)
+        # anyOf (e.g. FileAttachment | string) - use Any
+        if "anyOf" in prop:
+            py_type = Any
+        else:
+            py_type = _TYPE_MAP.get(prop.get("type", "string"), str)
         description = prop.get("description", "")
         default_val = prop.get("default")
 

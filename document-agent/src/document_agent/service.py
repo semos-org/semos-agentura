@@ -14,7 +14,9 @@ import shutil
 import uuid
 from pathlib import Path
 
-from agentura_commons import BaseAgentService, SkillDef, ToolDef, create_app
+from agentura_commons import (
+    BaseAgentService, FileAttachment, SkillDef, ToolDef, create_app,
+)
 
 from . import compose, digest, fill_form, generate_diagram, inspect_form
 from .config import Settings
@@ -73,47 +75,65 @@ class DocumentAgentService(BaseAgentService):
             return "Use the inspect_form tool with a file path."
         return "Available tools: digest_document, compose_document, generate_diagram, inspect_form, fill_form."
 
-    def _resolve_file(self, source: str, default_ext: str = ".bin") -> Path:
+    def _resolve_file(
+        self, source: str,
+        default_ext: str = ".bin",
+        filename: str = "",
+    ) -> Path:
         """Resolve source as a file path, base64, or data URI.
 
-        Accepts:
-          - Absolute/relative file path
-          - Base64-encoded content (written to a temp file)
-          - data:... URI (written to a temp file)
+        If filename is provided, the temp file preserves that name
+        (important for downstream tools that infer type from name).
         """
-        # Check if it's a file path that exists
         p = Path(source)
         if p.exists():
             return p
 
-        # Try base64 / data URI
         raw = source
         if raw.startswith("data:"):
-            # data:application/pdf;base64,AAAA...
             _, encoded = raw.split(",", 1)
             raw = encoded
         try:
             data = base64.b64decode(raw, validate=True)
-            if len(data) > 4:  # sanity check - not just a short string
-                tmp = self.output_dir / f"_upload_{uuid.uuid4().hex[:8]}{default_ext}"
+            if len(data) > 4:
+                if filename:
+                    subdir = self.output_dir / f"_att_{uuid.uuid4().hex[:8]}"
+                    subdir.mkdir(exist_ok=True)
+                    tmp = subdir / filename
+                else:
+                    tmp = self.output_dir / f"_upload_{uuid.uuid4().hex[:8]}{default_ext}"
                 tmp.write_bytes(data)
                 return tmp
         except Exception:
             pass
-
-        # Return as-is (will fail downstream with a clear error)
         return p
 
-    async def _digest(self, source: str, output_mode: str = "text", max_pages: int | None = None) -> str:
+    def _resolve_file_attachment(
+        self, source: FileAttachment | str,
+        default_ext: str = ".bin",
+    ) -> Path:
+        """Resolve a FileAttachment or plain string to a local Path."""
+        if isinstance(source, dict):
+            name = source.get("name", "")
+            content = source.get("content", name)
+            ext = Path(name).suffix if name else default_ext
+            return self._resolve_file(content, default_ext=ext, filename=name)
+        return self._resolve_file(source, default_ext=default_ext)
+
+    async def _digest(
+        self, source: FileAttachment | str,
+        output_mode: str = "text",
+        max_pages: int | None = None,
+    ) -> str:
         """Digest a document into Markdown.
 
         Args:
-            source: File path, base64-encoded content, or data URI.
+            source: File as {name, content} object, file path, or base64.
             output_mode: 'text' for inline markdown, 'file' to write to disk.
             max_pages: Maximum number of pages to process.
         """
         mode = OutputMode.INLINE if output_mode == "text" else OutputMode.FILE
-        src = self._resolve_file(source, ".pdf")
+        src = self._resolve_file_attachment(source, ".pdf")
         settings = self._settings
 
         def _run():
@@ -170,13 +190,13 @@ class DocumentAgentService(BaseAgentService):
             resp.update(file_meta)
         return json.dumps(resp, ensure_ascii=False)
 
-    async def _inspect_form(self, file_path: str) -> str:
+    async def _inspect_form(self, file_path: FileAttachment | str) -> str:
         """Inspect form fields in a PDF or DOCX.
 
         Args:
-            file_path: File path, base64-encoded content, or data URI.
+            file_path: File as {name, content} object, file path, or base64.
         """
-        fp = self._resolve_file(file_path, ".pdf")
+        fp = self._resolve_file_attachment(file_path, ".pdf")
 
         def _run():
             return inspect_form(file_path=fp)
@@ -184,16 +204,19 @@ class DocumentAgentService(BaseAgentService):
         fields = await asyncio.to_thread(_run)
         return json.dumps(fields, ensure_ascii=False)
 
-    async def _fill_form(self, file_path: str, data: str, filename: str = "") -> str:
+    async def _fill_form(
+        self, file_path: FileAttachment | str,
+        data: str, filename: str = "",
+    ) -> str:
         """Fill form fields and return a download URL.
 
         Args:
-            file_path: File path, base64-encoded content, or data URI.
+            file_path: File as {name, content} object, file path, or base64.
             data: JSON string of {field_name: value} pairs.
             filename: Optional output filename. Auto-generated if omitted.
         """
         field_data = json.loads(data)
-        fp = self._resolve_file(file_path, ".pdf")
+        fp = self._resolve_file_attachment(file_path, ".pdf")
         if not filename:
             ext = fp.suffix or ".pdf"
             filename = f"filled{ext}"
