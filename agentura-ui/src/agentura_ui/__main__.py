@@ -313,6 +313,10 @@ def main() -> None:
         port=port,
         title="Semos Agentura",
         show=True,
+        websocket_max_message_size=100 * 1024 * 1024,  # 100 MB
+        keep_alive_milliseconds=30000,
+        check_unused_sessions_milliseconds=60000,
+        unused_session_lifetime_milliseconds=3600000,  # 1h
     )
 
 
