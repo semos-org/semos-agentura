@@ -43,11 +43,49 @@ class OutlookCOM:
 
     # Email: Search
 
-    def search_emails(self, query: str, folder_id: int = OL_FOLDER_INBOX, limit: int = 50) -> list[dict]:
-        """Search emails by subject. Returns list of email metadata dicts."""
+    def search_emails(
+        self, query: str = "", folder_id: int = OL_FOLDER_INBOX, limit: int = 50, *,
+        from_addr: str = "", to_addr: str = "",
+        since: str = "", before: str = "", unread_only: bool = False,
+        has_attachments: bool | None = None,
+    ) -> list[dict]:
+        """Search emails with composable filters. All filters are AND-combined.
+
+        Args:
+            query: Subject keyword (LIKE match). Optional.
+            folder_id: Outlook folder constant.
+            limit: Max results.
+            from_addr: Sender email address (LIKE match).
+            to_addr: Recipient email address (LIKE match).
+            since: ISO date string (YYYY-MM-DD). Emails on or after this date.
+            before: ISO date string (YYYY-MM-DD). Emails before this date.
+            unread_only: Only return unread emails.
+            has_attachments: Filter by attachment presence (True/False/None=any).
+        """
         folder = self._ns.GetDefaultFolder(folder_id)
-        filt = f'@SQL="urn:schemas:httpmail:subject" LIKE \'%{query}%\''
-        items = folder.Items.Restrict(filt)
+        clauses = []
+        if query:
+            clauses.append(f'"urn:schemas:httpmail:subject" LIKE \'%{query}%\'')
+        if from_addr:
+            clauses.append(f'"urn:schemas:httpmail:fromemail" LIKE \'%{from_addr}%\'')
+        if to_addr:
+            clauses.append(f'"urn:schemas:httpmail:displayto" LIKE \'%{to_addr}%\'')
+        if since:
+            clauses.append(f'"urn:schemas:httpmail:datereceived" >= \'{since}\'')
+        if before:
+            clauses.append(f'"urn:schemas:httpmail:datereceived" < \'{before}\'')
+        if unread_only:
+            clauses.append('"urn:schemas:httpmail:read" = 0')
+        if has_attachments is True:
+            clauses.append('"urn:schemas:httpmail:hasattachment" = 1')
+        elif has_attachments is False:
+            clauses.append('"urn:schemas:httpmail:hasattachment" = 0')
+
+        if clauses:
+            filt = '@SQL=' + ' AND '.join(clauses)
+            items = folder.Items.Restrict(filt)
+        else:
+            items = folder.Items
         items.Sort("[ReceivedTime]", True)
 
         results = []
@@ -60,7 +98,8 @@ class OutlookCOM:
                 logger.debug("Skipping item: %s", e)
             item = items.GetNext()
 
-        logger.info("Search '%s': %d results", query, len(results))
+        desc = query or ",".join(f for f in [from_addr, to_addr, since, before] if f) or "all"
+        logger.info("Search '%s': %d results", desc, len(results))
         return results
 
     def read_email(self, entry_id: str, save_attachments_to: str | None = None) -> dict:

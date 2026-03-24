@@ -130,8 +130,8 @@ class EmailAgentService(BaseAgentService):
     def get_tools(self) -> list[ToolDef]:
         _fh = "Accepts absolute file paths or base64-encoded content."
         return [
-            ToolDef(name="search_emails", description="Search emails by subject keyword.", fn=self._search_emails),
-            ToolDef(name="read_email", description="Read the full content of the most recent email matching a query.", fn=self._read_email),
+            ToolDef(name="search_emails", description="Search emails with composable filters: subject, sender, recipient, date range, unread, attachments. All optional, AND-combined.", fn=self._search_emails),
+            ToolDef(name="read_email", description="Read the full content of the most recent email matching filters (subject, sender, recipient).", fn=self._read_email),
             ToolDef(name="list_events", description="List calendar events for the next N days.", fn=self._list_events),
             ToolDef(name="free_slots", description="Calculate free meeting slots for the next N weekdays.", fn=self._free_slots),
             ToolDef(name="create_draft", description=f"Create an email draft with optional attachments. {_fh}", fn=self._create_draft, file_params=["attachments"]),
@@ -166,13 +166,79 @@ class EmailAgentService(BaseAgentService):
 
     # -- Typed tool methods (MCP introspects these signatures) --
 
-    async def _search_emails(self, query: str, limit: int = 20) -> str:
-        """Search emails by subject keyword."""
-        return await self._exec("search_emails", {"query": query, "limit": limit})
+    async def _search_emails(
+        self, query: str = "", limit: int = 20,
+        from_addr: str = "", to_addr: str = "",
+        since: str = "", before: str = "",
+        unread_only: bool = False, has_attachments: bool | None = None,
+    ) -> str:
+        """Search emails with composable filters. All filters are AND-combined.
 
-    async def _read_email(self, query: str) -> str:
-        """Read the full content of the most recent email matching a query."""
-        return await self._exec("read_email", {"query": query})
+        Args:
+            query: Subject keyword (partial match). Optional.
+            limit: Max results to return.
+            from_addr: Sender email address (partial match).
+            to_addr: Recipient email address (partial match).
+            since: Only emails on or after this date (YYYY-MM-DD).
+            before: Only emails before this date (YYYY-MM-DD).
+            unread_only: Only return unread emails.
+            has_attachments: true = only with attachments, false = only without.
+        """
+        return await self._exec("search_emails", {
+            "query": query, "limit": limit,
+            "from_addr": from_addr, "to_addr": to_addr,
+            "since": since, "before": before,
+            "unread_only": unread_only, "has_attachments": has_attachments,
+        })
+
+    async def _read_email(
+        self, entry_id: str = "", query: str = "",
+        from_addr: str = "", to_addr: str = "",
+        include_attachments: bool = False,
+    ) -> str:
+        """Read the full content of an email.
+
+        Use entry_id for exact lookup (from search_emails results).
+        Or use filters to find the most recent match.
+
+        Args:
+            entry_id: Exact email ID from search_emails results. Preferred.
+            query: Subject keyword (partial match). Used if no entry_id.
+            from_addr: Sender email address (partial match).
+            to_addr: Recipient email address (partial match).
+            include_attachments: If true, save attachments and return download URLs.
+        """
+        import json as _json
+        import shutil
+        import uuid as _uuid
+
+        # Create a temp subdir for attachments if requested
+        att_dir = None
+        if include_attachments and self.output_dir:
+            att_dir = str(self.output_dir / f"_att_{_uuid.uuid4().hex[:8]}")
+
+        raw = await self._exec("read_email", {
+            "entry_id": entry_id,
+            "query": query, "from_addr": from_addr, "to_addr": to_addr,
+            "include_attachments": include_attachments,
+            "_attachment_dir": att_dir,
+        })
+
+        # Post-process: convert saved_path to download_url
+        if include_attachments and self.output_dir:
+            result = _json.loads(raw)
+            for att in result.get("attachments", []):
+                saved = att.pop("saved_path", None)
+                if saved:
+                    saved_p = Path(saved)
+                    safe_name = f"{_uuid.uuid4().hex[:8]}_{saved_p.name}"
+                    dest = self.output_dir / safe_name
+                    shutil.move(str(saved_p), str(dest))
+                    att["download_url"] = self.file_url(safe_name)
+                    att["size_bytes"] = dest.stat().st_size
+            raw = _json.dumps(result, ensure_ascii=False)
+
+        return raw
 
     async def _list_events(self, days: int = 14) -> str:
         """List calendar events for the next N days."""

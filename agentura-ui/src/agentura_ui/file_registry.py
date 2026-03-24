@@ -287,6 +287,38 @@ def _resolve_attachment_item(
 # ---------------------------------------------------------------------------
 
 
+async def _fetch_and_register(
+    url: str,
+    filename: str | None,
+    tool_name: str,
+    registry: FileRegistry,
+) -> FileEntry | None:
+    """Fetch a file from a download URL and register it."""
+    if not filename:
+        filename = url.rsplit("/", 1)[-1]
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(url, timeout=60.0)
+            resp.raise_for_status()
+        mime = resp.headers.get(
+            "content-type", "application/octet-stream",
+        )
+        entry = registry.register(
+            filename, resp.content, mime,
+            source=f"tool:{tool_name}",
+        )
+        logger.info(
+            "Post-middleware: fetched %s (%s) from %s",
+            filename, human_size(entry.size), url,
+        )
+        return entry
+    except Exception:
+        logger.exception(
+            "Post-middleware: failed to fetch %s", url,
+        )
+        return None
+
+
 async def post_process_tool_result(
     tool_name: str,
     result: CallToolResult,
@@ -307,32 +339,42 @@ async def post_process_tool_result(
     except (json.JSONDecodeError, TypeError):
         return text, []
 
-    if not isinstance(data, dict) or "download_url" not in data:
+    if not isinstance(data, dict):
         return text, []
 
-    url = data["download_url"]
-    filename = data.get("filename", url.rsplit("/", 1)[-1])
+    new_files: list[FileEntry] = []
 
-    try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(url, timeout=60.0)
-            resp.raise_for_status()
-            blob = resp.content
-        mime = resp.headers.get("content-type", "application/octet-stream")
-        entry = registry.register(filename, blob, mime, source=f"tool:{tool_name}")
-        logger.info(
-            "Post-middleware: fetched %s (%s) from %s",
-            filename,
-            human_size(entry.size),
-            url,
+    # Top-level download_url (compose_document, generate_diagram, fill_form)
+    if "download_url" in data:
+        entry = await _fetch_and_register(
+            data["download_url"],
+            data.get("filename"),
+            tool_name, registry,
         )
+        if entry:
+            new_files.append(entry)
+            data.pop("download_url", None)
+            data["produced_file"] = (
+                f"{entry.filename} ({human_size(entry.size)})"
+            )
 
-        # Build sanitized text for LLM (no raw URLs)
-        sanitized = {
-            k: v for k, v in data.items() if k != "download_url"
-        }
-        sanitized["produced_file"] = f"{filename} ({human_size(entry.size)})"
-        return json.dumps(sanitized), [entry]
-    except Exception:
-        logger.exception("Post-middleware: failed to fetch %s", url)
-        return text, []
+    # Nested download_url in attachments list (read_email)
+    for att in data.get("attachments", []):
+        if isinstance(att, dict) and "download_url" in att:
+            entry = await _fetch_and_register(
+                att["download_url"],
+                att.get("filename"),
+                tool_name, registry,
+            )
+            if entry:
+                new_files.append(entry)
+                att.pop("download_url", None)
+                att.pop("saved_path", None)
+                att["registered_file"] = (
+                    f"{entry.filename} "
+                    f"({human_size(entry.size)})"
+                )
+
+    if new_files:
+        return json.dumps(data, ensure_ascii=False), new_files
+    return text, []

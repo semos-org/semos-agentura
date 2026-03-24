@@ -213,7 +213,16 @@ class ToolExecutor:
     def _dispatch(self, name: str, args: dict):
         match name:
             case "search_emails":
-                msgs = self._backend.search_emails(args["query"], limit=args.get("limit", 20))
+                msgs = self._backend.search_emails(
+                    args.get("query", ""),
+                    limit=args.get("limit", 20),
+                    from_addr=args.get("from_addr", ""),
+                    to_addr=args.get("to_addr", ""),
+                    since=args.get("since", ""),
+                    before=args.get("before", ""),
+                    unread_only=args.get("unread_only", False),
+                    has_attachments=args.get("has_attachments"),
+                )
                 return [
                     {
                         "entry_id": m.uid, "subject": m.subject,
@@ -226,17 +235,50 @@ class ToolExecutor:
                 ]
 
             case "read_email":
-                msgs = self._backend.search_emails(args["query"], limit=1)
-                if not msgs:
-                    return {"error": f"No emails found matching '{args['query']}'"}
-                full = self._backend.get_message(msgs[0].uid)
+                # Resolve the email to read
+                entry_id = args.get("entry_id", "")
+                if entry_id:
+                    uid = entry_id
+                else:
+                    msgs = self._backend.search_emails(
+                        args.get("query", ""),
+                        limit=1,
+                        from_addr=args.get("from_addr", ""),
+                        to_addr=args.get("to_addr", ""),
+                    )
+                    if not msgs:
+                        return {"error": "No emails found matching the given criteria"}
+                    uid = msgs[0].uid
+
+                include_attachments = args.get("include_attachments", False)
+                save_dir = args.get("_attachment_dir")
+
+                # For COM backend: save attachments if requested
+                if include_attachments and save_dir and self._backend.supports_com:
+                    raw = self._backend.raw_com.read_email(
+                        uid, save_attachments_to=save_dir,
+                    )
+                    from .backend import _com_dict_to_email
+                    full = _com_dict_to_email(raw)
+                    att_info = [
+                        {
+                            "filename": a.get("filename", ""),
+                            "size": a.get("size", 0),
+                            "saved_path": a.get("saved_path"),
+                        }
+                        for a in raw.get("attachments", [])
+                    ]
+                else:
+                    full = self._backend.get_message(uid)
+                    att_info = [{"filename": a.filename} for a in full.attachments]
+
                 return {
                     "entry_id": full.uid, "subject": full.subject,
                     "sender": full.sender_name or full.sender,
                     "sender_email": full.sender,
                     "to": "; ".join(full.to), "cc": "; ".join(full.cc),
                     "body": full.body,
-                    "attachments": [{"filename": a.filename} for a in full.attachments],
+                    "attachments": att_info,
                 }
 
             case "list_events":
@@ -326,9 +368,13 @@ class ToolExecutor:
                 return {"status": status, "entry_id": entry_id}
 
             case "draft_reply" | "send_reply":
-                msgs = self._backend.search_emails(args["query"], limit=1)
+                msgs = self._backend.search_emails(
+                    args.get("query", ""), limit=1,
+                    from_addr=args.get("from_addr", ""),
+                    to_addr=args.get("to_addr", ""),
+                )
                 if not msgs:
-                    return {"error": f"No emails found matching '{args['query']}'"}
+                    return {"error": "No emails found matching the given criteria"}
                 uid = msgs[0].uid
                 body_text = md_to_plain(args["body"])
                 if name == "send_reply":

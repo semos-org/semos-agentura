@@ -375,6 +375,67 @@ class TestPostProcess:
         assert text == ""
         assert files == []
 
+    async def test_nested_attachment_download_urls(
+        self, registry, httpx_mock,
+    ):
+        """read_email returns attachments with download_url
+        inside each attachment object."""
+        httpx_mock.add_response(
+            url="http://localhost:8001/files/abc_report.pdf",
+            content=b"PDF-ATTACHMENT",
+            headers={"content-type": "application/pdf"},
+        )
+        httpx_mock.add_response(
+            url="http://localhost:8001/files/def_image.png",
+            content=b"PNG-ATTACHMENT",
+            headers={"content-type": "image/png"},
+        )
+        agent = AgentConnection(
+            "email", "http://localhost:8001/mcp/sse",
+            "http://localhost:8001",
+        )
+        result = CallToolResult(
+            content=[
+                TextContent(
+                    type="text",
+                    text=json.dumps({
+                        "subject": "Meeting notes",
+                        "body": "See attached.",
+                        "attachments": [
+                            {
+                                "filename": "report.pdf",
+                                "download_url": (
+                                    "http://localhost:8001"
+                                    "/files/abc_report.pdf"
+                                ),
+                            },
+                            {
+                                "filename": "image.png",
+                                "download_url": (
+                                    "http://localhost:8001"
+                                    "/files/def_image.png"
+                                ),
+                            },
+                        ],
+                    }),
+                ),
+            ],
+        )
+        text, files = await post_process_tool_result(
+            "read_email", result, agent, registry,
+        )
+        assert len(files) == 2
+        assert registry.get("report.pdf") is not None
+        assert registry.get("image.png") is not None
+        assert registry.get("report.pdf").blob == b"PDF-ATTACHMENT"
+        # URLs removed from LLM text
+        parsed = json.loads(text)
+        for att in parsed["attachments"]:
+            assert "download_url" not in att
+            assert "registered_file" in att
+        # Subject/body preserved
+        assert parsed["subject"] == "Meeting notes"
+
 
 # resolve_file_references
 

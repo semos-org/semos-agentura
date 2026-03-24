@@ -42,7 +42,12 @@ class EmailBackend(Protocol):
     # Read
     def list_messages(self, folder: str = "INBOX", limit: int = 25) -> list[EmailMessage]: ...
     def get_message(self, uid: str) -> EmailMessage: ...
-    def search_emails(self, query: str, folder: str = "INBOX", limit: int = 50) -> list[EmailMessage]: ...
+    def search_emails(
+        self, query: str = "", folder: str = "INBOX", limit: int = 50, *,
+        from_addr: str = "", to_addr: str = "",
+        since: str = "", before: str = "", unread_only: bool = False,
+        has_attachments: bool | None = None,
+    ) -> list[EmailMessage]: ...
 
     # Send/Draft
     def send_email(
@@ -153,16 +158,37 @@ class IMAPBackend:
     def get_message(self, uid: str) -> EmailMessage:
         return self._ensure_client().get_message(uid)
 
-    def search_emails(self, query: str, folder: str = "INBOX", limit: int = 50) -> list[EmailMessage]:
-        """Search by subject via IMAP SEARCH."""
+    def search_emails(
+        self, query: str = "", folder: str = "INBOX", limit: int = 50, *,
+        from_addr: str = "", to_addr: str = "",
+        since: str = "", before: str = "", unread_only: bool = False,
+        has_attachments: bool | None = None,
+    ) -> list[EmailMessage]:
+        """Search with composable filters via IMAP SEARCH."""
+        from datetime import datetime as _dt
         client = self._ensure_client()
-        uids = client.search(folder=folder, subject=query)
+        since_dt = _dt.strptime(since, "%Y-%m-%d") if since else None
+        before_dt = _dt.strptime(before, "%Y-%m-%d") if before else None
+        uids = client.search(
+            folder=folder,
+            subject=query or None,
+            from_addr=from_addr or None,
+            since=since_dt,
+            before=before_dt,
+            unseen=unread_only,
+        )
         uids = uids[:limit]
-        # Fetch headers for matching UIDs
         messages = []
         for uid in uids:
             try:
                 msg = client.get_message(uid)
+                # Post-filter: to_addr and has_attachments (IMAP doesn't support these natively)
+                if to_addr and to_addr.lower() not in " ".join(msg.to).lower():
+                    continue
+                if has_attachments is True and not msg.attachments:
+                    continue
+                if has_attachments is False and msg.attachments:
+                    continue
                 messages.append(msg)
             except Exception:
                 pass
@@ -346,14 +372,24 @@ if sys.platform == "win32":
             raw = self._com.read_email(uid)
             return _com_dict_to_email(raw)
 
-        def search_emails(self, query: str, folder: str = "INBOX", limit: int = 50) -> list[EmailMessage]:
+        def search_emails(
+            self, query: str = "", folder: str = "INBOX", limit: int = 50, *,
+            from_addr: str = "", to_addr: str = "",
+            since: str = "", before: str = "", unread_only: bool = False,
+            has_attachments: bool | None = None,
+        ) -> list[EmailMessage]:
             from .com_client import OL_FOLDER_INBOX, OL_FOLDER_DRAFTS, OL_FOLDER_SENT
             folder_map = {
                 "INBOX": OL_FOLDER_INBOX, "Inbox": OL_FOLDER_INBOX,
                 "Drafts": OL_FOLDER_DRAFTS, "Sent": OL_FOLDER_SENT,
             }
             fid = folder_map.get(folder, OL_FOLDER_INBOX)
-            raw = self._com.search_emails(query, folder_id=fid, limit=limit)
+            raw = self._com.search_emails(
+                query, folder_id=fid, limit=limit,
+                from_addr=from_addr, to_addr=to_addr,
+                since=since, before=before,
+                unread_only=unread_only, has_attachments=has_attachments,
+            )
             return [_com_dict_to_email(d) for d in raw]
 
         # Send/Draft
