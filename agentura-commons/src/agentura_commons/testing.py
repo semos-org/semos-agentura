@@ -30,11 +30,19 @@ async def mcp_client_for(service: BaseAgentService) -> AsyncGenerator[ClientSess
 
 
 def parse_tool_result(result) -> Any:
-    """Extract and parse the text content from a CallToolResult.
+    """Extract and parse the content from a CallToolResult.
 
-    MCP tool results are wrapped in content blocks. This extracts
-    the first text block and parses it as JSON if possible.
+    Prefers structuredContent (dict) if available.
+    Unwraps {"items": [...]} back to a plain list (list results
+    get wrapped in a dict for MCP structuredContent compatibility).
+    Falls back to parsing the first TextContent block as JSON.
     """
+    sc = getattr(result, "structuredContent", None)
+    if sc is not None:
+        # Unwrap list wrapper
+        if isinstance(sc, dict) and list(sc.keys()) == ["items"]:
+            return sc["items"]
+        return sc
     if not result.content:
         return None
     text = result.content[0].text

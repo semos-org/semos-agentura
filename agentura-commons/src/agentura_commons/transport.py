@@ -7,8 +7,8 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from a2a.server.apps.jsonrpc.fastapi_app import A2AFastAPIApplication
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .a2a_server import create_a2a_handler, create_agent_card
@@ -62,7 +62,7 @@ def create_app(
         GET  /mcp/sse                     -> MCP SSE stream
         POST /mcp/messages/               -> MCP messages
         GET  /.well-known/agent-card.json -> A2A Agent Card
-        POST /a2a                         -> A2A JSON-RPC
+        POST /a2a                         -> A2A JSON-RPC (when implemented)
         GET  /files/<filename>            -> download output files
     """
     url = base_url or "http://127.0.0.1:8000"
@@ -91,17 +91,24 @@ def create_app(
     mcp_sse = mcp_server.sse_app(mount_path="")
     app.mount("/mcp", mcp_sse)
 
-    # A2A JSON-RPC
+    # A2A Agent Card (always served, even if A2A handler is not ready)
     agent_card = create_agent_card(service, base_url=url)
+
+    @app.get("/.well-known/agent-card.json")
+    async def get_agent_card():
+        return JSONResponse(content=agent_card)
+
+    # A2A JSON-RPC handler (None until Phase 3.5)
     a2a_handler = create_a2a_handler(service)
-    a2a_app = A2AFastAPIApplication(
-        agent_card=agent_card,
-        http_handler=a2a_handler,
-    )
-    a2a_app.add_routes_to_app(
-        app,
-        agent_card_url="/.well-known/agent-card.json",
-        rpc_url="/a2a",
-    )
+    if a2a_handler is not None:
+        try:
+            from a2a.server.apps.jsonrpc.fastapi_app import A2AFastAPIApplication
+            a2a_app = A2AFastAPIApplication(
+                agent_card=agent_card,
+                http_handler=a2a_handler,
+            )
+            a2a_app.add_routes_to_app(app, rpc_url="/a2a")
+        except ImportError:
+            logger.warning("a2a-sdk not available, A2A routes not mounted")
 
     return app

@@ -26,20 +26,52 @@ class FileAttachment(TypedDict):
 
 
 @dataclass
+class NamedFile:
+    """A file with an explicit display name.
+
+    Use when the on-disk filename (often UUID-prefixed) differs from
+    the name the user should see. If not used, the transport layer
+    infers the name from Path.name.
+    """
+    path: Path
+    name: str
+
+
+@dataclass
+class ToolResult:
+    """Structured result from a tool function.
+
+    Tool functions can return any Python type - the MCP wrapper
+    normalizes it automatically:
+        str        -> ToolResult(text=...)
+        dict/list  -> ToolResult(data=...)
+        Path       -> ToolResult(files=[...])
+        NamedFile  -> ToolResult(files=[...])
+        ToolResult -> pass through
+
+    Use ToolResult directly only when returning multiple modalities
+    (e.g., text + files, or data + files).
+    """
+    text: str = ""
+    data: dict | list | None = None
+    files: list[Path | NamedFile] = field(default_factory=list)
+
+
+@dataclass
 class ToolDef:
     """Definition of a tool that the agent exposes via MCP."""
 
     name: str
     description: str
     fn: Any  # Callable - async or sync
-    parameters: dict[str, Any] | None = None  # JSON Schema override; auto-inferred if None
-    file_params: list[str] = field(default_factory=list)  # param names that accept file input (x-file)
+    parameters: dict[str, Any] | None = None
+    file_params: list[str] = field(default_factory=list)
     # MCP annotations (hints for client behavior)
-    read_only: bool = False  # readOnlyHint - tool has no side effects
-    destructive: bool = False  # destructiveHint - tool may delete/modify data
-    idempotent: bool = False  # idempotentHint - safe to retry
+    read_only: bool = False
+    destructive: bool = False
+    idempotent: bool = False
     # MCP execution hints
-    task_support: str | None = None  # "forbidden"/"optional"/"required" (ToolExecution.taskSupport)
+    task_support: str | None = None
 
 
 @dataclass
@@ -68,11 +100,10 @@ class BaseAgentService(ABC):
         """Return the download URL for a file in the output directory."""
         return f"{self.base_url}/files/{filename}"
 
+    # Legacy helper - kept for backwards compatibility during migration.
+    # New tools should return Path or NamedFile directly.
     def file_response(self, path: Path, display_name: str | None = None) -> str:
-        """Build a JSON response for a file-producing tool.
-
-        Returns JSON with download_url, filename, mime_type, and size_bytes.
-        """
+        """Build a JSON response for a file-producing tool."""
         name = display_name or path.name
         mime, _ = mimetypes.guess_type(str(path))
         return json.dumps({
@@ -105,8 +136,8 @@ class BaseAgentService(ABC):
         """Return all A2A skills this agent exposes."""
 
     @abstractmethod
-    async def execute_skill(self, skill_id: str, message: str, *, task_id: str | None = None) -> str:
-        """Execute an A2A skill by ID with the given message.
-
-        Returns the result as a string. For streaming, override execute_skill_stream instead.
-        """
+    async def execute_skill(
+        self, skill_id: str, message: str,
+        *, task_id: str | None = None,
+    ) -> str:
+        """Execute an A2A skill by ID with the given message."""
