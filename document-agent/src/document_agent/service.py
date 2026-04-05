@@ -44,11 +44,11 @@ class DocumentAgentService(BaseAgentService):
     def get_tools(self) -> list[ToolDef]:
         _fh = "Accepts an absolute file path or base64-encoded file content."
         return [
-            ToolDef(name="digest_document", description=f"Digest a document (PDF, image, Office) into Markdown via OCR. {_fh}", fn=self._digest, file_params=["source"]),
-            ToolDef(name="compose_document", description="Render Markdown source text into a document (PDF, PPTX, DOCX, HTML). Returns a download URL.", fn=self._compose),
-            ToolDef(name="generate_diagram", description="Generate a diagram (Mermaid or draw.io) from a text description. Returns a download URL.", fn=self._generate_diagram),
-            ToolDef(name="inspect_form", description=f"Inspect form fields in a PDF or DOCX. {_fh}", fn=self._inspect_form, file_params=["file_path"]),
-            ToolDef(name="fill_form", description=f"Fill form fields in a PDF or DOCX. Returns a download URL. {_fh}", fn=self._fill_form, file_params=["file_path"]),
+            ToolDef(name="digest_document", description=f"Digest a document (PDF, image, Office) into Markdown via OCR. {_fh}", fn=self._digest, file_params=["source"], read_only=True, idempotent=True),
+            ToolDef(name="compose_document", description="Render Markdown source text into a document (PDF, PPTX, DOCX, HTML). Returns a download URL.", fn=self._compose, task_support="optional", idempotent=True),
+            ToolDef(name="generate_diagram", description="Generate a diagram (Mermaid or draw.io) from a text description. Returns a download URL.", fn=self._generate_diagram, task_support="optional"),
+            ToolDef(name="inspect_form", description=f"Inspect form fields in a PDF or DOCX. {_fh}", fn=self._inspect_form, file_params=["file_path"], read_only=True, idempotent=True),
+            ToolDef(name="fill_form", description=f"Fill form fields in a PDF or DOCX. Returns a download URL. {_fh}", fn=self._fill_form, file_params=["file_path"], task_support="optional"),
         ]
 
     def get_skills(self) -> list[SkillDef]:
