@@ -243,7 +243,61 @@ def pre_process_tool_call(
                 "Pre-middleware: resolved %s='%s' (%s)",
                 param_name, value, human_size(entry.size),
             )
+        elif registry.files:
+            # Not an exact filename - might be markdown or
+            # other text containing embedded file references.
+            # Scan for registered filenames and replace inline.
+            resolved = _resolve_embedded_refs(
+                value, registry,
+            )
+            if resolved != value:
+                processed[param_name] = resolved
     return processed
+
+
+def _resolve_embedded_refs(
+    value: str, registry: FileRegistry,
+) -> str:
+    """Replace registered filenames embedded in longer text.
+
+    Handles markdown image refs like ![alt](filename.png) and
+    bare filenames in prose. Used when a tool parameter contains
+    markdown referencing registered files (e.g. compose_document
+    with source containing ![](diagram.png)).
+    """
+    import re
+
+    # 1. Markdown image/link refs: ![alt](filename) or [text](filename)
+    def _replace_md_ref(match: re.Match) -> str:
+        bracket = match.group("bracket")
+        ref = match.group("ref")
+        entry = registry.get(ref)
+        if not entry:
+            return match.group(0)
+        b64 = base64.b64encode(entry.blob).decode()
+        data_uri = f"data:{entry.mime};base64,{b64}"
+        logger.info(
+            "Embedded ref: resolved '%s' (%s)",
+            ref, human_size(entry.size),
+        )
+        return f"{bracket}({data_uri})"
+
+    pattern = r"(?P<bracket>!?\[[^\]]*\])\((?P<ref>[^)]+)\)"
+    resolved = re.sub(pattern, _replace_md_ref, value)
+    if resolved != value:
+        return resolved
+
+    # 2. Bare filename matches anywhere in the text
+    for fname, entry in registry.files.items():
+        if fname in value:
+            b64 = base64.b64encode(entry.blob).decode()
+            data_uri = f"data:{entry.mime};base64,{b64}"
+            value = value.replace(fname, data_uri)
+            logger.info(
+                "Embedded ref: resolved bare '%s' (%s)",
+                fname, human_size(entry.size),
+            )
+    return value
 
 
 # Post-middleware

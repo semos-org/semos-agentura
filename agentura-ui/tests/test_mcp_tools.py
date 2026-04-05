@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
 from langchain_core.utils.function_calling import convert_to_openai_tool
 from mcp.types import CallToolResult, TextContent
 from pydantic import BaseModel
@@ -106,6 +108,7 @@ class TestMakeMcpToolClass:
         assert fn["name"] == "digest_document"
         assert "source" in fn["parameters"]["properties"]
 
+    @pytest.mark.asyncio
     async def test_arun_pre_processes_and_calls_hub(
         self, digest_tool,
     ):

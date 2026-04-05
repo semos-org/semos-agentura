@@ -78,7 +78,7 @@ class FileManager:
 
     def refresh(self) -> None:
         """Rebuild the file list from the registry."""
-        if not self._registry._files:
+        if not self._registry.files:
             self._list_col.objects = [
                 pn.pane.Markdown(
                     "*No files*",
@@ -88,7 +88,7 @@ class FileManager:
             return
         self._list_col.objects = [
             self._make_row(e)
-            for e in self._registry._files.values()
+            for e in self._registry.files.values()
         ]
 
     def register_and_refresh(
