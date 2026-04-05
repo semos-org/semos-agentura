@@ -34,6 +34,12 @@ class ToolDef:
     fn: Any  # Callable - async or sync
     parameters: dict[str, Any] | None = None  # JSON Schema override; auto-inferred if None
     file_params: list[str] = field(default_factory=list)  # param names that accept file input (x-file)
+    # MCP annotations (hints for client behavior)
+    read_only: bool = False  # readOnlyHint - tool has no side effects
+    destructive: bool = False  # destructiveHint - tool may delete/modify data
+    idempotent: bool = False  # idempotentHint - safe to retry
+    # MCP execution hints
+    task_support: str | None = None  # "forbidden"/"optional"/"required" (ToolExecution.taskSupport)
 
 
 @dataclass
