@@ -376,6 +376,11 @@ async def post_process_tool_result(
         # Resolve relative URLs
         if url.startswith("/"):
             url = f"{base_url}{url}"
+        # Rewrite to agent's actual base_url (server may
+        # report a different port than what client connects to)
+        elif url.startswith("http"):
+            path = "/" + url.split("/", 3)[-1]
+            url = f"{base_url}{path}"
         entry = await _fetch_and_register(
             url, data.get("filename"),
             tool_name, registry,
@@ -395,6 +400,9 @@ async def post_process_tool_result(
             url = att["download_url"]
             if url.startswith("/"):
                 url = f"{base_url}{url}"
+            elif url.startswith("http"):
+                path = "/" + url.split("/", 3)[-1]
+                url = f"{base_url}{path}"
             entry = await _fetch_and_register(
                 url, att.get("filename"),
                 tool_name, registry,
