@@ -48,7 +48,7 @@ class TestBuildAgents:
 
 class TestRegisterLitellmProvider:
     def test_idempotent(self):
-        from panelini.components.ai.utils.ai_interface import (
+        from panelini.panels.ai.utils.ai_interface import (
             PROVIDER_CLASS_REGISTRY,
         )
         from agentura_ui.__main__ import _register_litellm_provider
@@ -60,7 +60,7 @@ class TestRegisterLitellmProvider:
         assert first is second
 
     def test_registered(self):
-        from panelini.components.ai.utils.ai_interface import (
+        from panelini.panels.ai.utils.ai_interface import (
             PROVIDER_CLASS_REGISTRY,
         )
         from agentura_ui.__main__ import _register_litellm_provider

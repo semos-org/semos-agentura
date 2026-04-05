@@ -14,9 +14,8 @@ from pathlib import Path
 import panel as pn
 from dotenv import load_dotenv
 from panelini import Panelini
-from panelini.components.ai.frontend import Frontend
-from panelini.components.ai.tools.basic_tools import AVAILABLE_TOOLS
-from panelini.components.ai.utils.ai_interface import (
+from panelini.panels.ai.frontend import AVAILABLE_TOOLS, AiChat as Frontend
+from panelini.panels.ai.utils.ai_interface import (
     PROVIDER_CLASS_REGISTRY,
 )
 

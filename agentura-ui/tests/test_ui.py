@@ -62,7 +62,7 @@ def test_panel_serve_smoke(page: Page):
 def test_ui_sidebar_has_tools(page: Page):
     """Sidebar renders tool checkboxes from AVAILABLE_TOOLS."""
     PORT[0] += 1
-    from panelini.components.ai.frontend import Frontend
+    from panelini.panels.ai.frontend import Frontend
 
     frontend = Frontend(
         system_message="Test",
@@ -81,7 +81,7 @@ def test_ui_sidebar_has_tools(page: Page):
 def test_ui_chat_interface_renders(page: Page):
     """Chat interface renders with input area."""
     PORT[0] += 1
-    from panelini.components.ai.frontend import Frontend
+    from panelini.panels.ai.frontend import Frontend
 
     frontend = Frontend(
         system_message="Test",
