@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import functools
 import inspect
+import io
 import json
 import logging
 import mimetypes
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -50,15 +52,54 @@ def _file_to_resource_link(
     return link, meta
 
 
-def _normalize_to_tool_result(raw: Any) -> ToolResult:
+def _is_file_like(obj: Any) -> bool:
+    """Check if obj is a file-like object (has read method)."""
+    return hasattr(obj, "read") and callable(obj.read)
+
+
+def _materialize_file(
+    obj: Any, output_dir: Path | None,
+) -> Path:
+    """Write a file-like object to output_dir and return the Path."""
+    data = obj.read()
+    if isinstance(data, str):
+        data = data.encode("utf-8")
+    name = getattr(obj, "name", None)
+    if name:
+        name = Path(name).name
+    else:
+        name = f"_file_{uuid.uuid4().hex[:8]}.bin"
+    safe = f"{uuid.uuid4().hex[:8]}_{name}"
+    dest = (output_dir or Path(".")) / safe
+    dest.write_bytes(data)
+    return dest
+
+
+def _normalize_to_tool_result(
+    raw: Any, output_dir: Path | None = None,
+) -> ToolResult:
     """Convert any tool return value to a ToolResult."""
     if isinstance(raw, ToolResult):
         return raw
     if isinstance(raw, (Path, NamedFile)):
         return ToolResult(files=[raw])
-    if isinstance(raw, dict):
-        return ToolResult(data=raw)
+    if _is_file_like(raw):
+        return ToolResult(files=[_materialize_file(raw, output_dir)])
     if isinstance(raw, list):
+        # Check if it's a list of files (Path, NamedFile, file-like)
+        if raw and all(
+            isinstance(x, (Path, NamedFile)) or _is_file_like(x)
+            for x in raw
+        ):
+            files = []
+            for x in raw:
+                if _is_file_like(x):
+                    files.append(_materialize_file(x, output_dir))
+                else:
+                    files.append(x)
+            return ToolResult(files=files)
+        return ToolResult(data=raw)
+    if isinstance(raw, dict):
         return ToolResult(data=raw)
     if isinstance(raw, str):
         # Try to detect legacy JSON file responses
@@ -73,7 +114,6 @@ def _normalize_to_tool_result(raw: Any) -> ToolResult:
         return ToolResult(text=raw)
     if raw is None:
         return ToolResult()
-    # Fallback: stringify
     return ToolResult(text=str(raw))
 
 
@@ -131,9 +171,12 @@ def _tool_result_to_call_tool_result(
 # Wrapper: tool fn -> normalized CallToolResult
 
 def _make_normalized_wrapper(
-    name: str, fn: Any, base_url_getter: Any,
+    name: str, fn: Any, service: BaseAgentService,
 ) -> Any:
     """Wrap a tool function to normalize its return value to CallToolResult."""
+
+    def _base_url():
+        return service.base_url or "http://127.0.0.1:8000"
 
     if inspect.iscoroutinefunction(fn):
         @functools.wraps(fn)
@@ -141,9 +184,9 @@ def _make_normalized_wrapper(
             raw = await fn(**kwargs)
             if isinstance(raw, CallToolResult):
                 return raw
-            result = _normalize_to_tool_result(raw)
+            result = _normalize_to_tool_result(raw, service.output_dir)
             return _tool_result_to_call_tool_result(
-                result, base_url_getter(),
+                result, _base_url(),
             )
     else:
         @functools.wraps(fn)
@@ -151,9 +194,9 @@ def _make_normalized_wrapper(
             raw = fn(**kwargs)
             if isinstance(raw, CallToolResult):
                 return raw
-            result = _normalize_to_tool_result(raw)
+            result = _normalize_to_tool_result(raw, service.output_dir)
             return _tool_result_to_call_tool_result(
-                result, base_url_getter(),
+                result, _base_url(),
             )
 
     wrapper.__name__ = name
@@ -186,11 +229,8 @@ def create_mcp_server(service: BaseAgentService) -> FastMCP:
                 "Failed to enable MCP task support", exc_info=True,
             )
 
-    def _base_url():
-        return service.base_url or "http://127.0.0.1:8000"
-
     for tool in service.get_tools():
-        fn = _make_normalized_wrapper(tool.name, tool.fn, _base_url)
+        fn = _make_normalized_wrapper(tool.name, tool.fn, service)
         server.add_tool(
             fn=fn,
             name=tool.name,
