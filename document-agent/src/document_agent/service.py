@@ -231,7 +231,16 @@ class DocumentAgentService(BaseAgentService):
 
 
 # --- App factory ---
-_host = os.getenv("AGENT_HOST", "127.0.0.1")
-_port = os.getenv("AGENT_PORT", "8002")
 _service = DocumentAgentService()
-app = create_app(_service, base_url=f"http://{_host}:{_port}")
+
+
+def create_service_app(
+    host: str | None = None, port: str | int | None = None,
+):
+    """Create the FastAPI app. Called lazily by uvicorn."""
+    h = host or os.getenv("AGENT_HOST", "127.0.0.1")
+    p = port or os.getenv("AGENT_PORT", "8002")
+    return create_app(_service, base_url=f"http://{h}:{p}")
+
+
+app = create_service_app()

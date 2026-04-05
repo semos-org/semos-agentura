@@ -28,16 +28,27 @@ def _free_port() -> int:
         return s.getsockname()[1]
 
 
-def _start_agent(app_path: str, port: int):
+def _make_app(agent_module: str, port: int):
+    """Import agent module and create app with correct port."""
+    if agent_module == "document_agent":
+        from document_agent.service import create_service_app
+    elif agent_module == "email_agent":
+        from email_agent.service import create_service_app
+    else:
+        raise ValueError(f"Unknown agent: {agent_module}")
+    return create_service_app(port=port)
+
+
+def _start_agent(agent_module: str, port: int):
     """Start a uvicorn server in a background thread."""
+    app = _make_app(agent_module, port)
     config = uvicorn.Config(
-        app_path, host="127.0.0.1", port=port,
+        app, host="127.0.0.1", port=port,
         log_level="warning",
     )
     server = uvicorn.Server(config)
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()
-    # Wait for server to be ready
     for _ in range(50):
         time.sleep(0.1)
         if server.started:
@@ -102,7 +113,7 @@ class TestDocumentAgent:
         self.port = _free_port()
         self.base_url = f"http://127.0.0.1:{self.port}"
         self.server, self.thread = _start_agent(
-            "document_agent.service:app", self.port,
+            "document_agent", self.port,
         )
         yield
         self.server.should_exit = True
@@ -233,7 +244,7 @@ class TestEmailAgent:
         self.port = _free_port()
         self.base_url = f"http://127.0.0.1:{self.port}"
         self.server, self.thread = _start_agent(
-            "email_agent.service:app", self.port,
+            "email_agent", self.port,
         )
         yield
         self.server.should_exit = True
@@ -273,10 +284,10 @@ class TestMultiAgent:
         self.doc_port = _free_port()
         self.email_port = _free_port()
         self.doc_server, self.doc_thread = _start_agent(
-            "document_agent.service:app", self.doc_port,
+            "document_agent", self.doc_port,
         )
         self.email_server, self.email_thread = _start_agent(
-            "email_agent.service:app", self.email_port,
+            "email_agent", self.email_port,
         )
         yield
         self.doc_server.should_exit = True
