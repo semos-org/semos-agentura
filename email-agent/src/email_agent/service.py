@@ -125,20 +125,32 @@ class EmailAgentService(BaseAgentService):
                 return tmp
         except Exception:
             pass
+
+        # URL fallback: fetch the file content
+        if source.startswith(("http://", "https://")):
+            import httpx as _httpx
+            resp = _httpx.get(source, timeout=30)
+            resp.raise_for_status()
+            ext = Path(source.rsplit("/", 1)[-1]).suffix or default_ext
+            fn = filename or f"_fetch_{uuid.uuid4().hex[:8]}{ext}"
+            tmp = self.output_dir / fn
+            tmp.write_bytes(resp.content)
+            return tmp
+
         return p
 
     def get_tools(self) -> list[ToolDef]:
         _fh = "Accepts absolute file paths or base64-encoded content."
         return [
-            ToolDef(name="search_emails", description="Search emails with composable filters: subject, sender, recipient, date range, unread, attachments. All optional, AND-combined.", fn=self._search_emails),
-            ToolDef(name="read_email", description="Read the full content of the most recent email matching filters (subject, sender, recipient).", fn=self._read_email),
-            ToolDef(name="list_events", description="List calendar events for the next N days.", fn=self._list_events),
-            ToolDef(name="free_slots", description="Calculate free meeting slots for the next N weekdays.", fn=self._free_slots),
+            ToolDef(name="search_emails", description="Search emails with composable filters: subject, sender, recipient, date range, unread, attachments. All optional, AND-combined.", fn=self._search_emails, read_only=True, idempotent=True),
+            ToolDef(name="read_email", description="Read the full content of the most recent email matching filters (subject, sender, recipient).", fn=self._read_email, read_only=True, idempotent=True),
+            ToolDef(name="list_events", description="List calendar events for the next N days.", fn=self._list_events, read_only=True, idempotent=True),
+            ToolDef(name="free_slots", description="Calculate free meeting slots for the next N weekdays.", fn=self._free_slots, read_only=True, idempotent=True),
             ToolDef(name="create_draft", description=f"Create an email draft with optional attachments. {_fh}", fn=self._create_draft, file_params=["attachments"]),
             ToolDef(name="draft_event", description="Create a calendar event draft (invitations NOT sent).", fn=self._draft_event),
-            ToolDef(name="send_event", description="Create a calendar event and send invitations immediately.", fn=self._send_event),
+            ToolDef(name="send_event", description="Create a calendar event and send invitations immediately.", fn=self._send_event, destructive=True),
             ToolDef(name="draft_reply", description="Create a reply draft to the most recent email matching a query.", fn=self._draft_reply),
-            ToolDef(name="send_reply", description="Reply to the most recent email matching a query and send immediately.", fn=self._send_reply),
+            ToolDef(name="send_reply", description="Reply to the most recent email matching a query and send immediately.", fn=self._send_reply, destructive=True),
         ]
 
     def get_skills(self) -> list[SkillDef]:
