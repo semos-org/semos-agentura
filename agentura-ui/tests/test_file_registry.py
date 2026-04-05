@@ -453,10 +453,11 @@ class TestResolveFileReferences:
         md = "## Diagram\n\n![A to B](diagram.png)"
         resolved = resolve_file_references(md, registry)
 
-        assert "![A to B](data:image/png;base64," in resolved
-        # Verify round-trip
-        data_uri = resolved.split("(", 1)[1].rstrip(")")
-        _, b64 = data_uri.split(",", 1)
+        assert '<img src="data:image/png;base64,' in resolved
+        assert 'max-width:100%' in resolved
+        # Verify round-trip: extract base64 from <img src="data:...">
+        src = resolved.split('src="')[1].split('"')[0]
+        _, b64 = src.split(",", 1)
         assert base64.b64decode(b64) == b"\x89PNG-FAKE"
 
     def test_link_resolved(self, registry):

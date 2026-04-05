@@ -69,6 +69,25 @@ def _json_schema_to_pydantic(
 # Shared list: tool _arun stores produced files here for the UI to drain.
 _produced_files: list[FileEntry] = []
 
+# Status callback: set by __main__.py to update chat placeholder.
+# Signature: (status_text: str) -> None
+_status_callback: Any = None
+
+
+def set_status_callback(fn: Any) -> None:
+    """Register a callback for tool execution status updates."""
+    global _status_callback
+    _status_callback = fn
+
+
+def _update_status(text: str) -> None:
+    """Update the UI status indicator."""
+    if _status_callback:
+        try:
+            _status_callback(text)
+        except Exception:
+            pass
+
 
 def drain_produced_files() -> list[FileEntry]:
     """Pop all files produced since last drain."""
@@ -105,6 +124,7 @@ def _make_mcp_tool_class(
 
         async def _arun(self, **kwargs: Any) -> str:
             logger.info("MCP tool call: %s(%s)", self.name, kwargs)
+            _update_status(f"Calling {self.name} (MCP)...")
 
             # Pre-middleware: resolve file references from registry
             processed = pre_process_tool_call(

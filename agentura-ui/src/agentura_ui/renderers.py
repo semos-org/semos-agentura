@@ -24,10 +24,12 @@ def render_file_entry(entry: FileEntry) -> pn.viewable.Viewable:
     mime = entry.mime.lower().split(";")[0].strip()
 
     if mime.startswith("image/"):
-        return pn.pane.Image(
-            io.BytesIO(entry.blob),
-            alt_text=entry.filename,
-            width=400,
+        b64 = base64.b64encode(entry.blob).decode()
+        return pn.pane.HTML(
+            f'<img src="data:{mime};base64,{b64}" '
+            f'alt="{entry.filename}" '
+            f'style="max-height:500px;max-width:100%;'
+            f'width:auto;height:auto;">',
         )
 
     if mime == "text/html":
@@ -89,6 +91,15 @@ def resolve_file_references(
 
         b64 = base64.b64encode(entry.blob).decode()
         data_uri = f"data:{entry.mime};base64,{b64}"
+        alt = match.group("alt") or entry.filename
+
+        # For images: constrain height for chat readability
+        if bracket.startswith("!"):
+            return (
+                f'<img src="{data_uri}" alt="{alt}" '
+                f'style="max-height:500px;max-width:100%;'
+                f'width:auto;height:auto;">'
+            )
         return f"{bracket}({data_uri})"
 
     return _MD_REF_RE.sub(_replacer, text)

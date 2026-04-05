@@ -5,9 +5,10 @@ description = "Panel-based chat client for Semos Agentura MCP agents"
 requires-python = ">=3.13"
 dependencies = [
     "panelini[ai]",
-    "litellm",
+    "litellm>=1.30.0,!=1.82.7,!=1.82.8",
     "langchain-community",
     "mcp>=1.9",
+    "a2a-sdk>=1.0.0a0",
     "httpx>=0.28",
     "python-dotenv>=1.0",
 ]
