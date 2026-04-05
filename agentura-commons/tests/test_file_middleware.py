@@ -16,6 +16,7 @@ from agentura_commons.file_middleware import (
     post_process_tool_result,
     pre_process_tool_call,
 )
+from agentura_commons.mcp_client import AgentConnection
 
 # Shared schema definitions
 
@@ -347,9 +348,12 @@ class TestPostProcess:
                 ),
             ],
         )
+        agent = AgentConnection(
+            "doc", "http://localhost:8002/mcp/sse",
+            "http://localhost:8002",
+        )
         text, files = await post_process_tool_result(
-            "compose_document", result,
-            "http://localhost:8002", registry,
+            "compose_document", result, agent, registry,
         )
         assert len(files) == 1
         assert files[0].filename == "out.pdf"
@@ -364,8 +368,9 @@ class TestPostProcess:
         result = CallToolResult(
             content=[TextContent(type="text", text="plain text")],
         )
+        agent = AgentConnection("x", "http://x/mcp/sse", "http://x")
         text, files = await post_process_tool_result(
-            "tool", result, "http://x", registry,
+            "tool", result, agent, registry,
         )
         assert text == "plain text"
         assert files == []
@@ -379,17 +384,19 @@ class TestPostProcess:
                 ),
             ],
         )
+        agent = AgentConnection("x", "http://x/mcp/sse", "http://x")
         text, files = await post_process_tool_result(
-            "digest", result, "http://x", registry,
+            "digest", result, agent, registry,
         )
         assert files == []
         assert "Hello" in text
 
     @pytest.mark.asyncio
     async def test_empty_result(self, registry):
+        agent = AgentConnection("x", "http://x/mcp/sse", "http://x")
         result = CallToolResult(content=[])
         text, files = await post_process_tool_result(
-            "tool", result, "http://x", registry,
+            "tool", result, agent, registry,
         )
         assert text == ""
         assert files == []
@@ -435,9 +442,12 @@ class TestPostProcess:
                 ),
             ],
         )
+        agent = AgentConnection(
+            "email", "http://localhost:8001/mcp/sse",
+            "http://localhost:8001",
+        )
         text, files = await post_process_tool_result(
-            "read_email", result,
-            "http://localhost:8001", registry,
+            "read_email", result, agent, registry,
         )
         assert len(files) == 2
         assert registry.get("report.pdf") is not None
@@ -468,9 +478,12 @@ class TestPostProcess:
                 "size_bytes": 4,
             },
         )
+        agent = AgentConnection(
+            "doc", "http://localhost:8002/mcp/sse",
+            "http://localhost:8002",
+        )
         text, files = await post_process_tool_result(
-            "compose", result,
-            "http://localhost:8002", registry,
+            "compose", result, agent, registry,
         )
         assert len(files) == 1
         assert files[0].filename == "report.docx"

@@ -157,7 +157,7 @@ class AgenturaClient:
         # Post-middleware: fetch files, strip URLs
         agent = self.hub.agent_for_tool(name)
         text, new_files = await post_process_tool_result(
-            name, result, agent.base_url, self.registry,
+            name, result, agent, self.registry,
         )
 
         return ClientToolResult(

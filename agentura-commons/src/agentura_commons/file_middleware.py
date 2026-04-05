@@ -13,10 +13,12 @@ from __future__ import annotations
 import base64
 import json
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import httpx
 from mcp.types import CallToolResult, Tool
+
+from .mcp_client import AgentConnection
 
 logger = logging.getLogger(__name__)
 
@@ -281,7 +283,7 @@ async def _fetch_and_register(
 async def post_process_tool_result(
     tool_name: str,
     result: CallToolResult,
-    base_url: str,
+    agent: AgentConnection,
     registry: FileRegistry,
 ) -> tuple[str, list[FileEntry]]:
     """Process tool result: fetch files, register them, strip URLs.
@@ -291,6 +293,8 @@ async def post_process_tool_result(
     """
     if not result.content:
         return "", []
+
+    base_url = agent.base_url
 
     # Prefer structuredContent if available
     sc = getattr(result, "structuredContent", None)
