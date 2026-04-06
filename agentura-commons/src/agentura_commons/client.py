@@ -33,8 +33,14 @@ import httpx
 
 from .a2a_client import (
     A2AAgentInfo,
+)
+from .a2a_client import (
     close_all as _a2a_close_all,
+)
+from .a2a_client import (
     discover_agents as _a2a_discover,
+)
+from .a2a_client import (
     send_task as _a2a_send_task,
 )
 from .file_middleware import (

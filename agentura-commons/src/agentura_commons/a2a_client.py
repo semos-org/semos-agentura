@@ -10,7 +10,6 @@ import base64
 import logging
 import uuid
 from dataclasses import dataclass, field
-from typing import Any
 
 import httpx
 from a2a.client import (
