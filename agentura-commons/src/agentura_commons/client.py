@@ -56,17 +56,65 @@ class ClientToolResult:
     files: list[FileEntry] = field(default_factory=list)
     is_error: bool = False
 
+    def format_for_llm(self) -> str:
+        """Format result as text for an LLM prompt."""
+        parts: list[str] = []
+        if self.is_error:
+            return f"[Error] {self.text}"
+        if self.text:
+            parts.append(self.text)
+        if self.files:
+            names = [f.filename for f in self.files]
+            parts.append(f"[Produced: {', '.join(names)}]")
+        return "\n".join(parts) if parts else "Done."
+
 
 @dataclass
 class ClientA2AResult:
     """Result of an A2A agent interaction through the middleware."""
 
     text: str
+    agent_name: str = ""
     files: list[FileEntry] = field(default_factory=list)
     task_id: str | None = None
     context_id: str | None = None
     status: str = "completed"
     is_error: bool = False
+
+    def format_for_llm(self) -> str:
+        """Format result as text for an LLM prompt.
+
+        Includes agent name, status indicators, file names, and
+        continuation hints so the LLM can act on the result.
+        """
+        prefix = f"[{self.agent_name}] " if self.agent_name else ""
+        parts: list[str] = []
+
+        if self.status == "input_required":
+            parts.append(f"{prefix}[Task {self.task_id} - needs input]")
+            parts.append(f"Agent asks: {self.text}")
+            parts.append("")
+            agent_arg = f'"{self.agent_name}", ' if self.agent_name else ""
+            parts.append(f'Continue with: ask_agent({agent_arg}message=<your answer>, task_id="{self.task_id}")')
+            return "\n".join(parts)
+
+        if self.status == "rejected":
+            return f"{prefix}[Rejected] {self.text}"
+
+        if self.status == "auth_required":
+            return f"{prefix}[Auth required] {self.text}"
+
+        if self.status == "failed":
+            return f"{prefix}[Failed] {self.text}"
+
+        # Completed
+        if self.text:
+            parts.append(f"{prefix}{self.text}")
+        if self.files:
+            names = [f.filename for f in self.files]
+            parts.append(f"[Produced: {', '.join(names)}]")
+
+        return "\n".join(parts) if parts else f"{prefix}Done."
 
 
 class AgenturaClient:
@@ -242,6 +290,7 @@ class AgenturaClient:
         if not agent:
             return ClientA2AResult(
                 text=f"Agent '{name}' not found via A2A.",
+                agent_name=name,
                 is_error=True,
             )
 
@@ -312,6 +361,7 @@ class AgenturaClient:
 
         return ClientA2AResult(
             text=text,
+            agent_name=name,
             files=[f for f in registered_files if f],
             task_id=result.task_id,
             context_id=result.context_id,
