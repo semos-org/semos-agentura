@@ -31,13 +31,55 @@ def _port_in_use(port: int) -> bool:
         return s.connect_ex(("127.0.0.1", port)) == 0
 
 
+def _kill_port(port: int) -> bool:
+    """Kill the process listening on a port. Returns True if killed."""
+    if not _port_in_use(port):
+        return False
+    if sys.platform == "win32":
+        # netstat -ano | findstr :PORT
+        out = subprocess.run(
+            ["netstat", "-ano"],
+            capture_output=True, text=True,
+        )
+        for line in out.stdout.splitlines():
+            # "LISTENING" (en) or "ABHREN" (de)
+            upper = line.upper()
+            if f":{port}" in line and ("LISTEN" in upper or "ABH" in upper):
+                pid = line.strip().split()[-1]
+                subprocess.run(
+                    ["taskkill", "/F", "/PID", pid],
+                    capture_output=True,
+                )
+                print(f"  Killed PID {pid} on port {port}")
+                time.sleep(0.5)
+                return True
+    else:
+        # lsof -ti :PORT | xargs kill
+        out = subprocess.run(
+            ["lsof", "-ti", f":{port}"],
+            capture_output=True, text=True,
+        )
+        if out.stdout.strip():
+            for pid in out.stdout.strip().split("\n"):
+                subprocess.run(["kill", "-9", pid.strip()])
+            print(f"  Killed process on port {port}")
+            time.sleep(0.5)
+            return True
+    return False
+
+
 def main():
     procs: list[subprocess.Popen] = []
+
+    # Kill existing processes on our ports
+    all_ports = [p for _, _, p in AGENTS] + [UI_PORT]
+    for port in all_ports:
+        _kill_port(port)
 
     # Start agents
     for name, module, port in AGENTS:
         if _port_in_use(port):
-            print(f"  {name}: port {port} already in use, skipping")
+            print(f"  {name}: port {port} still in use, skipping")
             continue
         print(f"  Starting {name} on port {port}...")
         p = subprocess.Popen(
