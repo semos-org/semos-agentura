@@ -48,11 +48,42 @@ class DocumentAgentService(BaseAgentService):
     def get_tools(self) -> list[ToolDef]:
         _fh = "Accepts an absolute file path or base64-encoded file content."
         return [
-            ToolDef(name="digest_document", description=f"Digest a document (PDF, image, Office) into Markdown via OCR. {_fh}", fn=self._digest, file_params=["source"], read_only=True, idempotent=True),
-            ToolDef(name="compose_document", description="Render Markdown source text into a document (PDF, PPTX, DOCX, HTML). Returns a download URL.", fn=self._compose, task_support="optional", idempotent=True),
-            ToolDef(name="generate_diagram", description="Generate a diagram (Mermaid or draw.io) from a text description. Returns a download URL.", fn=self._generate_diagram, task_support="optional"),
-            ToolDef(name="inspect_form", description=f"Inspect form fields in a PDF or DOCX. {_fh}", fn=self._inspect_form, file_params=["file_path"], read_only=True, idempotent=True),
-            ToolDef(name="fill_form", description=f"Fill form fields in a PDF or DOCX. Returns a download URL. {_fh}", fn=self._fill_form, file_params=["file_path"], task_support="optional"),
+            ToolDef(
+                name="digest_document",
+                description=f"Digest a document (PDF, image, Office) into Markdown via OCR. {_fh}",
+                fn=self._digest,
+                file_params=["source"],
+                read_only=True,
+                idempotent=True,
+            ),
+            ToolDef(
+                name="compose_document",
+                description="Render Markdown source text into a document (PDF, PPTX, DOCX, HTML). Returns a download URL.",
+                fn=self._compose,
+                task_support="optional",
+                idempotent=True,
+            ),
+            ToolDef(
+                name="generate_diagram",
+                description="Generate a diagram (Mermaid or draw.io) from a text description. Returns a download URL.",
+                fn=self._generate_diagram,
+                task_support="optional",
+            ),
+            ToolDef(
+                name="inspect_form",
+                description=f"Inspect form fields in a PDF or DOCX. {_fh}",
+                fn=self._inspect_form,
+                file_params=["file_path"],
+                read_only=True,
+                idempotent=True,
+            ),
+            ToolDef(
+                name="fill_form",
+                description=f"Fill form fields in a PDF or DOCX. Returns a download URL. {_fh}",
+                fn=self._fill_form,
+                file_params=["file_path"],
+                task_support="optional",
+            ),
         ]
 
     def get_skills(self) -> list[SkillDef]:
@@ -80,7 +111,8 @@ class DocumentAgentService(BaseAgentService):
         return "Available tools: digest_document, compose_document, generate_diagram, inspect_form, fill_form."
 
     def _resolve_file(
-        self, source: str,
+        self,
+        source: str,
         default_ext: str = ".bin",
         filename: str = "",
     ) -> Path:
@@ -113,7 +145,8 @@ class DocumentAgentService(BaseAgentService):
         return p
 
     def _resolve_file_attachment(
-        self, source: FileAttachment | str,
+        self,
+        source: FileAttachment | str,
         default_ext: str = ".bin",
     ) -> Path:
         """Resolve a FileAttachment or plain string to a local Path."""
@@ -125,7 +158,8 @@ class DocumentAgentService(BaseAgentService):
         return self._resolve_file(source, default_ext=default_ext)
 
     async def _digest(
-        self, source: FileAttachment | str,
+        self,
+        source: FileAttachment | str,
         output_mode: str = "text",
         max_pages: int | None = None,
     ) -> str:
@@ -170,7 +204,9 @@ class DocumentAgentService(BaseAgentService):
             source_path = tmp_md
 
         def _run():
-            return compose(source=source_path, output_path=out_path, format=fmt, is_slides=is_slides, settings=self._settings)
+            return compose(
+                source=source_path, output_path=out_path, format=fmt, is_slides=is_slides, settings=self._settings
+            )
 
         result = await asyncio.to_thread(_run)
         return self.file_response(result.output_path, display_name=filename)
@@ -179,8 +215,10 @@ class DocumentAgentService(BaseAgentService):
         """Generate a diagram from a text description."""
         # generate_diagram is async (unlike the other functions)
         result = await generate_diagram(
-            description=description, diagram_type=diagram_type,
-            output_dir=self.output_dir, settings=self._settings,
+            description=description,
+            diagram_type=diagram_type,
+            output_dir=self.output_dir,
+            settings=self._settings,
         )
         resp: dict = {
             "iterations": result.iterations,
@@ -209,8 +247,10 @@ class DocumentAgentService(BaseAgentService):
         return json.dumps(fields, ensure_ascii=False)
 
     async def _fill_form(
-        self, file_path: FileAttachment | str,
-        data: str, filename: str = "",
+        self,
+        file_path: FileAttachment | str,
+        data: str,
+        filename: str = "",
     ) -> str:
         """Fill form fields and return a download URL.
 
@@ -239,7 +279,8 @@ _service = DocumentAgentService()
 
 
 def create_service_app(
-    host: str | None = None, port: str | int | None = None,
+    host: str | None = None,
+    port: str | int | None = None,
 ):
     """Create the FastAPI app. Called lazily by uvicorn."""
     h = host or os.getenv("AGENT_HOST", "127.0.0.1")

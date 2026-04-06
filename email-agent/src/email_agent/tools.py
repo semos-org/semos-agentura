@@ -121,8 +121,7 @@ TOOL_DEFINITIONS = [
         "function": {
             "name": "draft_event",
             "description": (
-                "Create a calendar event draft. If attendees are specified, "
-                "meeting invitations are NOT sent yet."
+                "Create a calendar event draft. If attendees are specified, meeting invitations are NOT sent yet."
             ),
             "parameters": {
                 "type": "object",
@@ -224,7 +223,8 @@ class ToolExecutor:
                 )
                 return [
                     {
-                        "entry_id": m.uid, "subject": m.subject,
+                        "entry_id": m.uid,
+                        "subject": m.subject,
                         "sender": m.sender_name or m.sender,
                         "sender_email": m.sender,
                         "received": str(m.date or ""),
@@ -255,9 +255,11 @@ class ToolExecutor:
                 # For COM backend: save attachments if requested
                 if include_attachments and save_dir and self._backend.supports_com:
                     raw = self._backend.raw_com.read_email(
-                        uid, save_attachments_to=save_dir,
+                        uid,
+                        save_attachments_to=save_dir,
                     )
                     from .backend import _com_dict_to_email
+
                     full = _com_dict_to_email(raw)
                     att_info = [
                         {
@@ -272,10 +274,12 @@ class ToolExecutor:
                     att_info = [{"filename": a.filename} for a in full.attachments]
 
                 return {
-                    "entry_id": full.uid, "subject": full.subject,
+                    "entry_id": full.uid,
+                    "subject": full.subject,
                     "sender": full.sender_name or full.sender,
                     "sender_email": full.sender,
-                    "to": "; ".join(full.to), "cc": "; ".join(full.cc),
+                    "to": "; ".join(full.to),
+                    "cc": "; ".join(full.cc),
                     "body": full.body,
                     "attachments": att_info,
                 }
@@ -291,8 +295,10 @@ class ToolExecutor:
                 return [
                     {
                         "subject": e.subject,
-                        "start": str(e.start or ""), "end": str(e.end or ""),
-                        "location": e.location, "all_day": e.all_day,
+                        "start": str(e.start or ""),
+                        "end": str(e.end or ""),
+                        "location": e.location,
+                        "all_day": e.all_day,
                         "organizer": e.organizer,
                     }
                     for e in events
@@ -326,8 +332,10 @@ class ToolExecutor:
                 if isinstance(att, str):
                     att = [a.strip() for a in att.split(",") if a.strip()] or None
                 entry_id = self._backend.create_draft(
-                    to=to, subject=args["subject"],
-                    body=md_to_plain(args["body"]), cc=cc,
+                    to=to,
+                    subject=args["subject"],
+                    body=md_to_plain(args["body"]),
+                    cc=cc,
                     attachments=att,
                 )
                 return {"status": "draft created", "entry_id": entry_id}
@@ -350,25 +358,34 @@ class ToolExecutor:
                 if self._backend.supports_com and attendees:
                     send = name == "send_event"
                     entry_id = self._create_meeting_com(
-                        subject=args["subject"], start=start, end=end,
-                        location=args.get("location", ""), body=body,
-                        attendees=attendees, send=send,
+                        subject=args["subject"],
+                        start=start,
+                        end=end,
+                        location=args.get("location", ""),
+                        body=body,
+                        attendees=attendees,
+                        send=send,
                     )
                 else:
                     entry_id = cal.create_event(
-                        subject=args["subject"], start=start, end=end,
-                        location=args.get("location", ""), body=body,
+                        subject=args["subject"],
+                        start=start,
+                        end=end,
+                        location=args.get("location", ""),
+                        body=body,
                         required_attendees=attendees,
                     )
                 status = (
-                    "event sent (invitations delivered)" if name == "send_event"
+                    "event sent (invitations delivered)"
+                    if name == "send_event"
                     else "event draft created (invitations NOT sent)"
                 )
                 return {"status": status, "entry_id": entry_id}
 
             case "draft_reply" | "send_reply":
                 msgs = self._backend.search_emails(
-                    args.get("query", ""), limit=1,
+                    args.get("query", ""),
+                    limit=1,
                     from_addr=args.get("from_addr", ""),
                     to_addr=args.get("to_addr", ""),
                 )
@@ -392,9 +409,14 @@ class ToolExecutor:
                 return {"error": f"Unknown tool: {name}"}
 
     def _create_meeting_com(
-        self, subject: str, start: datetime, end: datetime,
-        location: str = "", body: str = "",
-        attendees: str = "", send: bool = False,
+        self,
+        subject: str,
+        start: datetime,
+        end: datetime,
+        location: str = "",
+        body: str = "",
+        attendees: str = "",
+        send: bool = False,
     ) -> str:
         """COM-specific meeting creation with Display() for drafts."""
         com = self._backend.raw_com

@@ -126,7 +126,8 @@ class LLMClient:
     ) -> str:
         """Send chat completion, return assistant text."""
         url, headers, payload = self._build_request(
-            messages, max_tokens=max_tokens,
+            messages,
+            max_tokens=max_tokens,
         )
         async with httpx.AsyncClient() as client:
             resp = await client.post(
@@ -138,7 +139,8 @@ class LLMClient:
             if resp.status_code >= 400:
                 logger.error(
                     "LLM API error %d: %s",
-                    resp.status_code, resp.text[:500],
+                    resp.status_code,
+                    resp.text[:500],
                 )
                 resp.raise_for_status()
             return self._extract_text(resp.json())

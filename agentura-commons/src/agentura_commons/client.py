@@ -98,7 +98,8 @@ class AgenturaClient:
         blob = path.read_bytes()
         mime, _ = mimetypes.guess_type(str(path))
         self.registry.register(
-            filename, blob,
+            filename,
+            blob,
             mime=mime or "application/octet-stream",
             source="upload",
         )
@@ -106,12 +107,17 @@ class AgenturaClient:
         return filename
 
     def upload_bytes(
-        self, blob: bytes, filename: str,
+        self,
+        blob: bytes,
+        filename: str,
         mime: str = "application/octet-stream",
     ) -> str:
         """Register raw bytes in the file registry."""
         self.registry.register(
-            filename, blob, mime=mime, source="upload",
+            filename,
+            blob,
+            mime=mime,
+            source="upload",
         )
         return filename
 
@@ -121,7 +127,9 @@ class AgenturaClient:
         return self.hub.all_tools()
 
     async def call_tool(
-        self, name: str, args: dict,
+        self,
+        name: str,
+        args: dict,
     ) -> ClientToolResult:
         """Call a tool with file middleware.
 
@@ -139,7 +147,10 @@ class AgenturaClient:
 
         # Pre-middleware: resolve file references
         processed_args = pre_process_tool_call(
-            name, args, tool_schema, self.registry,
+            name,
+            args,
+            tool_schema,
+            self.registry,
         )
 
         # MCP call
@@ -147,17 +158,16 @@ class AgenturaClient:
 
         # Check for errors
         if result.isError:
-            text = (
-                result.content[0].text
-                if result.content and hasattr(result.content[0], "text")
-                else "Tool error"
-            )
+            text = result.content[0].text if result.content and hasattr(result.content[0], "text") else "Tool error"
             return ClientToolResult(text=text, is_error=True)
 
         # Post-middleware: fetch files, strip URLs
         agent = self.hub.agent_for_tool(name)
         text, new_files = await post_process_tool_result(
-            name, result, agent, self.registry,
+            name,
+            result,
+            agent,
+            self.registry,
         )
 
         return ClientToolResult(

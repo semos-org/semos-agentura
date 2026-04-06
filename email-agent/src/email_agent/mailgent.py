@@ -15,8 +15,10 @@ import litellm
 from .backend import create_backend
 from .config import Settings
 from .formatting import (
-    md_to_plain, md_to_html,
-    html_to_annotated_text, extract_prompt_style,
+    md_to_plain,
+    md_to_html,
+    html_to_annotated_text,
+    extract_prompt_style,
 )
 from .tools import TOOL_DEFINITIONS, ToolExecutor
 
@@ -64,12 +66,8 @@ def _sep_plain_err(rid: str) -> str:
     return f"------------ mailgent[{rid}] ERROR ------------"
 
 
-_MARKER_STYLE = (
-    "margin:4px 0;padding:0;font-size:9px;color:#aaa;font-family:monospace"
-)
-_MARKER_ERR_STYLE = (
-    "margin:4px 0;padding:0;font-size:9px;color:#c33;font-family:monospace"
-)
+_MARKER_STYLE = "margin:4px 0;padding:0;font-size:9px;color:#aaa;font-family:monospace"
+_MARKER_ERR_STYLE = "margin:4px 0;padding:0;font-size:9px;color:#c33;font-family:monospace"
 
 
 def _sep_html_open(rid: str) -> str:
@@ -146,6 +144,7 @@ def _strip_subject_prefixes(subject: str) -> str:
 
 # Mailgent class
 
+
 class Mailgent:
     """LLM agent that processes @mailgent-tagged emails."""
 
@@ -175,6 +174,7 @@ class Mailgent:
         if not trusted_list:
             return True
         import fnmatch
+
         email_lower = sender_email.lower()
         return any(fnmatch.fnmatch(email_lower, p) for p in trusted_list)
 
@@ -219,11 +219,11 @@ class Mailgent:
                 folder = com._ns.GetDefaultFolder(folder_id)
                 items = folder.Items
                 filt = (
-                    f'@SQL=('
-                    f'"urn:schemas:httpmail:subject" LIKE \'%{self.tag}%\''
-                    f' OR '
-                    f'"urn:schemas:httpmail:textdescription" LIKE \'%{self.tag}%\''
-                    f')'
+                    f"@SQL=("
+                    f"\"urn:schemas:httpmail:subject\" LIKE '%{self.tag}%'"
+                    f" OR "
+                    f"\"urn:schemas:httpmail:textdescription\" LIKE '%{self.tag}%'"
+                    f")"
                 )
                 try:
                     items = items.Restrict(filt)
@@ -250,6 +250,7 @@ class Mailgent:
 
     def _check_com_item(self, item, folder_name: str, found: list) -> None:
         from .com_client import OL_MAIL
+
         subject = str(item.Subject or "")
         body = str(getattr(item, "Body", "") or "")
 
@@ -258,9 +259,7 @@ class Mailgent:
 
         if folder_name == "Inbox":
             try:
-                verb = item.PropertyAccessor.GetProperty(
-                    "http://schemas.microsoft.com/mapi/proptag/0x10810003"
-                )
+                verb = item.PropertyAccessor.GetProperty("http://schemas.microsoft.com/mapi/proptag/0x10810003")
                 if verb in (102, 103):
                     return
             except Exception:
@@ -277,16 +276,18 @@ class Mailgent:
 
         body_format = getattr(item, "BodyFormat", 1)
         is_html = body_format == 2
-        found.append({
-            "entry_id": item.EntryID,
-            "subject": subject,
-            "body": body,
-            "html_body": str(item.HTMLBody or "") if is_html else "",
-            "is_html": is_html,
-            "folder": folder_name,
-            "sender": str(getattr(item, "SenderName", "") or ""),
-            "sender_email": str(getattr(item, "SenderEmailAddress", "") or ""),
-        })
+        found.append(
+            {
+                "entry_id": item.EntryID,
+                "subject": subject,
+                "body": body,
+                "html_body": str(item.HTMLBody or "") if is_html else "",
+                "is_html": is_html,
+                "folder": folder_name,
+                "sender": str(getattr(item, "SenderName", "") or ""),
+                "sender_email": str(getattr(item, "SenderEmailAddress", "") or ""),
+            }
+        )
 
     def _poll_imap(self) -> list[dict]:
         """IMAP polling - search by subject for the tag."""
@@ -302,16 +303,18 @@ class Mailgent:
                         has_unprocessed = bool(self._re_prompt.search(msg.subject))
                     if not has_unprocessed:
                         continue
-                    found.append({
-                        "entry_id": msg.uid,
-                        "subject": msg.subject,
-                        "body": msg.body_text or "",
-                        "html_body": msg.body_html or "",
-                        "is_html": bool(msg.body_html),
-                        "folder": display_name,
-                        "sender": msg.sender_name or "",
-                        "sender_email": msg.sender or "",
-                    })
+                    found.append(
+                        {
+                            "entry_id": msg.uid,
+                            "subject": msg.subject,
+                            "body": msg.body_text or "",
+                            "html_body": msg.body_html or "",
+                            "is_html": bool(msg.body_html),
+                            "folder": display_name,
+                            "sender": msg.sender_name or "",
+                            "sender_email": msg.sender or "",
+                        }
+                    )
             except Exception as e:
                 logger.error("Error scanning %s: %s", folder_name, e)
 
@@ -347,7 +350,10 @@ class Mailgent:
 
             logger.info(
                 "[%s] %s mailgent[%s]: %s",
-                email["folder"], email["subject"][:40], rid, prompt_text[:60],
+                email["folder"],
+                email["subject"][:40],
+                rid,
+                prompt_text[:60],
             )
 
             html_style = ""
@@ -372,8 +378,12 @@ class Mailgent:
 
             if email["folder"] == "Drafts":
                 self._update_draft(
-                    email["entry_id"], prompt_text, rid, response_text,
-                    is_html=is_html, error=error,
+                    email["entry_id"],
+                    prompt_text,
+                    rid,
+                    response_text,
+                    is_html=is_html,
+                    error=error,
                 )
             elif email["folder"] == "Inbox":
                 sender = email.get("sender_email", "")
@@ -400,8 +410,10 @@ class Mailgent:
             # Also search sent
             if self.backend.supports_com:
                 from .com_client import OL_FOLDER_SENT
+
                 sent_raw = self.backend.raw_com.search_emails(base, folder_id=OL_FOLDER_SENT, limit=limit)
                 from .backend import _com_dict_to_email
+
                 sent = [_com_dict_to_email(d) for d in sent_raw]
             else:
                 sent = self.backend.search_emails(base, folder="Sent", limit=limit)
@@ -429,15 +441,11 @@ class Mailgent:
                 if len(body) > 2000:
                     body = body[:2000] + "\n[... truncated]"
                 date_str = str(r.date)[:19] if r.date else "?"
-                parts.append(
-                    f"--- {date_str} From: {r.sender_name or r.sender} ---\n"
-                    f"Subject: {r.subject}\n\n{body}"
-                )
+                parts.append(f"--- {date_str} From: {r.sender_name or r.sender} ---\nSubject: {r.subject}\n\n{body}")
             except Exception:
                 date_str = str(r.date)[:19] if r.date else "?"
                 parts.append(
-                    f"--- {date_str} From: {r.sender_name or r.sender} ---\n"
-                    f"Subject: {r.subject}\n(body not available)"
+                    f"--- {date_str} From: {r.sender_name or r.sender} ---\nSubject: {r.subject}\n(body not available)"
                 )
 
         return "\n\n".join(parts)
@@ -445,16 +453,16 @@ class Mailgent:
     # LLM with tools
 
     def _run_llm(
-        self, prompt: str,
-        thread_context: str = "", email_body: str = "",
+        self,
+        prompt: str,
+        thread_context: str = "",
+        email_body: str = "",
         max_rounds: int = 25,
     ) -> str:
         system = SYSTEM_PROMPT.format(today=datetime.now().strftime("%A, %d.%m.%Y"))
         parts = []
         if thread_context:
-            parts.append(
-                f"EMAIL THREAD CONTEXT (related emails, oldest first):\n\n{thread_context}"
-            )
+            parts.append(f"EMAIL THREAD CONTEXT (related emails, oldest first):\n\n{thread_context}")
         if email_body:
             parts.append(
                 f"CURRENT EMAIL BODY "
@@ -482,11 +490,13 @@ class Mailgent:
             if not msg.tool_calls:
                 return msg.content or ""
 
-            messages.append({
-                "role": "assistant",
-                "content": msg.content,
-                "tool_calls": msg.tool_calls,
-            })
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": msg.content,
+                    "tool_calls": msg.tool_calls,
+                }
+            )
 
             for tc in msg.tool_calls:
                 args = tc.function.arguments
@@ -494,20 +504,26 @@ class Mailgent:
                     args = json.loads(args)
                 logger.info("  Tool: %s(%s)", tc.function.name, json.dumps(args, ensure_ascii=False)[:100])
                 result = self.executor.execute(tc.function.name, args)
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tc.id,
-                    "content": result,
-                })
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "content": result,
+                    }
+                )
 
         raise RuntimeError("max tool rounds exceeded")
 
     # Draft update
 
     def _update_draft(
-        self, entry_id: str,
-        prompt_text: str, rid: str, response: str,
-        is_html: bool = False, error: bool = False,
+        self,
+        entry_id: str,
+        prompt_text: str,
+        rid: str,
+        response: str,
+        is_html: bool = False,
+        error: bool = False,
     ) -> None:
         if self.backend.supports_com:
             self._update_draft_com(entry_id, prompt_text, rid, response, is_html=is_html, error=error)
@@ -515,9 +531,13 @@ class Mailgent:
             self._update_draft_imap(entry_id, prompt_text, rid, response, is_html=is_html, error=error)
 
     def _update_draft_com(
-        self, entry_id: str,
-        prompt_text: str, rid: str, response: str,
-        is_html: bool = False, error: bool = False,
+        self,
+        entry_id: str,
+        prompt_text: str,
+        rid: str,
+        response: str,
+        is_html: bool = False,
+        error: bool = False,
     ) -> None:
         com = self.backend.raw_com
         for attempt in range(3):
@@ -538,9 +558,13 @@ class Mailgent:
                     logger.error("Draft update failed after 3: %s", e)
 
     def _update_draft_imap(
-        self, entry_id: str,
-        prompt_text: str, rid: str, response: str,
-        is_html: bool = False, error: bool = False,
+        self,
+        entry_id: str,
+        prompt_text: str,
+        rid: str,
+        response: str,
+        is_html: bool = False,
+        error: bool = False,
     ) -> None:
         """IMAP draft update: delete old draft, save new one with response inserted."""
         try:
@@ -566,7 +590,10 @@ class Mailgent:
             client = self.backend._ensure_client()
             client.delete_draft(entry_id)
             client.save_draft(
-                to=msg.to, subject=msg.subject, body=new_body, body_type="plain",
+                to=msg.to,
+                subject=msg.subject,
+                body=new_body,
+                body_type="plain",
             )
             logger.info("IMAP draft updated [%s]: %s", rid, msg.subject)
         except Exception as e:
@@ -650,7 +677,10 @@ class Mailgent:
     def run(self, poll_interval: int = 30) -> None:
         logger.info(
             "@mailgent started (model=%s, poll=%ds, auto_reply=%s, auto_send=%s)",
-            self.model, poll_interval, self.auto_reply, self.auto_send,
+            self.model,
+            poll_interval,
+            self.auto_reply,
+            self.auto_send,
         )
         consecutive_errors = 0
         while True:
@@ -664,7 +694,7 @@ class Mailgent:
                 break
             except Exception as e:
                 consecutive_errors += 1
-                backoff = min(poll_interval * (2 ** consecutive_errors), 600)
+                backoff = min(poll_interval * (2**consecutive_errors), 600)
                 logger.error("Poll error (%d): %s -- retry in %ds", consecutive_errors, e, backoff)
                 time.sleep(backoff)
                 continue

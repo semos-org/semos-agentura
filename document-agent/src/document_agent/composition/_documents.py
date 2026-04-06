@@ -36,7 +36,8 @@ def compose_document(
     cmd = [
         str(pandoc_path),
         str(md_path),
-        "-o", str(output_path),
+        "-o",
+        str(output_path),
         "--standalone",
     ]
 

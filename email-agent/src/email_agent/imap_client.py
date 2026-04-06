@@ -32,9 +32,7 @@ class IMAPClient:
     def connect(self) -> None:
         """Connect and authenticate via XOAUTH2."""
         try:
-            self._conn = imaplib.IMAP4_SSL(
-                self._settings.imap_host, self._settings.imap_port
-            )
+            self._conn = imaplib.IMAP4_SSL(self._settings.imap_host, self._settings.imap_port)
             access_token = self._authenticator.authenticate()
             auth_string = f"user={self._settings.email_address}\x01auth=Bearer {access_token}\x01\x01"
             self._conn.authenticate("XOAUTH2", lambda _: auth_string.encode())
@@ -83,9 +81,7 @@ class IMAPClient:
 
     # -- Read operations --
 
-    def list_messages(
-        self, folder: str = "INBOX", limit: int = 25
-    ) -> list[EmailMessage]:
+    def list_messages(self, folder: str = "INBOX", limit: int = 25) -> list[EmailMessage]:
         """List recent messages from a folder (headers only).
 
         Args:
@@ -111,9 +107,7 @@ class IMAPClient:
         messages: list[EmailMessage] = []
         # Fetch headers in batch
         uid_range = b",".join(uids)
-        status, fetch_data = self._imap.fetch(
-            uid_range, "(FLAGS BODY.PEEK[HEADER])"
-        )
+        status, fetch_data = self._imap.fetch(uid_range, "(FLAGS BODY.PEEK[HEADER])")
         if status != "OK":
             raise IMAPError(f"IMAP fetch failed: {status}")
 
@@ -192,9 +186,9 @@ class IMAPClient:
         if subject:
             criteria.append(f'SUBJECT "{subject}"')
         if since:
-            criteria.append(f'SINCE {since.strftime("%d-%b-%Y")}')
+            criteria.append(f"SINCE {since.strftime('%d-%b-%Y')}")
         if before:
-            criteria.append(f'BEFORE {before.strftime("%d-%b-%Y")}')
+            criteria.append(f"BEFORE {before.strftime('%d-%b-%Y')}")
         if unseen:
             criteria.append("UNSEEN")
 
@@ -241,9 +235,7 @@ class IMAPClient:
         msg = self._compose_message(to, subject, body, body_type, cc, attachments)
         raw = msg.as_bytes()
         drafts_folder = self._find_folder("\\Drafts")
-        status, _ = self._imap.append(
-            drafts_folder, "\\Draft", None, raw
-        )
+        status, _ = self._imap.append(drafts_folder, "\\Draft", None, raw)
         if status != "OK":
             raise IMAPError("Failed to save draft")
 
@@ -284,9 +276,7 @@ class IMAPClient:
                 with open(path, "rb") as f:
                     part.set_payload(f.read())
                 encoders.encode_base64(part)
-                part.add_header(
-                    "Content-Disposition", f'attachment; filename="{path.name}"'
-                )
+                part.add_header("Content-Disposition", f'attachment; filename="{path.name}"')
                 msg.attach(part)
 
         return msg
@@ -305,22 +295,16 @@ class IMAPClient:
                 decoded.append(part)
         return "".join(decoded)
 
-    def _parse_headers(
-        self, uid: str, msg: Message, is_read: bool
-    ) -> EmailMessage:
+    def _parse_headers(self, uid: str, msg: Message, is_read: bool) -> EmailMessage:
         """Parse email headers into an EmailMessage (no body)."""
         sender_raw = msg.get("From", "")
         sender_name, sender_addr = email.utils.parseaddr(sender_raw)
 
         to_raw = msg.get("To", "")
-        to_addrs = [
-            addr for _, addr in email.utils.getaddresses([to_raw]) if addr
-        ]
+        to_addrs = [addr for _, addr in email.utils.getaddresses([to_raw]) if addr]
 
         cc_raw = msg.get("Cc", "")
-        cc_addrs = [
-            addr for _, addr in email.utils.getaddresses([cc_raw]) if addr
-        ]
+        cc_addrs = [addr for _, addr in email.utils.getaddresses([cc_raw]) if addr]
 
         date_str = msg.get("Date")
         date = None
@@ -340,9 +324,7 @@ class IMAPClient:
             is_read=is_read,
         )
 
-    def _parse_full(
-        self, uid: str, msg: Message, is_read: bool
-    ) -> EmailMessage:
+    def _parse_full(self, uid: str, msg: Message, is_read: bool) -> EmailMessage:
         """Parse a full email message including body and attachments."""
         email_msg = self._parse_headers(uid, msg, is_read)
 
@@ -383,9 +365,7 @@ class IMAPClient:
         return email_msg
 
     @staticmethod
-    def _extract_uid_from_meta(
-        meta_line: str, uids: list[bytes], index: int
-    ) -> str:
+    def _extract_uid_from_meta(meta_line: str, uids: list[bytes], index: int) -> str:
         """Extract the message sequence number from a fetch response line."""
         # The meta line looks like: b'1 (FLAGS (\\Seen) BODY[HEADER] {1234}'
         # Extract the sequence number (first token)

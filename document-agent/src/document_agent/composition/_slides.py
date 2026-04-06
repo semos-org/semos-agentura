@@ -14,6 +14,7 @@ from ..models import OutputFormat
 
 logger = logging.getLogger(__name__)
 
+
 def _find_browser() -> Path | None:
     """Auto-detect a usable Chromium-based browser.
 
@@ -35,31 +36,24 @@ def _find_browser() -> Path | None:
     )
     if pw_cache.is_dir():
         # Find newest chromium dir
-        for chrome_dir in sorted(
-            pw_cache.glob("chromium-*"), reverse=True
-        ):
+        for chrome_dir in sorted(pw_cache.glob("chromium-*"), reverse=True):
             for candidate in (
                 chrome_dir / "chrome-win" / "chrome.exe",
                 chrome_dir / "chrome-linux" / "chrome",
-                chrome_dir / "chrome-mac" / "Chromium.app"
-                / "Contents" / "MacOS" / "Chromium",
+                chrome_dir / "chrome-mac" / "Chromium.app" / "Contents" / "MacOS" / "Chromium",
             ):
                 if candidate.is_file():
                     return candidate
 
     # 2. Puppeteer bundled Chromium (draw.io-export)
     try:
-        p = next(root.glob(
-            "tools/node_modules/**/chrome-win/chrome.exe"
-        ))
+        p = next(root.glob("tools/node_modules/**/chrome-win/chrome.exe"))
         if p.is_file():
             return p
     except StopIteration:
         pass
     try:
-        p = next(root.glob(
-            "tools/node_modules/**/chrome-linux/chrome"
-        ))
+        p = next(root.glob("tools/node_modules/**/chrome-linux/chrome"))
         if p.is_file():
             return p
     except StopIteration:
@@ -67,10 +61,14 @@ def _find_browser() -> Path | None:
 
     # 3. System browsers
     system_paths = [
-        Path(r"C:\Program Files (x86)\Microsoft\Edge"
-             r"\Application\msedge.exe"),
-        Path(r"C:\Program Files\Google\Chrome"
-             r"\Application\chrome.exe"),
+        Path(
+            r"C:\Program Files (x86)\Microsoft\Edge"
+            r"\Application\msedge.exe"
+        ),
+        Path(
+            r"C:\Program Files\Google\Chrome"
+            r"\Application\chrome.exe"
+        ),
     ]
     for sp in system_paths:
         if sp.is_file():
@@ -78,8 +76,10 @@ def _find_browser() -> Path | None:
 
     # 4. PATH lookup (Linux / macOS / Docker)
     for name in (
-        "google-chrome-stable", "google-chrome",
-        "chromium-browser", "chromium",
+        "google-chrome-stable",
+        "google-chrome",
+        "chromium-browser",
+        "chromium",
     ):
         found = shutil.which(name)
         if found:
@@ -118,7 +118,10 @@ def compose_slides(
 
 
 def _run_marp(
-    marp_path: Path, md_path: Path, output_path: Path, format_flag: str,
+    marp_path: Path,
+    md_path: Path,
+    output_path: Path,
+    format_flag: str,
     extra_flags: list[str] | None = None,
 ) -> None:
     """Run the marp CLI."""
@@ -136,13 +139,18 @@ def _run_marp(
         str(md_path),
         format_flag,
         "--allow-local-files",
-        "--output", str(output_path),
+        "--output",
+        str(output_path),
         *(extra_flags or []),
     ]
     logger.info("Running: %s", " ".join(cmd))
     result = subprocess.run(
-        cmd, capture_output=True, text=True, timeout=120,
-        shell=(os.name == "nt"), env=env,
+        cmd,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        shell=(os.name == "nt"),
+        env=env,
     )
     if result.returncode != 0:
         raise CompositionError(f"Marp failed: {result.stderr}")

@@ -53,27 +53,33 @@ def merge_ocr_responses(responses: list[OCRResponse]) -> OCRResponse:
                 old_id = img.id
                 new_id = f"chunk{chunk_idx}_{old_id}"
                 md = md.replace(old_id, new_id)
-                images.append({
-                    "id": new_id,
-                    "image_base64": img.image_base64,
-                    "image_annotation": img.image_annotation,
-                })
+                images.append(
+                    {
+                        "id": new_id,
+                        "image_base64": img.image_base64,
+                        "image_annotation": img.image_annotation,
+                    }
+                )
             tables = []
             for tbl in page.tables:
                 old_id = tbl.id
                 new_id = f"chunk{chunk_idx}_{old_id}"
                 md = md.replace(old_id, new_id)
-                tables.append({
-                    "id": new_id,
-                    "content": tbl.content,
-                    "format": tbl.format,
-                })
-            merged["pages"].append({
-                "index": page_offset + page.index,
-                "markdown": md,
-                "images": images,
-                "tables": tables,
-            })
+                tables.append(
+                    {
+                        "id": new_id,
+                        "content": tbl.content,
+                        "format": tbl.format,
+                    }
+                )
+            merged["pages"].append(
+                {
+                    "index": page_offset + page.index,
+                    "markdown": md,
+                    "images": images,
+                    "tables": tables,
+                }
+            )
         page_offset += len(resp.pages)
         if resp.document_annotation is not None:
             merged["document_annotation"] = resp.document_annotation

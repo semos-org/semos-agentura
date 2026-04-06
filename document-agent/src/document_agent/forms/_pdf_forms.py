@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 # PDF field type constants
 FT_TEXT = "/Tx"
 FT_BUTTON = "/Btn"  # checkbox, radio
-FT_CHOICE = "/Ch"   # dropdown, listbox
+FT_CHOICE = "/Ch"  # dropdown, listbox
 FT_SIGNATURE = "/Sig"
 
 # Field flag bits (from PDF spec)

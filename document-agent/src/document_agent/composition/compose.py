@@ -81,9 +81,7 @@ def compose(
                 )
                 md_path.write_text(md_text, encoding="utf-8")
             else:
-                logger.warning(
-                    "drawio not found, skipping drawio rendering"
-                )
+                logger.warning("drawio not found, skipping drawio rendering")
 
         # Route to the right composer
         if is_slides:

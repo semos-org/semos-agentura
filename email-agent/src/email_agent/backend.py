@@ -23,11 +23,20 @@ class CalendarBackend(Protocol):
 
     def list_events(self, start: datetime, end: datetime, limit: int = 500) -> list[EventInfo]: ...
     def free_slots(
-        self, start: datetime, end: datetime, work_start: int = 8, work_end: int = 17,
+        self,
+        start: datetime,
+        end: datetime,
+        work_start: int = 8,
+        work_end: int = 17,
     ) -> dict[str, list[tuple[str, str]]]: ...
     def create_event(
-        self, subject: str, start: datetime, end: datetime,
-        location: str = "", body: str = "", required_attendees: str = "",
+        self,
+        subject: str,
+        start: datetime,
+        end: datetime,
+        location: str = "",
+        body: str = "",
+        required_attendees: str = "",
     ) -> str: ...
 
 
@@ -43,20 +52,37 @@ class EmailBackend(Protocol):
     def list_messages(self, folder: str = "INBOX", limit: int = 25) -> list[EmailMessage]: ...
     def get_message(self, uid: str) -> EmailMessage: ...
     def search_emails(
-        self, query: str = "", folder: str = "INBOX", limit: int = 50, *,
-        from_addr: str = "", to_addr: str = "",
-        since: str = "", before: str = "", unread_only: bool = False,
+        self,
+        query: str = "",
+        folder: str = "INBOX",
+        limit: int = 50,
+        *,
+        from_addr: str = "",
+        to_addr: str = "",
+        since: str = "",
+        before: str = "",
+        unread_only: bool = False,
         has_attachments: bool | None = None,
     ) -> list[EmailMessage]: ...
 
     # Send/Draft
     def send_email(
-        self, to: str, subject: str, body: str,
-        cc: str = "", html: bool = False, attachments: list[str] | None = None,
+        self,
+        to: str,
+        subject: str,
+        body: str,
+        cc: str = "",
+        html: bool = False,
+        attachments: list[str] | None = None,
     ) -> None: ...
     def create_draft(
-        self, to: str, subject: str, body: str,
-        cc: str = "", html: bool = False, attachments: list[str] | None = None,
+        self,
+        to: str,
+        subject: str,
+        body: str,
+        cc: str = "",
+        html: bool = False,
+        attachments: list[str] | None = None,
     ) -> str: ...
     def list_drafts(self, limit: int = 25) -> list[EmailMessage]: ...
 
@@ -95,6 +121,7 @@ def _parse_com_datetime(s: str) -> datetime | None:
 def _com_dict_to_email(d: dict) -> EmailMessage:
     """Convert an OutlookCOM mail dict to an EmailMessage."""
     from .models import Attachment
+
     return EmailMessage(
         uid=d["entry_id"],
         subject=d.get("subject", ""),
@@ -140,6 +167,7 @@ class IMAPBackend:
     def _ensure_client(self):
         if self._client is None:
             from .client import MailClient
+
             self._client = MailClient(self._settings)
         return self._client
 
@@ -159,13 +187,21 @@ class IMAPBackend:
         return self._ensure_client().get_message(uid)
 
     def search_emails(
-        self, query: str = "", folder: str = "INBOX", limit: int = 50, *,
-        from_addr: str = "", to_addr: str = "",
-        since: str = "", before: str = "", unread_only: bool = False,
+        self,
+        query: str = "",
+        folder: str = "INBOX",
+        limit: int = 50,
+        *,
+        from_addr: str = "",
+        to_addr: str = "",
+        since: str = "",
+        before: str = "",
+        unread_only: bool = False,
         has_attachments: bool | None = None,
     ) -> list[EmailMessage]:
         """Search with composable filters via IMAP SEARCH."""
         from datetime import datetime as _dt
+
         client = self._ensure_client()
         since_dt = _dt.strptime(since, "%Y-%m-%d") if since else None
         before_dt = _dt.strptime(before, "%Y-%m-%d") if before else None
@@ -197,31 +233,49 @@ class IMAPBackend:
     # Send/Draft
 
     def send_email(
-        self, to: str, subject: str, body: str,
-        cc: str = "", html: bool = False, attachments: list[str] | None = None,
+        self,
+        to: str,
+        subject: str,
+        body: str,
+        cc: str = "",
+        html: bool = False,
+        attachments: list[str] | None = None,
     ) -> None:
         from pathlib import Path
+
         to_list = [a.strip() for a in to.replace(",", ";").split(";") if a.strip()]
         cc_list = [a.strip() for a in cc.replace(",", ";").split(";") if a.strip()] if cc else None
         att_paths = [Path(p) for p in attachments] if attachments else None
         self._ensure_client().send(
-            to=to_list, subject=subject, body=body,
+            to=to_list,
+            subject=subject,
+            body=body,
             body_type="html" if html else "plain",
-            cc=cc_list, attachments=att_paths,
+            cc=cc_list,
+            attachments=att_paths,
         )
 
     def create_draft(
-        self, to: str, subject: str, body: str,
-        cc: str = "", html: bool = False, attachments: list[str] | None = None,
+        self,
+        to: str,
+        subject: str,
+        body: str,
+        cc: str = "",
+        html: bool = False,
+        attachments: list[str] | None = None,
     ) -> str:
         from pathlib import Path
+
         to_list = [a.strip() for a in to.replace(",", ";").split(";") if a.strip()]
         cc_list = [a.strip() for a in cc.replace(",", ";").split(";") if a.strip()] if cc else None
         att_paths = [Path(p) for p in attachments] if attachments else None
         self._ensure_client().save_draft(
-            to=to_list, subject=subject, body=body,
+            to=to_list,
+            subject=subject,
+            body=body,
             body_type="html" if html else "plain",
-            cc=cc_list, attachments=att_paths,
+            cc=cc_list,
+            attachments=att_paths,
         )
         return ""  # IMAP APPEND doesn't reliably return UID
 
@@ -315,17 +369,30 @@ if sys.platform == "win32":
             return [_com_dict_to_event(d) for d in raw]
 
         def free_slots(
-            self, start: datetime, end: datetime, work_start: int = 8, work_end: int = 17,
+            self,
+            start: datetime,
+            end: datetime,
+            work_start: int = 8,
+            work_end: int = 17,
         ) -> dict[str, list[tuple[str, str]]]:
             return self._com.free_slots(start, end, work_start=work_start, work_end=work_end)
 
         def create_event(
-            self, subject: str, start: datetime, end: datetime,
-            location: str = "", body: str = "", required_attendees: str = "",
+            self,
+            subject: str,
+            start: datetime,
+            end: datetime,
+            location: str = "",
+            body: str = "",
+            required_attendees: str = "",
         ) -> str:
             return self._com.create_event(
-                subject, start, end, location=location,
-                body=body, required_attendees=required_attendees,
+                subject,
+                start,
+                end,
+                location=location,
+                body=body,
+                required_attendees=required_attendees,
             )
 
     class COMBackend:
@@ -333,6 +400,7 @@ if sys.platform == "win32":
 
         def __init__(self, settings: Settings) -> None:
             from .com_client import OutlookCOM
+
             self._settings = settings
             self._com = OutlookCOM()
             self._calendar = COMCalendar(self._com)
@@ -347,10 +415,14 @@ if sys.platform == "win32":
 
         def list_messages(self, folder: str = "INBOX", limit: int = 25) -> list[EmailMessage]:
             from .com_client import OL_FOLDER_INBOX, OL_FOLDER_DRAFTS, OL_FOLDER_SENT, OL_MAIL
+
             folder_map = {
-                "INBOX": OL_FOLDER_INBOX, "Inbox": OL_FOLDER_INBOX,
-                "Drafts": OL_FOLDER_DRAFTS, "DRAFTS": OL_FOLDER_DRAFTS,
-                "Sent": OL_FOLDER_SENT, "SENT": OL_FOLDER_SENT,
+                "INBOX": OL_FOLDER_INBOX,
+                "Inbox": OL_FOLDER_INBOX,
+                "Drafts": OL_FOLDER_DRAFTS,
+                "DRAFTS": OL_FOLDER_DRAFTS,
+                "Sent": OL_FOLDER_SENT,
+                "SENT": OL_FOLDER_SENT,
             }
             fid = folder_map.get(folder, OL_FOLDER_INBOX)
             com_folder = self._com._ns.GetDefaultFolder(fid)
@@ -373,36 +445,61 @@ if sys.platform == "win32":
             return _com_dict_to_email(raw)
 
         def search_emails(
-            self, query: str = "", folder: str = "INBOX", limit: int = 50, *,
-            from_addr: str = "", to_addr: str = "",
-            since: str = "", before: str = "", unread_only: bool = False,
+            self,
+            query: str = "",
+            folder: str = "INBOX",
+            limit: int = 50,
+            *,
+            from_addr: str = "",
+            to_addr: str = "",
+            since: str = "",
+            before: str = "",
+            unread_only: bool = False,
             has_attachments: bool | None = None,
         ) -> list[EmailMessage]:
             from .com_client import OL_FOLDER_INBOX, OL_FOLDER_DRAFTS, OL_FOLDER_SENT
+
             folder_map = {
-                "INBOX": OL_FOLDER_INBOX, "Inbox": OL_FOLDER_INBOX,
-                "Drafts": OL_FOLDER_DRAFTS, "Sent": OL_FOLDER_SENT,
+                "INBOX": OL_FOLDER_INBOX,
+                "Inbox": OL_FOLDER_INBOX,
+                "Drafts": OL_FOLDER_DRAFTS,
+                "Sent": OL_FOLDER_SENT,
             }
             fid = folder_map.get(folder, OL_FOLDER_INBOX)
             raw = self._com.search_emails(
-                query, folder_id=fid, limit=limit,
-                from_addr=from_addr, to_addr=to_addr,
-                since=since, before=before,
-                unread_only=unread_only, has_attachments=has_attachments,
+                query,
+                folder_id=fid,
+                limit=limit,
+                from_addr=from_addr,
+                to_addr=to_addr,
+                since=since,
+                before=before,
+                unread_only=unread_only,
+                has_attachments=has_attachments,
             )
             return [_com_dict_to_email(d) for d in raw]
 
         # Send/Draft
 
         def send_email(
-            self, to: str, subject: str, body: str,
-            cc: str = "", html: bool = False, attachments: list[str] | None = None,
+            self,
+            to: str,
+            subject: str,
+            body: str,
+            cc: str = "",
+            html: bool = False,
+            attachments: list[str] | None = None,
         ) -> None:
             self._com.send_email(to, subject, body, cc=cc, html=html, attachments=attachments)
 
         def create_draft(
-            self, to: str, subject: str, body: str,
-            cc: str = "", html: bool = False, attachments: list[str] | None = None,
+            self,
+            to: str,
+            subject: str,
+            body: str,
+            cc: str = "",
+            html: bool = False,
+            attachments: list[str] | None = None,
         ) -> str:
             return self._com.create_draft(to, subject, body, cc=cc, html=html, attachments=attachments)
 
@@ -464,6 +561,7 @@ def create_backend(settings: Settings | None = None) -> EmailBackend:
         if settings.caldav_url:
             try:
                 from .caldav_client import CalDAVCalendar
+
                 backend.calendar = CalDAVCalendar(settings)
             except ImportError:
                 logger.warning("caldav library not installed - calendar unavailable")

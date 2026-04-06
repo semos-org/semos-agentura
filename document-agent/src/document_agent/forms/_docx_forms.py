@@ -184,8 +184,7 @@ def _inspect_sdt(sdt: etree._Element, index: int) -> dict | None:
         dd = sdt_pr.find(tag_name, NS)
         if dd is not None:
             entry["options"] = [
-                item.get(f"{{{NS['w']}}}displayText", item.get(WVAL, ""))
-                for item in dd.findall("w:listItem", NS)
+                item.get(f"{{{NS['w']}}}displayText", item.get(WVAL, "")) for item in dd.findall("w:listItem", NS)
             ]
 
     if kind == "checkbox":
@@ -301,7 +300,7 @@ def _fill_sdt_checkbox(sdt: etree._Element, sdt_pr: etree._Element, checked: boo
     checked_sym = cb.find("w14:checkedState", NS)
     unchecked_sym = cb.find("w14:uncheckedState", NS)
 
-    checked_char = "\u2611"   # ☑
+    checked_char = "\u2611"  # ☑
     unchecked_char = "\u2610"  # ☐
     if checked_sym is not None:
         code = checked_sym.get(W14VAL)
@@ -511,6 +510,7 @@ def _cell_has_sdt(cell: etree._Element) -> bool:
 def _normalize_label(text: str) -> str:
     """Normalize a label for use as a field key: strip colons, parens, hints."""
     import re
+
     # Take only the first line / first sentence
     text = text.split("\n")[0].strip()
     # Remove all parenthetical hints
@@ -560,13 +560,17 @@ def _inspect_table_cells(root: etree._Element) -> list[dict]:
                     next_cell = cells[ci + 1]
                     if _cell_is_empty(next_cell) and not _cell_has_sdt(next_cell):
                         label = _make_unique(_normalize_label(cell_txt), seen)
-                        fields.append({
-                            "name": label,
-                            "type": "cell",
-                            "format": "table",
-                            "value": "",
-                            "_tbl": ti, "_row": ri, "_col": ci + 1,
-                        })
+                        fields.append(
+                            {
+                                "name": label,
+                                "type": "cell",
+                                "format": "table",
+                                "value": "",
+                                "_tbl": ti,
+                                "_row": ri,
+                                "_col": ci + 1,
+                            }
+                        )
                         claimed.add(id(next_cell))
 
         # Pass 2: header-grid (only unclaimed empty cells)
@@ -580,13 +584,17 @@ def _inspect_table_cells(root: etree._Element) -> list[dict]:
                 if _cell_is_empty(cell) and ci < len(headers) and headers[ci]:
                     label = f"{_normalize_label(headers[ci])}_{ri}"
                     label = _make_unique(label, seen)
-                    fields.append({
-                        "name": label,
-                        "type": "cell",
-                        "format": "table",
-                        "value": "",
-                        "_tbl": ti, "_row": ri, "_col": ci,
-                    })
+                    fields.append(
+                        {
+                            "name": label,
+                            "type": "cell",
+                            "format": "table",
+                            "value": "",
+                            "_tbl": ti,
+                            "_row": ri,
+                            "_col": ci,
+                        }
+                    )
                     claimed.add(id(cell))
 
     # Pass 3: standalone empty tables named by preceding paragraph
@@ -595,9 +603,7 @@ def _inspect_table_cells(root: etree._Element) -> list[dict]:
     return fields
 
 
-def _inspect_standalone_empty_tables(
-    root: etree._Element, fields: list[dict], seen: dict[str, int]
-) -> None:
+def _inspect_standalone_empty_tables(root: etree._Element, fields: list[dict], seen: dict[str, int]) -> None:
     """Find single-cell empty tables and name them by the preceding paragraph."""
     body = root.find(".//w:body", NS)
     if body is None:
@@ -634,13 +640,17 @@ def _inspect_standalone_empty_tables(
                         break
                 if label_raw:
                     label = _make_unique(label_raw, seen)
-                    fields.append({
-                        "name": label,
-                        "type": "cell",
-                        "format": "table",
-                        "value": "",
-                        "_tbl": -1, "_row": 0, "_col": 0,
-                    })
+                    fields.append(
+                        {
+                            "name": label,
+                            "type": "cell",
+                            "format": "table",
+                            "value": "",
+                            "_tbl": -1,
+                            "_row": 0,
+                            "_col": 0,
+                        }
+                    )
             prev_texts = []
 
 

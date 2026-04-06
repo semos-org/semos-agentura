@@ -69,9 +69,7 @@ class Authenticator:
         accounts = self._app.get_accounts()
         if not accounts:
             return None
-        result = self._app.acquire_token_silent(
-            self._settings.scopes, account=accounts[0]
-        )
+        result = self._app.acquire_token_silent(self._settings.scopes, account=accounts[0])
         if result and "access_token" in result:
             return result["access_token"]
         return None
@@ -82,9 +80,7 @@ class Authenticator:
     ) -> str:
         flow = self._app.initiate_device_flow(scopes=self._settings.scopes)
         if "error" in flow:
-            raise AuthenticationError(
-                f"Device flow initiation failed: {flow.get('error_description', flow['error'])}"
-            )
+            raise AuthenticationError(f"Device flow initiation failed: {flow.get('error_description', flow['error'])}")
 
         message = flow.get("message", "")
         if on_device_code:
@@ -94,9 +90,7 @@ class Authenticator:
 
         result = self._app.acquire_token_by_device_flow(flow)
         if "error" in result:
-            raise AuthenticationError(
-                f"Authentication failed: {result.get('error_description', result['error'])}"
-            )
+            raise AuthenticationError(f"Authentication failed: {result.get('error_description', result['error'])}")
 
         self._token_cache.save()
         return result["access_token"]

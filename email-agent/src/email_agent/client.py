@@ -72,9 +72,7 @@ class MailClient:
 
     # -- Read --
 
-    def fetch_messages(
-        self, folder: str = "INBOX", limit: int = 25
-    ) -> list[EmailMessage]:
+    def fetch_messages(self, folder: str = "INBOX", limit: int = 25) -> list[EmailMessage]:
         """List recent messages from a folder (headers only).
 
         Args:

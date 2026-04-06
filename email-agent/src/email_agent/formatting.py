@@ -14,7 +14,8 @@ def md_to_plain(text: str) -> str:
     s = re.sub(
         r"^#{1,6}\s+(.+)$",
         lambda m: m.group(1).upper(),
-        s, flags=re.MULTILINE,
+        s,
+        flags=re.MULTILINE,
     )
     # Bold: **text** or __text__ -> UPPERCASE
     s = re.sub(r"\*\*(.+?)\*\*", lambda m: m.group(1).upper(), s)
@@ -28,16 +29,23 @@ def md_to_plain(text: str) -> str:
     s = re.sub(
         r"```\w*\n(.*?)```",
         lambda m: "\n".join("    " + line for line in m.group(1).splitlines()),
-        s, flags=re.DOTALL,
+        s,
+        flags=re.DOTALL,
     )
     # Unicode symbols that LLMs love
     _REPLACEMENTS = {
-        "\u2713": "x", "\u2714": "x",
-        "\u2717": "-", "\u2718": "-",
-        "\u2022": "-", "\u2023": "-",
-        "\u2192": "->", "\u2190": "<-",
-        "\u2014": "--", "\u2013": "-",
-        "\u2026": "...", "\u2605": "*",
+        "\u2713": "x",
+        "\u2714": "x",
+        "\u2717": "-",
+        "\u2718": "-",
+        "\u2022": "-",
+        "\u2023": "-",
+        "\u2192": "->",
+        "\u2190": "<-",
+        "\u2014": "--",
+        "\u2013": "-",
+        "\u2026": "...",
+        "\u2605": "*",
     }
     for old, new in _REPLACEMENTS.items():
         s = s.replace(old, new)
@@ -59,7 +67,8 @@ def md_to_html(text: str, style: str = "") -> str:
         html = re.sub(
             rf"<h{level}>(.*?)</h{level}>",
             r"<p><b>\1</b></p>",
-            html, flags=re.DOTALL,
+            html,
+            flags=re.DOTALL,
         )
     if style:
         for tag in ("p", "li", "td", "th"):
@@ -78,13 +87,15 @@ def html_to_annotated_text(html: str) -> str:
     s = re.sub(
         r"<(?:strike|s|del)>(.*?)</(?:strike|s|del)>",
         r"~~\1~~",
-        s, flags=re.DOTALL | re.IGNORECASE,
+        s,
+        flags=re.DOTALL | re.IGNORECASE,
     )
     # Strikethrough via style
     s = re.sub(
         r'<span[^>]*style="[^"]*text-decoration:\s*line-through[^"]*"[^>]*>(.*?)</span>',
         r"~~\1~~",
-        s, flags=re.DOTALL | re.IGNORECASE,
+        s,
+        flags=re.DOTALL | re.IGNORECASE,
     )
     # Highlight via background-color
     s = re.sub(
@@ -92,13 +103,15 @@ def html_to_annotated_text(html: str) -> str:
         r"(?:yellow|#ff[fe]\w*|rgb\(255,\s*255,\s*\d+\))"
         r'[^"]*"[^>]*>(.*?)</(?:span|mark)>',
         r"[HIGHLIGHT: \1]",
-        s, flags=re.DOTALL | re.IGNORECASE,
+        s,
+        flags=re.DOTALL | re.IGNORECASE,
     )
     # <mark> without style
     s = re.sub(
         r"<mark>(.*?)</mark>",
         r"[HIGHLIGHT: \1]",
-        s, flags=re.DOTALL | re.IGNORECASE,
+        s,
+        flags=re.DOTALL | re.IGNORECASE,
     )
     return s
 
@@ -113,11 +126,14 @@ def extract_prompt_style(html: str, tag_text: str) -> str:
     if tag_pos < 0:
         return ""
 
-    chunk = html[max(0, tag_pos - 500):tag_pos]
-    matches = list(re.finditer(
-        r'<(?:span|p|div|font)[^>]*?style="([^"]*)"',
-        chunk, re.IGNORECASE,
-    ))
+    chunk = html[max(0, tag_pos - 500) : tag_pos]
+    matches = list(
+        re.finditer(
+            r'<(?:span|p|div|font)[^>]*?style="([^"]*)"',
+            chunk,
+            re.IGNORECASE,
+        )
+    )
     if matches:
         return matches[-1].group(1)
     return ""

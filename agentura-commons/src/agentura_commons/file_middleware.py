@@ -100,6 +100,7 @@ def human_size(nbytes: int) -> str:
 
 # Pre-middleware
 
+
 def _identify_file_params(tool: Tool) -> set[str]:
     """Find parameters that accept file references.
 
@@ -114,9 +115,7 @@ def _identify_file_params(tool: Tool) -> set[str]:
     for name, prop in props.items():
         if prop.get("x-file"):
             file_params.add(name)
-        elif "file path or base64" in (
-            prop.get("description") or ""
-        ).lower():
+        elif "file path or base64" in (prop.get("description") or "").lower():
             file_params.add(name)
         elif name in _KNOWN_FILE_PARAMS:
             file_params.add(name)
@@ -137,7 +136,8 @@ def _has_file_attachment_schema(tool: Tool, param: str) -> bool:
 
 
 def _make_file_attachment(
-    filename: str, entry: FileEntry,
+    filename: str,
+    entry: FileEntry,
 ) -> dict:
     """Build a FileAttachment dict {name, content} for MCP."""
     b64 = base64.b64encode(entry.blob).decode()
@@ -148,7 +148,9 @@ def _make_file_attachment(
 
 
 def _resolve_attachment_item(
-    item: dict | str, registry: FileRegistry, param_name: str,
+    item: dict | str,
+    registry: FileRegistry,
+    param_name: str,
 ) -> dict:
     """Resolve a single FileAttachment dict or string."""
     if isinstance(item, str):
@@ -156,7 +158,8 @@ def _resolve_attachment_item(
         if entry:
             logger.info(
                 "Pre-middleware: resolved %s='%s' (%s)",
-                param_name, entry.filename,
+                param_name,
+                entry.filename,
                 human_size(entry.size),
             )
             return _make_file_attachment(entry.filename, entry)
@@ -176,7 +179,8 @@ def _resolve_attachment_item(
     if entry:
         logger.info(
             "Pre-middleware: resolved attachment %s='%s' (%s)",
-            param_name, entry.filename,
+            param_name,
+            entry.filename,
             human_size(entry.size),
         )
         return _make_file_attachment(entry.filename, entry)
@@ -203,7 +207,8 @@ def pre_process_tool_call(
     for param_name in file_params:
         value = processed.get(param_name)
         uses_attachment = _has_file_attachment_schema(
-            mcp_tool, param_name,
+            mcp_tool,
+            param_name,
         )
 
         # List of FileAttachments
@@ -211,7 +216,9 @@ def pre_process_tool_call(
             resolved_list = []
             for item in value:
                 resolved_item = _resolve_attachment_item(
-                    item, registry, param_name,
+                    item,
+                    registry,
+                    param_name,
                 )
                 resolved_list.append(resolved_item)
             processed[param_name] = resolved_list
@@ -220,7 +227,9 @@ def pre_process_tool_call(
         # Single FileAttachment dict
         if isinstance(value, dict):
             processed[param_name] = _resolve_attachment_item(
-                value, registry, param_name,
+                value,
+                registry,
+                param_name,
             )
             continue
 
@@ -232,23 +241,25 @@ def pre_process_tool_call(
         if entry:
             if uses_attachment:
                 processed[param_name] = _make_file_attachment(
-                    entry.filename, entry,
+                    entry.filename,
+                    entry,
                 )
             else:
                 b64 = base64.b64encode(entry.blob).decode()
-                processed[param_name] = (
-                    f"data:{entry.mime};base64,{b64}"
-                )
+                processed[param_name] = f"data:{entry.mime};base64,{b64}"
             logger.info(
                 "Pre-middleware: resolved %s='%s' (%s)",
-                param_name, value, human_size(entry.size),
+                param_name,
+                value,
+                human_size(entry.size),
             )
         elif registry.files:
             # Not an exact filename - might be markdown or
             # other text containing embedded file references.
             # Scan for registered filenames and replace inline.
             resolved = _resolve_embedded_refs(
-                value, registry,
+                value,
+                registry,
             )
             if resolved != value:
                 processed[param_name] = resolved
@@ -256,7 +267,8 @@ def pre_process_tool_call(
 
 
 def _resolve_embedded_refs(
-    value: str, registry: FileRegistry,
+    value: str,
+    registry: FileRegistry,
 ) -> str:
     """Replace registered filenames embedded in longer text.
 
@@ -278,7 +290,8 @@ def _resolve_embedded_refs(
         data_uri = f"data:{entry.mime};base64,{b64}"
         logger.info(
             "Embedded ref: resolved '%s' (%s)",
-            ref, human_size(entry.size),
+            ref,
+            human_size(entry.size),
         )
         return f"{bracket}({data_uri})"
 
@@ -295,12 +308,14 @@ def _resolve_embedded_refs(
             value = value.replace(fname, data_uri)
             logger.info(
                 "Embedded ref: resolved bare '%s' (%s)",
-                fname, human_size(entry.size),
+                fname,
+                human_size(entry.size),
             )
     return value
 
 
 # Post-middleware
+
 
 async def _fetch_and_register(
     url: str,
@@ -316,20 +331,26 @@ async def _fetch_and_register(
             resp = await client.get(url, timeout=60.0)
             resp.raise_for_status()
         mime = resp.headers.get(
-            "content-type", "application/octet-stream",
+            "content-type",
+            "application/octet-stream",
         )
         entry = registry.register(
-            filename, resp.content, mime,
+            filename,
+            resp.content,
+            mime,
             source=f"tool:{tool_name}",
         )
         logger.info(
             "Post-middleware: fetched %s (%s) from %s",
-            filename, human_size(entry.size), url,
+            filename,
+            human_size(entry.size),
+            url,
         )
         return entry
     except Exception:
         logger.exception(
-            "Post-middleware: failed to fetch %s", url,
+            "Post-middleware: failed to fetch %s",
+            url,
         )
         return None
 
@@ -355,11 +376,7 @@ async def post_process_tool_result(
     if sc and isinstance(sc, dict):
         data = sc
     else:
-        text = (
-            result.content[0].text
-            if hasattr(result.content[0], "text")
-            else str(result.content[0])
-        )
+        text = result.content[0].text if hasattr(result.content[0], "text") else str(result.content[0])
         try:
             data = json.loads(text)
         except (json.JSONDecodeError, TypeError):
@@ -382,17 +399,17 @@ async def post_process_tool_result(
             path = "/" + url.split("/", 3)[-1]
             url = f"{base_url}{path}"
         entry = await _fetch_and_register(
-            url, data.get("filename"),
-            tool_name, registry,
+            url,
+            data.get("filename"),
+            tool_name,
+            registry,
         )
         if entry:
             new_files.append(entry)
             data.pop("download_url", None)
             data.pop("mime_type", None)
             data.pop("size_bytes", None)
-            data["produced_file"] = (
-                f"{entry.filename} ({human_size(entry.size)})"
-            )
+            data["produced_file"] = f"{entry.filename} ({human_size(entry.size)})"
 
     # Nested download_url in attachments list (read_email)
     for att in data.get("attachments", []):
@@ -404,25 +421,20 @@ async def post_process_tool_result(
                 path = "/" + url.split("/", 3)[-1]
                 url = f"{base_url}{path}"
             entry = await _fetch_and_register(
-                url, att.get("filename"),
-                tool_name, registry,
+                url,
+                att.get("filename"),
+                tool_name,
+                registry,
             )
             if entry:
                 new_files.append(entry)
                 att.pop("download_url", None)
                 att.pop("saved_path", None)
-                att["registered_file"] = (
-                    f"{entry.filename} "
-                    f"({human_size(entry.size)})"
-                )
+                att["registered_file"] = f"{entry.filename} ({human_size(entry.size)})"
 
     if new_files:
         return json.dumps(data, ensure_ascii=False), new_files
 
     # No files - return original text
-    text = (
-        result.content[0].text
-        if hasattr(result.content[0], "text")
-        else str(result.content[0])
-    )
+    text = result.content[0].text if hasattr(result.content[0], "text") else str(result.content[0])
     return text, []

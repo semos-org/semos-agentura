@@ -21,7 +21,7 @@ class AgentConnection:
     """A single MCP agent endpoint."""
 
     name: str
-    url: str       # SSE endpoint (e.g. http://localhost:8002/mcp/sse)
+    url: str  # SSE endpoint (e.g. http://localhost:8002/mcp/sse)
     base_url: str  # For file downloads (e.g. http://localhost:8002)
     session: ClientSession | None = field(default=None, repr=False)
     tools: list[Tool] = field(default_factory=list)
@@ -49,7 +49,9 @@ class MCPHub:
         self._exit_stack = AsyncExitStack()
         for agent in self._agents.values():
             logger.info(
-                "Connecting to %s at %s", agent.name, agent.url,
+                "Connecting to %s at %s",
+                agent.name,
+                agent.url,
             )
             streams = await self._exit_stack.enter_async_context(
                 sse_client(agent.url),
@@ -65,7 +67,8 @@ class MCPHub:
                 self._tool_to_agent[tool.name] = agent.name
             logger.info(
                 "Connected to %s: %d tools",
-                agent.name, len(result.tools),
+                agent.name,
+                len(result.tools),
             )
 
     async def disconnect_all(self) -> None:
@@ -78,9 +81,7 @@ class MCPHub:
 
     async def ensure_connected(self) -> None:
         """Reconnect if not currently connected."""
-        any_disconnected = any(
-            a.session is None for a in self._agents.values()
-        )
+        any_disconnected = any(a.session is None for a in self._agents.values())
         if any_disconnected:
             logger.info("Reconnecting to MCP agents...")
             await self.connect_all()
@@ -116,12 +117,15 @@ class MCPHub:
         return self._agents[agent_name]
 
     async def call_tool(
-        self, tool_name: str, arguments: dict,
+        self,
+        tool_name: str,
+        arguments: dict,
     ) -> CallToolResult:
         """Route a tool call to the correct agent."""
         await self.ensure_connected()
         agent = self.agent_for_tool(tool_name)
         assert agent.session is not None
         return await agent.session.call_tool(
-            tool_name, arguments=arguments,
+            tool_name,
+            arguments=arguments,
         )

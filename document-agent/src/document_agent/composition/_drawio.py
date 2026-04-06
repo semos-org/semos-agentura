@@ -51,7 +51,8 @@ def _build_mxfile_for_png(xml: str) -> str:
         children = list(diagram)
         if children:
             inner = etree.tostring(
-                children[0], encoding="unicode",
+                children[0],
+                encoding="unicode",
             )
             # Remove child elements, set compressed text
             for child in children:
@@ -82,8 +83,8 @@ def _embed_xml_in_png(png_path: Path, xml: str) -> None:
     # Find first IDAT offset (after 8-byte signature)
     offset = 8
     while offset < len(data):
-        clen = struct.unpack(">I", data[offset:offset + 4])[0]
-        ctype = data[offset + 4:offset + 8]
+        clen = struct.unpack(">I", data[offset : offset + 4])[0]
+        ctype = data[offset + 4 : offset + 8]
         if ctype == b"IDAT":
             break
         offset += 12 + clen  # 4 len + 4 type + data + 4 crc
@@ -97,9 +98,13 @@ def _embed_xml_in_png(png_path: Path, xml: str) -> None:
 def _decompress_diagram_content(encoded: str) -> str:
     """Reverse of _compress_diagram_content: base64 => inflate => XML."""
     compressed = base64.b64decode(encoded)
-    return zlib.decompressobj(
-        -zlib.MAX_WBITS,
-    ).decompress(compressed).decode("utf-8")
+    return (
+        zlib.decompressobj(
+            -zlib.MAX_WBITS,
+        )
+        .decompress(compressed)
+        .decode("utf-8")
+    )
 
 
 def _parse_mxfile_from_png(mxfile_xml: str) -> str:
@@ -117,7 +122,9 @@ def _parse_mxfile_from_png(mxfile_xml: str) -> str:
             diagram.text = None
             diagram.append(inner_el)
     return etree.tostring(
-        root, encoding="unicode", xml_declaration=False,
+        root,
+        encoding="unicode",
+        xml_declaration=False,
     )
 
 
@@ -127,14 +134,14 @@ def extract_xml_from_png(png_path: Path) -> str | None:
     data = png_path.read_bytes()
     offset = 8  # skip PNG signature
     while offset < len(data):
-        clen = struct.unpack(">I", data[offset:offset + 4])[0]
-        ctype = data[offset + 4:offset + 8]
+        clen = struct.unpack(">I", data[offset : offset + 4])[0]
+        ctype = data[offset + 4 : offset + 8]
         if ctype == b"tEXt":
-            chunk_data = data[offset + 8:offset + 8 + clen]
+            chunk_data = data[offset + 8 : offset + 8 + clen]
             nul = chunk_data.index(0)
             keyword = chunk_data[:nul]
             if keyword == b"mxfile":
-                raw = chunk_data[nul + 1:].decode("utf-8")
+                raw = chunk_data[nul + 1 :].decode("utf-8")
                 return _parse_mxfile_from_png(raw)
         offset += 12 + clen
     return None

@@ -170,7 +170,10 @@ class AzureProvider:
                         wait = backoff * attempt
                         logger.warning(
                             "HTTP %d, retrying in %ds (%d/%d)...",
-                            resp.status_code, wait, attempt, max_retries,
+                            resp.status_code,
+                            wait,
+                            attempt,
+                            max_retries,
                         )
                         time.sleep(wait)
                         continue

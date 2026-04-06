@@ -116,22 +116,23 @@ def _build_initial_messages(
             {"role": "assistant", "content": source.code},
         )
         if description:
-            messages.append({
-                "role": "user",
-                "content": (
-                    f"Refine this diagram: {description}\n\n"
-                    f"Return ONLY the updated {diagram_type} code."
-                ),
-            })
+            messages.append(
+                {
+                    "role": "user",
+                    "content": (f"Refine this diagram: {description}\n\nReturn ONLY the updated {diagram_type} code."),
+                }
+            )
         else:
-            messages.append({
-                "role": "user",
-                "content": (
-                    "Improve this diagram for visual clarity "
-                    "and completeness. Return ONLY the updated "
-                    f"{diagram_type} code."
-                ),
-            })
+            messages.append(
+                {
+                    "role": "user",
+                    "content": (
+                        "Improve this diagram for visual clarity "
+                        "and completeness. Return ONLY the updated "
+                        f"{diagram_type} code."
+                    ),
+                }
+            )
     elif source and source.description:
         # VLM analysis of an image (hand-drawing, screenshot)
         prompt = (
@@ -183,14 +184,13 @@ async def optimize_diagram(
     """
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    system = (
-        _CODEGEN_SYSTEM_MERMAID
-        if diagram_type == "mermaid"
-        else _CODEGEN_SYSTEM_DRAWIO
-    )
+    system = _CODEGEN_SYSTEM_MERMAID if diagram_type == "mermaid" else _CODEGEN_SYSTEM_DRAWIO
 
     codegen_messages = _build_initial_messages(
-        system, description, source, diagram_type,
+        system,
+        description,
+        source,
+        diagram_type,
     )
     # Use source description for review context if no user description
     if not description and source and source.description:
@@ -203,7 +203,8 @@ async def optimize_diagram(
     for iteration in range(1, max_iterations + 1):
         logger.info(
             "Diagram optimization iteration %d/%d",
-            iteration, max_iterations,
+            iteration,
+            max_iterations,
         )
 
         # --- Generate ---
@@ -221,18 +222,22 @@ async def optimize_diagram(
         except Exception as exc:
             logger.warning("Render failed at iteration %d: %s", iteration, exc)
             # Ask codegen to fix the error
-            codegen_messages.append({
-                "role": "user",
-                "content": (
-                    f"The diagram failed to render with error:\n"
-                    f"{exc}\n\nFix the code. Return ONLY the "
-                    f"corrected {diagram_type} code."
-                ),
-            })
-            review_log.append({
-                "iteration": iteration,
-                "render_error": str(exc),
-            })
+            codegen_messages.append(
+                {
+                    "role": "user",
+                    "content": (
+                        f"The diagram failed to render with error:\n"
+                        f"{exc}\n\nFix the code. Return ONLY the "
+                        f"corrected {diagram_type} code."
+                    ),
+                }
+            )
+            review_log.append(
+                {
+                    "iteration": iteration,
+                    "render_error": str(exc),
+                }
+            )
             continue
 
         image_path = iter_path
@@ -240,10 +245,12 @@ async def optimize_diagram(
         # Last iteration - skip review
         if iteration == max_iterations:
             logger.info("Max iterations reached, using current result")
-            review_log.append({
-                "iteration": iteration,
-                "skipped": "max iterations",
-            })
+            review_log.append(
+                {
+                    "iteration": iteration,
+                    "skipped": "max iterations",
+                }
+            )
             break
 
         # --- Review (stateless - fresh messages each time) ---
@@ -263,7 +270,8 @@ async def optimize_diagram(
         ]
 
         review_raw = await review_client.chat_with_image(
-            review_messages, png_b64,
+            review_messages,
+            png_b64,
         )
         review = _parse_review(review_raw)
         review["iteration"] = iteration
@@ -286,7 +294,8 @@ async def optimize_diagram(
         codegen_messages.append({"role": "user", "content": feedback})
         logger.info(
             "Iteration %d: %d issues found, refining...",
-            iteration, len(issues),
+            iteration,
+            len(issues),
         )
 
     return DiagramResult(

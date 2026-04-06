@@ -76,20 +76,19 @@ class EmailArchive:
 
     def get_sync_state(self, folder: str) -> str | None:
         row = self.conn.execute(
-            "SELECT last_received FROM sync_state WHERE folder = ?", (folder,),
+            "SELECT last_received FROM sync_state WHERE folder = ?",
+            (folder,),
         ).fetchone()
         return row[0] if row else None
 
     def update_sync_state(self, folder: str, last_received: str, count: int) -> None:
         self.conn.execute(
-            "INSERT OR REPLACE INTO sync_state (folder, last_received, item_count, updated_at) "
-            "VALUES (?, ?, ?, ?)",
+            "INSERT OR REPLACE INTO sync_state (folder, last_received, item_count, updated_at) VALUES (?, ?, ?, ?)",
             (folder, last_received, count, datetime.now().isoformat()),
         )
         self.conn.commit()
 
-    def dump_emails(self, folder_name: str = "Inbox", include_body: bool = True,
-                    batch_size: int = 100) -> int:
+    def dump_emails(self, folder_name: str = "Inbox", include_body: bool = True, batch_size: int = 100) -> int:
         """Dump emails from a folder. Uses COM iteration if available, else IMAP."""
         if self.backend.supports_com:
             return self._dump_emails_com(folder_name, include_body, batch_size)
@@ -99,8 +98,10 @@ class EmailArchive:
         from .com_client import OL_FOLDER_INBOX, OL_FOLDER_SENT, OL_FOLDER_DRAFTS, OL_FOLDER_DELETED
 
         folder_map = {
-            "Inbox": OL_FOLDER_INBOX, "Sent": OL_FOLDER_SENT,
-            "Drafts": OL_FOLDER_DRAFTS, "Deleted": OL_FOLDER_DELETED,
+            "Inbox": OL_FOLDER_INBOX,
+            "Sent": OL_FOLDER_SENT,
+            "Drafts": OL_FOLDER_DRAFTS,
+            "Deleted": OL_FOLDER_DELETED,
         }
         folder_id = folder_map.get(folder_name, OL_FOLDER_INBOX)
         last_synced = self.get_sync_state(f"email:{folder_name}")
@@ -127,13 +128,23 @@ class EmailArchive:
                         body = "(could not read body)"
 
                 att_names = ", ".join(a["filename"] for a in meta.get("attachments", []))
-                batch.append((
-                    meta["entry_id"], meta["subject"], meta["sender"],
-                    meta["sender_email"], meta.get("to", ""), meta.get("cc", ""),
-                    received, folder_name,
-                    int(meta.get("has_attachments", False)), meta.get("attachment_count", 0),
-                    att_names, body, datetime.now().isoformat(),
-                ))
+                batch.append(
+                    (
+                        meta["entry_id"],
+                        meta["subject"],
+                        meta["sender"],
+                        meta["sender_email"],
+                        meta.get("to", ""),
+                        meta.get("cc", ""),
+                        received,
+                        folder_name,
+                        int(meta.get("has_attachments", False)),
+                        meta.get("attachment_count", 0),
+                        att_names,
+                        body,
+                        datetime.now().isoformat(),
+                    )
+                )
                 last_received = received
                 count += 1
             except Exception as e:
@@ -187,13 +198,23 @@ class EmailArchive:
                         body = "(could not read body)"
 
                 att_names = ", ".join(a.filename for a in msg.attachments)
-                batch.append((
-                    msg.uid, msg.subject, msg.sender_name or msg.sender,
-                    msg.sender, "; ".join(msg.to), "; ".join(msg.cc),
-                    received, folder_name,
-                    int(bool(msg.attachments)), len(msg.attachments),
-                    att_names, body, datetime.now().isoformat(),
-                ))
+                batch.append(
+                    (
+                        msg.uid,
+                        msg.subject,
+                        msg.sender_name or msg.sender,
+                        msg.sender,
+                        "; ".join(msg.to),
+                        "; ".join(msg.cc),
+                        received,
+                        folder_name,
+                        int(bool(msg.attachments)),
+                        len(msg.attachments),
+                        att_names,
+                        body,
+                        datetime.now().isoformat(),
+                    )
+                )
                 last_received = received
                 count += 1
             except Exception as e:
@@ -238,13 +259,19 @@ class EmailArchive:
         count = 0
         batch = []
         for ev in events:
-            batch.append((
-                ev.entry_id, ev.subject,
-                str(ev.start or ""), str(ev.end or ""),
-                ev.location, int(ev.all_day),
-                ev.organizer, ev.required_attendees,
-                datetime.now().isoformat(),
-            ))
+            batch.append(
+                (
+                    ev.entry_id,
+                    ev.subject,
+                    str(ev.start or ""),
+                    str(ev.end or ""),
+                    ev.location,
+                    int(ev.all_day),
+                    ev.organizer,
+                    ev.required_attendees,
+                    datetime.now().isoformat(),
+                )
+            )
             count += 1
             if len(batch) >= 100:
                 self._insert_events(batch)
@@ -294,8 +321,14 @@ class EmailArchive:
             (f"%{query}%", limit),
         ).fetchall()
         return [
-            {"entry_id": r[0], "subject": r[1], "sender": r[2], "received": r[3],
-             "folder": r[4], "has_attachments": bool(r[5])}
+            {
+                "entry_id": r[0],
+                "subject": r[1],
+                "sender": r[2],
+                "received": r[3],
+                "folder": r[4],
+                "has_attachments": bool(r[5]),
+            }
             for r in rows
         ]
 

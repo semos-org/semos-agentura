@@ -57,9 +57,7 @@ def _encode_md_path(rel_path: str) -> str:
     return "/".join(urlquote(seg, safe="") for seg in rel_path.split("/"))
 
 
-def save_images(
-    ocr_response: OCRResponse, output_dir: Path, stem: str
-) -> tuple[dict[str, str], dict[str, dict]]:
+def save_images(ocr_response: OCRResponse, output_dir: Path, stem: str) -> tuple[dict[str, str], dict[str, dict]]:
     """Extract base64 images to disk and collect annotations.
 
     Returns:

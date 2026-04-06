@@ -37,8 +37,7 @@ def _find_libreoffice(env_override: str | None = None) -> Path:
         if p.is_file():
             return p
     raise ToolNotFoundError(
-        "LibreOffice (soffice) not found on PATH. "
-        "Install LibreOffice or set LIBRE_OFFICE_PATH in settings."
+        "LibreOffice (soffice) not found on PATH. Install LibreOffice or set LIBRE_OFFICE_PATH in settings."
     )
 
 
@@ -53,8 +52,10 @@ def convert_office_to_pdf(file_path: Path, libre_office_path: str | None = None)
     cmd = [
         str(soffice),
         "--headless",
-        "--convert-to", "pdf",
-        "--outdir", out_dir,
+        "--convert-to",
+        "pdf",
+        "--outdir",
+        out_dir,
         str(file_path),
     ]
     logger.info("Converting %s to PDF via LibreOffice...", file_path.name)

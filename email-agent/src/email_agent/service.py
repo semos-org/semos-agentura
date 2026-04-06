@@ -129,6 +129,7 @@ class EmailAgentService(BaseAgentService):
         # URL fallback: fetch the file content
         if source.startswith(("http://", "https://")):
             import httpx as _httpx
+
             resp = _httpx.get(source, timeout=30)
             resp.raise_for_status()
             ext = Path(source.rsplit("/", 1)[-1]).suffix or default_ext
@@ -142,15 +143,62 @@ class EmailAgentService(BaseAgentService):
     def get_tools(self) -> list[ToolDef]:
         _fh = "Accepts absolute file paths or base64-encoded content."
         return [
-            ToolDef(name="search_emails", description="Search emails with composable filters: subject, sender, recipient, date range, unread, attachments. All optional, AND-combined.", fn=self._search_emails, read_only=True, idempotent=True),
-            ToolDef(name="read_email", description="Read the full content of the most recent email matching filters (subject, sender, recipient).", fn=self._read_email, read_only=True, idempotent=True),
-            ToolDef(name="list_events", description="List calendar events for the next N days.", fn=self._list_events, read_only=True, idempotent=True),
-            ToolDef(name="free_slots", description="Calculate free meeting slots for the next N weekdays.", fn=self._free_slots, read_only=True, idempotent=True),
-            ToolDef(name="create_draft", description=f"Create an email draft with optional attachments. {_fh}", fn=self._create_draft, file_params=["attachments"]),
-            ToolDef(name="draft_event", description="Create a calendar event draft (invitations NOT sent).", fn=self._draft_event),
-            ToolDef(name="send_event", description="Create a calendar event and send invitations immediately.", fn=self._send_event, destructive=True),
-            ToolDef(name="draft_reply", description="Create a reply draft to the most recent email matching a query.", fn=self._draft_reply),
-            ToolDef(name="send_reply", description="Reply to the most recent email matching a query and send immediately.", fn=self._send_reply, destructive=True),
+            ToolDef(
+                name="search_emails",
+                description="Search emails with composable filters: subject, sender, recipient, date range, unread, attachments. All optional, AND-combined.",
+                fn=self._search_emails,
+                read_only=True,
+                idempotent=True,
+            ),
+            ToolDef(
+                name="read_email",
+                description="Read the full content of the most recent email matching filters (subject, sender, recipient).",
+                fn=self._read_email,
+                read_only=True,
+                idempotent=True,
+            ),
+            ToolDef(
+                name="list_events",
+                description="List calendar events for the next N days.",
+                fn=self._list_events,
+                read_only=True,
+                idempotent=True,
+            ),
+            ToolDef(
+                name="free_slots",
+                description="Calculate free meeting slots for the next N weekdays.",
+                fn=self._free_slots,
+                read_only=True,
+                idempotent=True,
+            ),
+            ToolDef(
+                name="create_draft",
+                description=f"Create an email draft with optional attachments. {_fh}",
+                fn=self._create_draft,
+                file_params=["attachments"],
+            ),
+            ToolDef(
+                name="draft_event",
+                description="Create a calendar event draft (invitations NOT sent).",
+                fn=self._draft_event,
+            ),
+            ToolDef(
+                name="send_event",
+                description="Create a calendar event and send invitations immediately.",
+                fn=self._send_event,
+                destructive=True,
+            ),
+            ToolDef(
+                name="draft_reply",
+                description="Create a reply draft to the most recent email matching a query.",
+                fn=self._draft_reply,
+            ),
+            ToolDef(
+                name="send_reply",
+                description="Reply to the most recent email matching a query and send immediately.",
+                fn=self._send_reply,
+                destructive=True,
+            ),
         ]
 
     def get_skills(self) -> list[SkillDef]:
@@ -179,10 +227,15 @@ class EmailAgentService(BaseAgentService):
     # -- Typed tool methods (MCP introspects these signatures) --
 
     async def _search_emails(
-        self, query: str = "", limit: int = 20,
-        from_addr: str = "", to_addr: str = "",
-        since: str = "", before: str = "",
-        unread_only: bool = False, has_attachments: bool | None = None,
+        self,
+        query: str = "",
+        limit: int = 20,
+        from_addr: str = "",
+        to_addr: str = "",
+        since: str = "",
+        before: str = "",
+        unread_only: bool = False,
+        has_attachments: bool | None = None,
     ) -> str:
         """Search emails with composable filters. All filters are AND-combined.
 
@@ -196,16 +249,26 @@ class EmailAgentService(BaseAgentService):
             unread_only: Only return unread emails.
             has_attachments: true = only with attachments, false = only without.
         """
-        return await self._exec("search_emails", {
-            "query": query, "limit": limit,
-            "from_addr": from_addr, "to_addr": to_addr,
-            "since": since, "before": before,
-            "unread_only": unread_only, "has_attachments": has_attachments,
-        })
+        return await self._exec(
+            "search_emails",
+            {
+                "query": query,
+                "limit": limit,
+                "from_addr": from_addr,
+                "to_addr": to_addr,
+                "since": since,
+                "before": before,
+                "unread_only": unread_only,
+                "has_attachments": has_attachments,
+            },
+        )
 
     async def _read_email(
-        self, entry_id: str = "", query: str = "",
-        from_addr: str = "", to_addr: str = "",
+        self,
+        entry_id: str = "",
+        query: str = "",
+        from_addr: str = "",
+        to_addr: str = "",
         include_attachments: bool = False,
     ) -> str:
         """Read the full content of an email.
@@ -229,12 +292,17 @@ class EmailAgentService(BaseAgentService):
         if include_attachments and self.output_dir:
             att_dir = str(self.output_dir / f"_att_{_uuid.uuid4().hex[:8]}")
 
-        raw = await self._exec("read_email", {
-            "entry_id": entry_id,
-            "query": query, "from_addr": from_addr, "to_addr": to_addr,
-            "include_attachments": include_attachments,
-            "_attachment_dir": att_dir,
-        })
+        raw = await self._exec(
+            "read_email",
+            {
+                "entry_id": entry_id,
+                "query": query,
+                "from_addr": from_addr,
+                "to_addr": to_addr,
+                "include_attachments": include_attachments,
+                "_attachment_dir": att_dir,
+            },
+        )
 
         # Post-process: convert saved_path to download_url
         if include_attachments and self.output_dir:
@@ -261,7 +329,11 @@ class EmailAgentService(BaseAgentService):
         return await self._exec("free_slots", {"days": days})
 
     async def _create_draft(
-        self, to: str, subject: str, body: str, cc: str = "",
+        self,
+        to: str,
+        subject: str,
+        body: str,
+        cc: str = "",
         attachments: list[FileAttachment] | None = None,
     ) -> str:
         """Create an email draft with optional attachments.
@@ -276,7 +348,7 @@ class EmailAgentService(BaseAgentService):
                 The content field accepts a file path, base64, or data URI.
         """
         att_paths = []
-        for item in (attachments or []):
+        for item in attachments or []:
             name = item.get("name", "")
             content = item.get("content", name)  # fallback: name is the path
             ext = Path(name).suffix if name else ".bin"
@@ -289,13 +361,37 @@ class EmailAgentService(BaseAgentService):
             args["attachments"] = att_paths
         return await self._exec("create_draft", args)
 
-    async def _draft_event(self, subject: str, start: str, end: str, location: str = "", body: str = "", attendees: str = "") -> str:
+    async def _draft_event(
+        self, subject: str, start: str, end: str, location: str = "", body: str = "", attendees: str = ""
+    ) -> str:
         """Create a calendar event draft (invitations NOT sent)."""
-        return await self._exec("draft_event", {"subject": subject, "start": start, "end": end, "location": location, "body": body, "attendees": attendees})
+        return await self._exec(
+            "draft_event",
+            {
+                "subject": subject,
+                "start": start,
+                "end": end,
+                "location": location,
+                "body": body,
+                "attendees": attendees,
+            },
+        )
 
-    async def _send_event(self, subject: str, start: str, end: str, attendees: str, location: str = "", body: str = "") -> str:
+    async def _send_event(
+        self, subject: str, start: str, end: str, attendees: str, location: str = "", body: str = ""
+    ) -> str:
         """Create a calendar event and send invitations immediately."""
-        return await self._exec("send_event", {"subject": subject, "start": start, "end": end, "location": location, "body": body, "attendees": attendees})
+        return await self._exec(
+            "send_event",
+            {
+                "subject": subject,
+                "start": start,
+                "end": end,
+                "location": location,
+                "body": body,
+                "attendees": attendees,
+            },
+        )
 
     async def _draft_reply(self, query: str, body: str) -> str:
         """Create a reply draft to the most recent email matching a query."""
@@ -316,7 +412,8 @@ _service = EmailAgentService()
 
 
 def create_service_app(
-    host: str | None = None, port: str | int | None = None,
+    host: str | None = None,
+    port: str | int | None = None,
 ):
     """Create the FastAPI app. Called lazily by uvicorn."""
     h = host or os.getenv("AGENT_HOST", "127.0.0.1")

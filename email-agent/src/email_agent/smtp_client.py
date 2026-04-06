@@ -26,22 +26,16 @@ class SMTPClient:
     def connect(self) -> None:
         """Connect and authenticate via XOAUTH2 over STARTTLS."""
         try:
-            self._conn = smtplib.SMTP(
-                self._settings.smtp_host, self._settings.smtp_port
-            )
+            self._conn = smtplib.SMTP(self._settings.smtp_host, self._settings.smtp_port)
             self._conn.ehlo()
             self._conn.starttls()
             self._conn.ehlo()
 
             access_token = self._authenticator.authenticate()
-            auth_string = Authenticator.build_xoauth2_string(
-                self._settings.email_address, access_token
-            )
+            auth_string = Authenticator.build_xoauth2_string(self._settings.email_address, access_token)
             code, msg = self._conn.docmd("AUTH", f"XOAUTH2 {auth_string}")
             if code != 235:
-                raise SMTPError(
-                    f"SMTP XOAUTH2 auth failed ({code}): {msg.decode(errors='replace')}"
-                )
+                raise SMTPError(f"SMTP XOAUTH2 auth failed ({code}): {msg.decode(errors='replace')}")
         except smtplib.SMTPException as exc:
             raise SMTPError(f"SMTP connection failed: {exc}") from exc
 
@@ -107,9 +101,7 @@ class SMTPClient:
                 with open(path, "rb") as f:
                     part.set_payload(f.read())
                 encoders.encode_base64(part)
-                part.add_header(
-                    "Content-Disposition", f'attachment; filename="{path.name}"'
-                )
+                part.add_header("Content-Disposition", f'attachment; filename="{path.name}"')
                 msg.attach(part)
 
         # Collect all recipients for the SMTP envelope
@@ -120,8 +112,6 @@ class SMTPClient:
             all_recipients.extend(bcc)
 
         try:
-            self._smtp.sendmail(
-                self._settings.email_address, all_recipients, msg.as_string()
-            )
+            self._smtp.sendmail(self._settings.email_address, all_recipients, msg.as_string())
         except smtplib.SMTPException as exc:
             raise SMTPError(f"Failed to send email: {exc}") from exc

@@ -25,7 +25,8 @@ async def mcp_client_for(service: BaseAgentService) -> AsyncGenerator[ClientSess
     """
     server = create_mcp_server(service)
     async with create_connected_server_and_client_session(
-        server, raise_exceptions=True,
+        server,
+        raise_exceptions=True,
     ) as client:
         yield client
 

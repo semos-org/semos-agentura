@@ -29,7 +29,8 @@ def main() -> None:
     dig.add_argument("--prompt", help="Annotation prompt (requires --schema)")
     dig.add_argument("--max-pages", type=int, help="Max pages per PDF chunk")
     dig.add_argument(
-        "--table-format", choices=["markdown", "html"],
+        "--table-format",
+        choices=["markdown", "html"],
         help="Table output format (default: from settings, usually markdown)",
     )
 
@@ -38,7 +39,8 @@ def main() -> None:
     comp.add_argument("input", help="Markdown file path")
     comp.add_argument("output", help="Output file path")
     comp.add_argument(
-        "--format", required=True,
+        "--format",
+        required=True,
         choices=["pdf", "docx", "odt", "pptx", "html"],
         help="Output format",
     )
@@ -64,24 +66,32 @@ def main() -> None:
         help="Generate a diagram from description with LLM optimization",
     )
     diag.add_argument(
-        "description", nargs="?", default=None,
+        "description",
+        nargs="?",
+        default=None,
         help="Natural-language description or modification instructions",
     )
     diag.add_argument(
-        "--source", "-s",
+        "--source",
+        "-s",
         help="Existing diagram: file path (.mmd, .drawio, .drawio.png, .svg, image) or inline code",
     )
     diag.add_argument(
-        "--type", default=None,
+        "--type",
+        default=None,
         choices=["mermaid", "drawio"],
         help="Diagram type (auto-detected from source if omitted)",
     )
     diag.add_argument(
-        "--output", "-o", required=True,
+        "--output",
+        "-o",
+        required=True,
         help="Output image path (PNG)",
     )
     diag.add_argument(
-        "--max-iterations", type=int, default=3,
+        "--max-iterations",
+        type=int,
+        default=3,
         help="Max optimization iterations (default: 3)",
     )
     diag.add_argument(
@@ -131,7 +141,7 @@ def _run_digest(args: argparse.Namespace, settings: Settings) -> None:
             print(f"No supported files found in {dir_path}", file=sys.stderr)
             sys.exit(1)
 
-    for f in (args.files or []):
+    for f in args.files or []:
         p = Path(f)
         if not p.exists():
             print(f"Error: File not found: {p}", file=sys.stderr)
@@ -238,7 +248,8 @@ def _run_fill(args: argparse.Namespace) -> None:
 
 
 def _run_diagram(
-    args: argparse.Namespace, settings: Settings,
+    args: argparse.Namespace,
+    settings: Settings,
 ) -> None:
     import asyncio
     import shutil
@@ -257,22 +268,21 @@ def _run_diagram(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     try:
-        result = asyncio.run(generate_diagram(
-            args.description,
-            args.type,
-            source=args.source,
-            output_dir=output_dir,
-            max_iterations=args.max_iterations,
-            settings=settings,
-        ))
+        result = asyncio.run(
+            generate_diagram(
+                args.description,
+                args.type,
+                source=args.source,
+                output_dir=output_dir,
+                max_iterations=args.max_iterations,
+                settings=settings,
+            )
+        )
 
         # Copy final image to requested output
         shutil.copy2(result.image_path, output_path)
         print(f"Written: {output_path}")
-        print(
-            f"Iterations: {result.iterations}, "
-            f"passed: {any(r.get('pass') for r in result.review_log)}"
-        )
+        print(f"Iterations: {result.iterations}, passed: {any(r.get('pass') for r in result.review_log)}")
 
         if args.code_output:
             code_path = Path(args.code_output)

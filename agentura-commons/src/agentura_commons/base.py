@@ -21,6 +21,7 @@ class FileAttachment(TypedDict):
     The content field accepts a file path, base64 string, or data URI.
     Client middleware resolves file registry names to content before sending.
     """
+
     name: str
     content: str
 
@@ -33,6 +34,7 @@ class NamedFile:
     the name the user should see. If not used, the transport layer
     infers the name from Path.name.
     """
+
     path: Path
     name: str
 
@@ -52,6 +54,7 @@ class ToolResult:
     Use ToolResult directly only when returning multiple modalities
     (e.g., text + files, or data + files).
     """
+
     text: str = ""
     data: dict | list | None = None
     files: list[Path | NamedFile] = field(default_factory=list)
@@ -106,12 +109,15 @@ class BaseAgentService(ABC):
         """Build a JSON response for a file-producing tool."""
         name = display_name or path.name
         mime, _ = mimetypes.guess_type(str(path))
-        return json.dumps({
-            "download_url": self.file_url(path.name),
-            "filename": name,
-            "mime_type": mime or "application/octet-stream",
-            "size_bytes": path.stat().st_size,
-        }, ensure_ascii=False)
+        return json.dumps(
+            {
+                "download_url": self.file_url(path.name),
+                "filename": name,
+                "mime_type": mime or "application/octet-stream",
+                "size_bytes": path.stat().st_size,
+            },
+            ensure_ascii=False,
+        )
 
     @property
     @abstractmethod
@@ -151,7 +157,10 @@ class BaseAgentService(ABC):
 
     @abstractmethod
     async def execute_skill(
-        self, skill_id: str, message: str,
-        *, task_id: str | None = None,
+        self,
+        skill_id: str,
+        message: str,
+        *,
+        task_id: str | None = None,
     ) -> str:
         """Execute an A2A skill by ID with the given message."""

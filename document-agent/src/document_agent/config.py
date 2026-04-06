@@ -16,7 +16,9 @@ class Settings(BaseSettings):
     """Application settings loaded from environment / .env file."""
 
     model_config = SettingsConfigDict(
-        env_file=_ENV_FILES, env_file_encoding="utf-8", extra="ignore",
+        env_file=_ENV_FILES,
+        env_file_encoding="utf-8",
+        extra="ignore",
     )
 
     # Mistral API

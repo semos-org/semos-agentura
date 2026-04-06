@@ -27,10 +27,7 @@ def _build_client(
     label: str,
 ) -> LLMClient:
     if not endpoint or not api_key or not model:
-        raise ProviderError(
-            f"{label} LLM not configured. Set "
-            f"{label.upper()}_ENDPOINT, _API_KEY, _MODEL."
-        )
+        raise ProviderError(f"{label} LLM not configured. Set {label.upper()}_ENDPOINT, _API_KEY, _MODEL.")
     return LLMClient(endpoint, api_key, model)
 
 
@@ -99,12 +96,14 @@ async def generate_diagram(
     if diagram_type == "mermaid":
         mmdc = require_tool("mmdc", settings.mmdc_path)
         render_fn = partial(
-            render_mermaid_to_png, mmdc_path=mmdc,
+            render_mermaid_to_png,
+            mmdc_path=mmdc,
         )
     else:
         drawio = require_tool("drawio", settings.drawio_path)
         render_fn = partial(
-            render_drawio_to_png, drawio_path=drawio,
+            render_drawio_to_png,
+            drawio_path=drawio,
         )
 
     return await optimize_diagram(

@@ -33,9 +33,7 @@ class OCRPage:
         raw_images = data.get("images") or []
         self.images: list[OCRImage] = [OCRImage(i) for i in raw_images]
         raw_tables = data.get("tables") or []
-        self.tables: list[OCRTable] = [
-            OCRTable(t) for t in raw_tables
-        ]
+        self.tables: list[OCRTable] = [OCRTable(t) for t in raw_tables]
 
     def resolve_tables(self) -> str:
         """Return markdown with [tbl-N.ext](tbl-N.ext) refs replaced
@@ -43,11 +41,13 @@ class OCRPage:
         if not self.tables:
             return self.markdown
         table_map = {t.id: t.content for t in self.tables}
+
         def _replace(m: re.Match) -> str:
             tid = m.group(1)
             return table_map.get(tid, m.group(0))
+
         return re.sub(
-            r'\[([^\]]+)\]\(\1\)',
+            r"\[([^\]]+)\]\(\1\)",
             _replace,
             self.markdown,
         )

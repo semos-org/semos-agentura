@@ -44,9 +44,7 @@ def require_tool(name: str, env_override: str | None = None) -> Path:
     """Find a CLI tool or raise ToolNotFoundError."""
     path = find_tool(name, env_override)
     if path is None:
-        raise ToolNotFoundError(
-            f"'{name}' not found on PATH. Install it or set the path in settings/environment."
-        )
+        raise ToolNotFoundError(f"'{name}' not found on PATH. Install it or set the path in settings/environment.")
     return path
 
 

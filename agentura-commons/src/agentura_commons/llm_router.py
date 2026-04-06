@@ -109,14 +109,20 @@ async def route_to_tool(
     try:
         if provider in ("azure_anthropic", "anthropic"):
             return await _route_anthropic(
-                message, tools, model=model,
-                api_key=api_key, api_base=api_base,
+                message,
+                tools,
+                model=model,
+                api_key=api_key,
+                api_base=api_base,
                 provider=provider,
             )
         else:
             return await _route_openai(
-                message, tools, model=model,
-                api_key=api_key, api_base=api_base,
+                message,
+                tools,
+                model=model,
+                api_key=api_key,
+                api_base=api_base,
             )
     except Exception:
         logger.exception("LLM routing failed")
@@ -154,12 +160,16 @@ async def _route_anthropic(
 
     async with httpx.AsyncClient() as client:
         resp = await client.post(
-            url, headers=headers, json=payload, timeout=30.0,
+            url,
+            headers=headers,
+            json=payload,
+            timeout=30.0,
         )
         if resp.status_code >= 400:
             logger.error(
                 "Router LLM error %d: %s",
-                resp.status_code, resp.text[:300],
+                resp.status_code,
+                resp.text[:300],
             )
             return None
         data = resp.json()
@@ -202,12 +212,16 @@ async def _route_openai(
 
     async with httpx.AsyncClient() as client:
         resp = await client.post(
-            url, headers=headers, json=payload, timeout=30.0,
+            url,
+            headers=headers,
+            json=payload,
+            timeout=30.0,
         )
         if resp.status_code >= 400:
             logger.error(
                 "Router LLM error %d: %s",
-                resp.status_code, resp.text[:300],
+                resp.status_code,
+                resp.text[:300],
             )
             return None
         data = resp.json()

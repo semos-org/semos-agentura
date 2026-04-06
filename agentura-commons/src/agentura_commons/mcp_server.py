@@ -27,8 +27,11 @@ logger = logging.getLogger(__name__)
 
 # Normalization: any tool return value -> CallToolResult
 
+
 def _file_to_resource_link(
-    path: Path, name: str, base_url: str,
+    path: Path,
+    name: str,
+    base_url: str,
 ) -> tuple[ResourceLink, dict]:
     """Convert a file Path to a ResourceLink + metadata dict."""
     mime, _ = mimetypes.guess_type(str(path))
@@ -57,7 +60,8 @@ def _is_file_like(obj: Any) -> bool:
 
 
 def _materialize_file(
-    obj: Any, output_dir: Path | None,
+    obj: Any,
+    output_dir: Path | None,
 ) -> Path:
     """Write a file-like object to output_dir and return the Path."""
     data = obj.read()
@@ -75,7 +79,8 @@ def _materialize_file(
 
 
 def _normalize_to_tool_result(
-    raw: Any, output_dir: Path | None = None,
+    raw: Any,
+    output_dir: Path | None = None,
 ) -> ToolResult:
     """Convert any tool return value to a ToolResult."""
     if isinstance(raw, ToolResult):
@@ -86,10 +91,7 @@ def _normalize_to_tool_result(
         return ToolResult(files=[_materialize_file(raw, output_dir)])
     if isinstance(raw, list):
         # Check if it's a list of files (Path, NamedFile, file-like)
-        if raw and all(
-            isinstance(x, (Path, NamedFile)) or _is_file_like(x)
-            for x in raw
-        ):
+        if raw and all(isinstance(x, (Path, NamedFile)) or _is_file_like(x) for x in raw):
             files = []
             for x in raw:
                 if _is_file_like(x):
@@ -117,7 +119,8 @@ def _normalize_to_tool_result(
 
 
 def _tool_result_to_call_tool_result(
-    result: ToolResult, base_url: str,
+    result: ToolResult,
+    base_url: str,
 ) -> CallToolResult:
     """Convert a ToolResult to an MCP CallToolResult."""
     content: list = []
@@ -131,10 +134,7 @@ def _tool_result_to_call_tool_result(
     if result.data is not None:
         # structuredContent accepts dict per MCP spec.
         # Wrap lists so structuredContent is always a dict.
-        structured = (
-            result.data if isinstance(result.data, dict)
-            else {"items": result.data}
-        )
+        structured = result.data if isinstance(result.data, dict) else {"items": result.data}
         # Also add as text for LLMs that don't read structuredContent
         text = json.dumps(result.data, ensure_ascii=False, indent=2)
         content.append(TextContent(type="text", text=text))
@@ -152,10 +152,13 @@ def _tool_result_to_call_tool_result(
         else:
             structured.update(meta)
         # Add text summary for LLMs
-        content.insert(0, TextContent(
-            type="text",
-            text=json.dumps(meta, ensure_ascii=False),
-        ))
+        content.insert(
+            0,
+            TextContent(
+                type="text",
+                text=json.dumps(meta, ensure_ascii=False),
+            ),
+        )
 
     # Ensure at least one content block
     if not content:
@@ -169,8 +172,11 @@ def _tool_result_to_call_tool_result(
 
 # Wrapper: tool fn -> normalized CallToolResult
 
+
 def _make_normalized_wrapper(
-    name: str, fn: Any, service: BaseAgentService,
+    name: str,
+    fn: Any,
+    service: BaseAgentService,
 ) -> Any:
     """Wrap a tool function to normalize its return value to CallToolResult."""
 
@@ -178,6 +184,7 @@ def _make_normalized_wrapper(
         return service.base_url or "http://127.0.0.1:8000"
 
     if inspect.iscoroutinefunction(fn):
+
         @functools.wraps(fn)
         async def wrapper(**kwargs):
             raw = await fn(**kwargs)
@@ -185,9 +192,11 @@ def _make_normalized_wrapper(
                 return raw
             result = _normalize_to_tool_result(raw, service.output_dir)
             return _tool_result_to_call_tool_result(
-                result, _base_url(),
+                result,
+                _base_url(),
             )
     else:
+
         @functools.wraps(fn)
         def wrapper(**kwargs):
             raw = fn(**kwargs)
@@ -195,7 +204,8 @@ def _make_normalized_wrapper(
                 return raw
             result = _normalize_to_tool_result(raw, service.output_dir)
             return _tool_result_to_call_tool_result(
-                result, _base_url(),
+                result,
+                _base_url(),
             )
 
     wrapper.__name__ = name
@@ -225,7 +235,8 @@ def create_mcp_server(service: BaseAgentService) -> FastMCP:
             logger.info("MCP task support enabled")
         except Exception:
             logger.warning(
-                "Failed to enable MCP task support", exc_info=True,
+                "Failed to enable MCP task support",
+                exc_info=True,
             )
 
     for tool in service.get_tools():
@@ -257,6 +268,7 @@ def create_mcp_server(service: BaseAgentService) -> FastMCP:
             )
         if tool.task_support:
             from mcp.types import ToolExecution
+
             updates["execution"] = ToolExecution(
                 taskSupport=tool.task_support,
             )

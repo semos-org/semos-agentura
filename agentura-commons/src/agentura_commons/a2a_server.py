@@ -58,18 +58,23 @@ def _extract_files(message) -> list[dict]:
     for part in message.parts:
         if part.HasField("raw"):
             import base64
+
             b64 = base64.b64encode(part.raw).decode()
             mime = part.media_type or "application/octet-stream"
             name = part.filename or "attachment.bin"
-            files.append({
-                "name": name,
-                "content": f"data:{mime};base64,{b64}",
-            })
+            files.append(
+                {
+                    "name": name,
+                    "content": f"data:{mime};base64,{b64}",
+                }
+            )
         elif part.HasField("url"):
-            files.append({
-                "name": part.filename or "attachment",
-                "content": part.url,
-            })
+            files.append(
+                {
+                    "name": part.filename or "attachment",
+                    "content": part.url,
+                }
+            )
     return files
 
 
@@ -84,6 +89,7 @@ def _extract_tool_call(message) -> tuple[str, dict] | None:
         if part.HasField("data"):
             try:
                 from google.protobuf.json_format import MessageToDict
+
                 data = MessageToDict(part.data)
             except Exception:
                 continue
@@ -99,7 +105,9 @@ class _AgentExecutor(AgentExecutor):
         self._service = service
 
     async def execute(
-        self, context: RequestContext, event_queue: EventQueue,
+        self,
+        context: RequestContext,
+        event_queue: EventQueue,
     ) -> None:
         task_id = context.task_id or "unknown"
         ctx_id = context.context_id or "unknown"
@@ -111,51 +119,64 @@ class _AgentExecutor(AgentExecutor):
             )
 
         # Signal working
-        await event_queue.enqueue_event(TaskStatusUpdateEvent(
-            task_id=task_id, context_id=ctx_id,
-            status=TaskStatus(state=TaskState.TASK_STATE_WORKING),
-        ))
+        await event_queue.enqueue_event(
+            TaskStatusUpdateEvent(
+                task_id=task_id,
+                context_id=ctx_id,
+                status=TaskStatus(state=TaskState.TASK_STATE_WORKING),
+            )
+        )
 
         try:
             result_text, result_files = await self._dispatch(context)
         except Exception as e:
             logger.exception("A2A execute failed")
-            await event_queue.enqueue_event(TaskStatusUpdateEvent(
-                task_id=task_id, context_id=ctx_id,
-                status=TaskStatus(
-                    state=TaskState.TASK_STATE_FAILED,
-                    message=_msg(str(e)),
-                ),
-            ))
+            await event_queue.enqueue_event(
+                TaskStatusUpdateEvent(
+                    task_id=task_id,
+                    context_id=ctx_id,
+                    status=TaskStatus(
+                        state=TaskState.TASK_STATE_FAILED,
+                        message=_msg(str(e)),
+                    ),
+                )
+            )
             return
 
         # Emit file artifacts
         for f in result_files:
             await event_queue.enqueue_event(
                 TaskArtifactUpdateEvent(
-                    task_id=task_id, context_id=ctx_id,
+                    task_id=task_id,
+                    context_id=ctx_id,
                     artifact=Artifact(
                         name=f.get("filename", ""),
-                        parts=[Part(
-                            url=f.get("download_url", ""),
-                            filename=f.get("filename", ""),
-                            media_type=f.get("mime_type", ""),
-                        )],
+                        parts=[
+                            Part(
+                                url=f.get("download_url", ""),
+                                filename=f.get("filename", ""),
+                                media_type=f.get("mime_type", ""),
+                            )
+                        ],
                     ),
                 ),
             )
 
         # Emit completed
-        await event_queue.enqueue_event(TaskStatusUpdateEvent(
-            task_id=task_id, context_id=ctx_id,
-            status=TaskStatus(
-                state=TaskState.TASK_STATE_COMPLETED,
-                message=_msg(result_text),
-            ),
-        ))
+        await event_queue.enqueue_event(
+            TaskStatusUpdateEvent(
+                task_id=task_id,
+                context_id=ctx_id,
+                status=TaskStatus(
+                    state=TaskState.TASK_STATE_COMPLETED,
+                    message=_msg(result_text),
+                ),
+            )
+        )
 
     async def _dispatch(
-        self, context: RequestContext,
+        self,
+        context: RequestContext,
     ) -> tuple[str, list[dict]]:
         """Route to tool and return (text, file_metadata_list)."""
         message = context.message
@@ -178,15 +199,16 @@ class _AgentExecutor(AgentExecutor):
 
         # 3. Fallback: delegate to execute_skill
         result = await self._service.execute_skill(
-            skill_id=self._service.get_skills()[0].id
-            if self._service.get_skills() else "default",
+            skill_id=self._service.get_skills()[0].id if self._service.get_skills() else "default",
             message=text,
             task_id=context.task_id,
         )
         return result, []
 
     async def _call_tool(
-        self, name: str, args: dict,
+        self,
+        name: str,
+        args: dict,
         files: list[dict] | None = None,
     ) -> tuple[str, list[dict]]:
         """Call a tool by name, return (text, file_list)."""
@@ -197,22 +219,21 @@ class _AgentExecutor(AgentExecutor):
 
         # Inject file content into file params
         if files and td.file_params:
-            by_name = {
-                f["name"]: f["content"]
-                for f in files if f.get("name") and f.get("content")
-            }
+            by_name = {f["name"]: f["content"] for f in files if f.get("name") and f.get("content")}
             for param in td.file_params:
                 val = args.get(param)
                 if isinstance(val, str) and val in by_name:
                     args[param] = {
-                        "name": val, "content": by_name[val],
+                        "name": val,
+                        "content": by_name[val],
                     }
 
         result = await td.fn(**args)
         return self._parse_tool_result(result)
 
     def _parse_tool_result(
-        self, result: Any,
+        self,
+        result: Any,
     ) -> tuple[str, list[dict]]:
         """Parse a tool's return value into (text, files)."""
         if result is None:
@@ -227,11 +248,14 @@ class _AgentExecutor(AgentExecutor):
         return text, []
 
     async def _route_via_llm(
-        self, text: str, files: list[dict],
+        self,
+        text: str,
+        files: list[dict],
     ) -> tuple[str, list[dict]] | None:
         """Route natural language to a tool via LLM."""
         try:
             from .llm_router import route_to_tool
+
             result = await route_to_tool(
                 text,
                 self._service.get_tools(),
@@ -247,19 +271,24 @@ class _AgentExecutor(AgentExecutor):
         return None
 
     async def cancel(
-        self, context: RequestContext, event_queue: EventQueue,
+        self,
+        context: RequestContext,
+        event_queue: EventQueue,
     ) -> None:
-        await event_queue.enqueue_event(TaskStatusUpdateEvent(
-            task_id=context.task_id or "unknown",
-            context_id=context.context_id or "unknown",
-            status=TaskStatus(
-                state=TaskState.TASK_STATE_CANCELED,
-            ),
-        ))
+        await event_queue.enqueue_event(
+            TaskStatusUpdateEvent(
+                task_id=context.task_id or "unknown",
+                context_id=context.context_id or "unknown",
+                status=TaskStatus(
+                    state=TaskState.TASK_STATE_CANCELED,
+                ),
+            )
+        )
 
 
 def create_agent_card(
-    service: BaseAgentService, base_url: str = "http://localhost:8000",
+    service: BaseAgentService,
+    base_url: str = "http://localhost:8000",
 ) -> AgentCard:
     """Build an A2A AgentCard from the agent service."""
     skills = [

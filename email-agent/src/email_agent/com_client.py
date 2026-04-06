@@ -44,9 +44,16 @@ class OutlookCOM:
     # Email: Search
 
     def search_emails(
-        self, query: str = "", folder_id: int = OL_FOLDER_INBOX, limit: int = 50, *,
-        from_addr: str = "", to_addr: str = "",
-        since: str = "", before: str = "", unread_only: bool = False,
+        self,
+        query: str = "",
+        folder_id: int = OL_FOLDER_INBOX,
+        limit: int = 50,
+        *,
+        from_addr: str = "",
+        to_addr: str = "",
+        since: str = "",
+        before: str = "",
+        unread_only: bool = False,
         has_attachments: bool | None = None,
     ) -> list[dict]:
         """Search emails with composable filters. All filters are AND-combined.
@@ -65,15 +72,15 @@ class OutlookCOM:
         folder = self._ns.GetDefaultFolder(folder_id)
         clauses = []
         if query:
-            clauses.append(f'"urn:schemas:httpmail:subject" LIKE \'%{query}%\'')
+            clauses.append(f"\"urn:schemas:httpmail:subject\" LIKE '%{query}%'")
         if from_addr:
-            clauses.append(f'"urn:schemas:httpmail:fromemail" LIKE \'%{from_addr}%\'')
+            clauses.append(f"\"urn:schemas:httpmail:fromemail\" LIKE '%{from_addr}%'")
         if to_addr:
-            clauses.append(f'"urn:schemas:httpmail:displayto" LIKE \'%{to_addr}%\'')
+            clauses.append(f"\"urn:schemas:httpmail:displayto\" LIKE '%{to_addr}%'")
         if since:
-            clauses.append(f'"urn:schemas:httpmail:datereceived" >= \'{since}\'')
+            clauses.append(f"\"urn:schemas:httpmail:datereceived\" >= '{since}'")
         if before:
-            clauses.append(f'"urn:schemas:httpmail:datereceived" < \'{before}\'')
+            clauses.append(f"\"urn:schemas:httpmail:datereceived\" < '{before}'")
         if unread_only:
             clauses.append('"urn:schemas:httpmail:read" = 0')
         if has_attachments is True:
@@ -82,7 +89,7 @@ class OutlookCOM:
             clauses.append('"urn:schemas:httpmail:hasattachment" = 0')
 
         if clauses:
-            filt = '@SQL=' + ' AND '.join(clauses)
+            filt = "@SQL=" + " AND ".join(clauses)
             items = folder.Items.Restrict(filt)
         else:
             items = folder.Items
@@ -134,20 +141,22 @@ class OutlookCOM:
         }
         for i in range(item.Attachments.Count):
             att = item.Attachments.Item(i + 1)
-            d["attachments"].append({
-                "filename": att.FileName,
-                "size": att.Size,
-                "saved_path": None,
-            })
+            d["attachments"].append(
+                {
+                    "filename": att.FileName,
+                    "size": att.Size,
+                    "saved_path": None,
+                }
+            )
         if include_body:
             d["body"] = str(item.Body or "")
         return d
 
     # Email: Draft & Send
 
-    def _compose(self, to: str, subject: str, body: str,
-                 cc: str = "", html: bool = False,
-                 attachments: list[str] | None = None):
+    def _compose(
+        self, to: str, subject: str, body: str, cc: str = "", html: bool = False, attachments: list[str] | None = None
+    ):
         """Create a MailItem with the given fields."""
         mail = self._app.CreateItem(0)
         mail.To = to.replace(",", ";")
@@ -158,22 +167,22 @@ class OutlookCOM:
             mail.Body = body
         if cc:
             mail.CC = cc.replace(",", ";")
-        for path in (attachments or []):
+        for path in attachments or []:
             mail.Attachments.Add(str(Path(path).resolve()))
         return mail
 
-    def create_draft(self, to: str, subject: str, body: str,
-                     cc: str = "", html: bool = False,
-                     attachments: list[str] | None = None) -> str:
+    def create_draft(
+        self, to: str, subject: str, body: str, cc: str = "", html: bool = False, attachments: list[str] | None = None
+    ) -> str:
         """Create an email draft. Set html=True for HTML body. Returns EntryID."""
         mail = self._compose(to, subject, body, cc=cc, html=html, attachments=attachments)
         mail.Save()
         logger.info("Draft created: %s -> %s", subject, to)
         return mail.EntryID
 
-    def send_email(self, to: str, subject: str, body: str,
-                   cc: str = "", html: bool = False,
-                   attachments: list[str] | None = None) -> None:
+    def send_email(
+        self, to: str, subject: str, body: str, cc: str = "", html: bool = False, attachments: list[str] | None = None
+    ) -> None:
         """Send an email immediately. Set html=True for HTML body."""
         mail = self._compose(to, subject, body, cc=cc, html=html, attachments=attachments)
         mail.Send()
@@ -188,10 +197,7 @@ class OutlookCOM:
         items.IncludeRecurrences = True
         items.Sort("[Start]")
 
-        filt = (
-            f"[Start] >= '{start.strftime('%d.%m.%Y %H:%M')}' "
-            f"AND [End] <= '{end.strftime('%d.%m.%Y 23:59')}'"
-        )
+        filt = f"[Start] >= '{start.strftime('%d.%m.%Y %H:%M')}' AND [End] <= '{end.strftime('%d.%m.%Y 23:59')}'"
         restricted = items.Restrict(filt)
 
         events = []
@@ -201,16 +207,18 @@ class OutlookCOM:
                 ev_start = str(item.Start)
                 if ev_start > end.strftime("%Y-%m-%d 23:59"):
                     break
-                events.append({
-                    "entry_id": item.EntryID,
-                    "subject": str(item.Subject or ""),
-                    "start": ev_start,
-                    "end": str(item.End),
-                    "location": str(getattr(item, "Location", "") or ""),
-                    "all_day": bool(item.AllDayEvent),
-                    "organizer": str(getattr(item, "Organizer", "") or ""),
-                    "required": str(getattr(item, "RequiredAttendees", "") or ""),
-                })
+                events.append(
+                    {
+                        "entry_id": item.EntryID,
+                        "subject": str(item.Subject or ""),
+                        "start": ev_start,
+                        "end": str(item.End),
+                        "location": str(getattr(item, "Location", "") or ""),
+                        "all_day": bool(item.AllDayEvent),
+                        "organizer": str(getattr(item, "Organizer", "") or ""),
+                        "required": str(getattr(item, "RequiredAttendees", "") or ""),
+                    }
+                )
             except Exception as e:
                 logger.debug("Skipping event: %s", e)
             try:
@@ -221,8 +229,9 @@ class OutlookCOM:
         logger.info("Events %s - %s: %d found", start.strftime("%d.%m"), end.strftime("%d.%m.%Y"), len(events))
         return events
 
-    def free_slots(self, start: datetime, end: datetime,
-                   work_start: int = 8, work_end: int = 17) -> dict[str, list[tuple[str, str]]]:
+    def free_slots(
+        self, start: datetime, end: datetime, work_start: int = 8, work_end: int = 17
+    ) -> dict[str, list[tuple[str, str]]]:
         """Calculate free time slots per weekday from calendar events."""
         from datetime import timedelta
 
@@ -235,10 +244,12 @@ class OutlookCOM:
             date_key = ev_start.strftime("%Y-%m-%d")
             if date_key not in by_date:
                 by_date[date_key] = []
-            by_date[date_key].append((
-                ev_start.hour + ev_start.minute / 60,
-                ev_end.hour + ev_end.minute / 60,
-            ))
+            by_date[date_key].append(
+                (
+                    ev_start.hour + ev_start.minute / 60,
+                    ev_end.hour + ev_end.minute / 60,
+                )
+            )
 
         result = {}
         current = start.replace(hour=0, minute=0, second=0)
@@ -272,9 +283,15 @@ class OutlookCOM:
 
     # Calendar: Create Event
 
-    def create_event(self, subject: str, start: datetime, end: datetime,
-                     location: str = "", body: str = "",
-                     required_attendees: str = "") -> str:
+    def create_event(
+        self,
+        subject: str,
+        start: datetime,
+        end: datetime,
+        location: str = "",
+        body: str = "",
+        required_attendees: str = "",
+    ) -> str:
         """Create a calendar event. Returns the EntryID."""
         appt = self._app.CreateItem(1)
         appt.Subject = subject
@@ -305,12 +322,15 @@ class OutlookCOM:
                 if item.Class == OL_MAIL:
                     yield item, self._mail_to_dict(item)
                 elif item.Class in (OL_APPOINTMENT, OL_MEETING_REQUEST):
-                    yield item, {
-                        "entry_id": item.EntryID,
-                        "subject": str(item.Subject or ""),
-                        "received": str(getattr(item, "ReceivedTime", "")),
-                        "class": item.Class,
-                    }
+                    yield (
+                        item,
+                        {
+                            "entry_id": item.EntryID,
+                            "subject": str(item.Subject or ""),
+                            "received": str(getattr(item, "ReceivedTime", "")),
+                            "class": item.Class,
+                        },
+                    )
             except Exception as e:
                 logger.debug("Skipping item in iteration: %s", e)
             item = items.GetNext()

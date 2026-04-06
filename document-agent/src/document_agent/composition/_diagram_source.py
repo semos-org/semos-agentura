@@ -24,8 +24,14 @@ _MERMAID_KEYWORDS = re.compile(
 _DRAWIO_PREFIX = re.compile(r"^\s*<(?:mxfile|mxGraphModel)\b")
 
 _IMAGE_EXTENSIONS = {
-    ".png", ".jpg", ".jpeg", ".webp",
-    ".tiff", ".tif", ".bmp", ".gif",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".webp",
+    ".tiff",
+    ".tif",
+    ".bmp",
+    ".gif",
 }
 
 _ANALYSIS_PROMPT = (
@@ -140,7 +146,8 @@ async def extract_diagram_source(
             )
         # No embedded XML - fall through to image analysis
         logger.warning(
-            "No embedded XML in %s, treating as image", path,
+            "No embedded XML in %s, treating as image",
+            path,
         )
 
     # .svg - check for embedded diagram code
@@ -197,20 +204,24 @@ def _svg_to_png_b64(svg_path: Path) -> str | None:
         if not exe:
             continue
         with tempfile.NamedTemporaryFile(
-            suffix=".png", delete=False,
+            suffix=".png",
+            delete=False,
         ) as f:
             tmp = Path(f.name)
         try:
             if "inkscape" in tool:
                 cmd = [
-                    exe, str(svg_path),
+                    exe,
+                    str(svg_path),
                     "--export-type=png",
                     f"--export-filename={tmp}",
                 ]
             else:
                 cmd = [exe, str(svg_path), "-o", str(tmp)]
             subprocess.run(
-                cmd, capture_output=True, timeout=30,
+                cmd,
+                capture_output=True,
+                timeout=30,
             )
             if tmp.exists() and tmp.stat().st_size > 0:
                 return base64.b64encode(
