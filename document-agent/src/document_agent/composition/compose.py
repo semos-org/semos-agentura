@@ -18,6 +18,55 @@ from ._slides import compose_slides
 
 logger = logging.getLogger(__name__)
 
+_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".bmp"}
+_IMG_REF = __import__("re").compile(r"!\[[^\]]*\]\(([^)]+)\)")
+
+
+def _copy_referenced_images(
+    md_path: Path,
+    source: Path | str,
+    work_dir: Path,
+) -> None:
+    """Copy image files referenced in markdown to work_dir.
+
+    Checks the source file's directory and common output locations
+    for images referenced as ![alt](filename.png).
+    """
+    md_text = md_path.read_text(encoding="utf-8")
+    source_path = Path(source) if isinstance(source, (str, Path)) else None
+    search_dirs: list[Path] = []
+    if source_path and source_path.is_file():
+        search_dirs.append(source_path.parent)
+    if source_path and source_path.is_dir():
+        search_dirs.append(source_path)
+    # Also check common agent output directories
+    for parent in [work_dir.parent, Path("output/document-agent")]:
+        if parent.is_dir() and parent not in search_dirs:
+            search_dirs.append(parent)
+
+    for match in _IMG_REF.finditer(md_text):
+        ref = match.group(1)
+        # Skip URLs and data URIs
+        if ref.startswith(("http://", "https://", "data:")):
+            continue
+        ref_path = Path(ref)
+        # Skip if already in work_dir
+        if (work_dir / ref_path.name).exists():
+            continue
+        # Search for the file
+        for d in search_dirs:
+            candidate = d / ref_path.name
+            if candidate.exists():
+                dest = work_dir / ref_path.name
+                shutil.copy2(candidate, dest)
+                # Update markdown reference if path differs
+                if ref != ref_path.name:
+                    md_text = md_text.replace(ref, ref_path.name)
+                logger.info("Copied image %s to work_dir", ref_path.name)
+                break
+
+    md_path.write_text(md_text, encoding="utf-8")
+
 
 def compose(
     source: Path | str,
@@ -52,6 +101,11 @@ def compose(
     try:
         # Prepare markdown: write to file, extract base64 images
         md_path = prepare_markdown_file(source, work_dir)
+
+        # Copy referenced images from source directory to work_dir.
+        # Handles images materialized by A2A file transfer or
+        # produced by prior tool calls in the same agent.
+        _copy_referenced_images(md_path, source, work_dir)
 
         # Render mermaid diagrams if requested
         if render_mermaid:

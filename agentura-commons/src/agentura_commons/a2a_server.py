@@ -194,6 +194,8 @@ class _AgentExecutor(AgentExecutor):
         # History is per task_id, files are per context_id
         if result.status in ("input_required", "auth_required"):
             _task_histories[task_id] = result.history
+            if ctx_id:
+                _task_histories[ctx_id] = result.history
 
         # Accumulate files in context (persist across tasks)
         new_files = _extract_files(context.message)
@@ -283,10 +285,14 @@ class _AgentExecutor(AgentExecutor):
         from .llm_executor import LLMExecutor
 
         try:
-            # Retrieve history for task continuation
+            # Retrieve history for task continuation.
+            # Try task_id first, then context_id (SDK may assign
+            # a new task_id on continuation).
             history = None
             if task_id and task_id in _task_histories:
                 history = _task_histories[task_id]
+            elif context_id and context_id in _task_histories:
+                history = _task_histories[context_id]
 
             # Merge context files (persist across tasks)
             if context_id and context_id in _context_files:
@@ -294,6 +300,9 @@ class _AgentExecutor(AgentExecutor):
                 for cf in _context_files[context_id]:
                     if cf.get("name") not in seen:
                         files.append(cf)
+
+            # Write received files to disk so tools can access them
+            self._materialize_files(files)
 
             executor = LLMExecutor(
                 tools=self._service.get_tools(),
@@ -317,6 +326,47 @@ class _AgentExecutor(AgentExecutor):
                 text=f"LLM executor error: {exc}",
                 status="failed",
             )
+
+    def _materialize_files(self, files: list[dict]) -> None:
+        """Write A2A file content to agent's output_dir.
+
+        Tools like compose_document need files on disk (e.g., images
+        referenced in markdown). This writes them so the filename
+        resolves to a real path.
+        """
+        import base64
+
+        output_dir = getattr(self._service, "output_dir", None)
+        if not output_dir:
+            return
+        for f in files:
+            name = f.get("name", "")
+            content = f.get("content", "")
+            if not name or not content:
+                continue
+            # Already on disk?
+            path = output_dir / name
+            if path.exists():
+                continue
+            try:
+                if content.startswith("data:"):
+                    _, _, b64 = content.partition(",")
+                    data = base64.b64decode(b64)
+                elif isinstance(content, bytes):
+                    data = content
+                else:
+                    continue
+                path.write_bytes(data)
+                logger.info(
+                    "Materialized file %s (%d bytes)",
+                    name,
+                    len(data),
+                )
+            except Exception:
+                logger.warning(
+                    "Failed to materialize %s",
+                    name,
+                )
 
     async def _call_tool(
         self,

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import mimetypes
+import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -134,18 +135,19 @@ class BaseAgentService(ABC):
         return "0.1.0"
 
     # Optional LLM router for A2A natural language dispatch.
-    # Override in subclass if the agent should route NL to tools.
+    # Set ROUTER_LLM_MODEL, ROUTER_LLM_API_KEY, ROUTER_LLM_API_BASE
+    # in .env to enable. Override in subclass for custom logic.
     @property
     def router_llm_model(self) -> str:
-        return ""
+        return os.environ.get("ROUTER_LLM_MODEL", "")
 
     @property
     def router_llm_api_key(self) -> str:
-        return ""
+        return os.environ.get("ROUTER_LLM_API_KEY", "")
 
     @property
     def router_llm_api_base(self) -> str:
-        return ""
+        return os.environ.get("ROUTER_LLM_API_BASE", "")
 
     @abstractmethod
     def get_tools(self) -> list[ToolDef]:

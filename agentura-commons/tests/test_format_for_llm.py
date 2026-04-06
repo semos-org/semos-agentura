@@ -68,13 +68,13 @@ class TestClientA2AResultFormat:
             text="Should it be PDF or PPTX?",
             agent_name="document",
             status="input_required",
-            task_id="abc123",
+            task_id="task-1",
+            context_id="ctx-1",
         )
         out = r.format_for_llm()
-        assert "[document] [Task abc123 - needs input]" in out
+        assert "[document] [NEEDS INPUT]" in out
         assert "Agent asks: Should it be PDF or PPTX?" in out
-        assert '"document"' in out
-        assert 'task_id="abc123"' in out
+        assert 'context_id="ctx-1"' in out
 
     def test_rejected(self):
         r = ClientA2AResult(

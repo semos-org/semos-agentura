@@ -91,11 +91,12 @@ class ClientA2AResult:
         parts: list[str] = []
 
         if self.status == "input_required":
-            parts.append(f"{prefix}[Task {self.task_id} - needs input]")
+            parts.append(f"{prefix}[NEEDS INPUT]")
             parts.append(f"Agent asks: {self.text}")
-            parts.append("")
-            agent_arg = f'"{self.agent_name}", ' if self.agent_name else ""
-            parts.append(f'Continue with: ask_agent({agent_arg}message=<your answer>, task_id="{self.task_id}")')
+            cid = self.context_id or self.task_id or ""
+            if cid:
+                parts.append("")
+                parts.append(f'To continue this conversation, pass context_id="{cid}"')
             return "\n".join(parts)
 
         if self.status == "rejected":
