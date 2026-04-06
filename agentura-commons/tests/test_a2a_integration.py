@@ -6,16 +6,12 @@ and file round-trips. Uses a2a-sdk 1.0 Client API.
 
 from __future__ import annotations
 
-import socket
-import threading
-import time
 from pathlib import Path
 from uuid import uuid4
 from zipfile import ZipFile
 
 import httpx
 import pytest
-import uvicorn
 from google.protobuf.struct_pb2 import Struct, Value
 
 from a2a.client import Client, ClientConfig, ClientFactory
@@ -25,6 +21,8 @@ from a2a.types import (
     Role,
     SendMessageRequest,
 )
+
+from conftest import free_port, start_agent
 
 
 async def _connect(base_url: str) -> Client:
@@ -36,36 +34,6 @@ async def _connect(base_url: str) -> Client:
     return await ClientFactory.connect(
         base_url, client_config=config,
     )
-
-
-def _free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
-
-
-def _make_app(agent_module: str, port: int):
-    if agent_module == "document_agent":
-        from document_agent.service import create_service_app
-    else:
-        from email_agent.service import create_service_app
-    return create_service_app(port=port)
-
-
-def _start_agent(agent_module: str, port: int):
-    app = _make_app(agent_module, port)
-    config = uvicorn.Config(
-        app, host="127.0.0.1", port=port,
-        log_level="warning",
-    )
-    server = uvicorn.Server(config)
-    thread = threading.Thread(target=server.run, daemon=True)
-    thread.start()
-    for _ in range(50):
-        time.sleep(0.1)
-        if server.started:
-            break
-    return server, thread
 
 
 def _make_sample_docx(path: Path) -> Path:
@@ -160,9 +128,9 @@ async def _send_and_collect(
 class TestAgentCard:
     @pytest.fixture(autouse=True)
     def _agent(self):
-        self.port = _free_port()
+        self.port = free_port()
         self.base_url = f"http://127.0.0.1:{self.port}"
-        self.server, self.thread = _start_agent(
+        self.server, self.thread = start_agent(
             "document_agent", self.port,
         )
         yield
@@ -193,9 +161,9 @@ class TestAgentCard:
 class TestA2AToolCalls:
     @pytest.fixture(autouse=True)
     def _agent(self):
-        self.port = _free_port()
+        self.port = free_port()
         self.base_url = f"http://127.0.0.1:{self.port}"
-        self.server, self.thread = _start_agent(
+        self.server, self.thread = start_agent(
             "document_agent", self.port,
         )
         yield
@@ -241,7 +209,7 @@ class TestA2ANaturalLanguage:
 
     @pytest.fixture(autouse=True)
     def _agent(self, monkeypatch):
-        self.port = _free_port()
+        self.port = free_port()
         self.base_url = f"http://127.0.0.1:{self.port}"
 
         # Mock the LLM router to return predefined tool selections
@@ -286,7 +254,7 @@ class TestA2ANaturalLanguage:
             property(lambda s: "mock-model"),
         )
 
-        self.server, self.thread = _start_agent(
+        self.server, self.thread = start_agent(
             "document_agent", self.port,
         )
         yield
@@ -349,9 +317,9 @@ class TestA2AFileRoundTrip:
 
     @pytest.fixture(autouse=True)
     def _agent(self):
-        self.port = _free_port()
+        self.port = free_port()
         self.base_url = f"http://127.0.0.1:{self.port}"
-        self.server, self.thread = _start_agent(
+        self.server, self.thread = start_agent(
             "document_agent", self.port,
         )
         yield
@@ -416,9 +384,9 @@ class TestA2AFileRoundTrip:
 class TestEmailA2A:
     @pytest.fixture(autouse=True)
     def _agent(self):
-        self.port = _free_port()
+        self.port = free_port()
         self.base_url = f"http://127.0.0.1:{self.port}"
-        self.server, self.thread = _start_agent(
+        self.server, self.thread = start_agent(
             "email_agent", self.port,
         )
         yield
@@ -453,9 +421,9 @@ class TestA2AJsonRpc:
 
     @pytest.fixture(autouse=True)
     def _agent(self):
-        self.port = _free_port()
+        self.port = free_port()
         self.base_url = f"http://127.0.0.1:{self.port}"
-        self.server, self.thread = _start_agent(
+        self.server, self.thread = start_agent(
             "document_agent", self.port,
         )
         yield

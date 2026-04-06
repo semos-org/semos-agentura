@@ -9,51 +9,14 @@ Run with: pytest agentura-commons/tests/test_client_integration.py -v
 from __future__ import annotations
 
 import json
-import socket
-import threading
-import time
 from pathlib import Path
 from zipfile import ZipFile
 
 import pytest
-import uvicorn
 
 from agentura_commons.client import AgenturaClient
 
-
-def _free_port() -> int:
-    """Find a free TCP port."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
-
-
-def _make_app(agent_module: str, port: int):
-    """Import agent module and create app with correct port."""
-    if agent_module == "document_agent":
-        from document_agent.service import create_service_app
-    elif agent_module == "email_agent":
-        from email_agent.service import create_service_app
-    else:
-        raise ValueError(f"Unknown agent: {agent_module}")
-    return create_service_app(port=port)
-
-
-def _start_agent(agent_module: str, port: int):
-    """Start a uvicorn server in a background thread."""
-    app = _make_app(agent_module, port)
-    config = uvicorn.Config(
-        app, host="127.0.0.1", port=port,
-        log_level="warning",
-    )
-    server = uvicorn.Server(config)
-    thread = threading.Thread(target=server.run, daemon=True)
-    thread.start()
-    for _ in range(50):
-        time.sleep(0.1)
-        if server.started:
-            break
-    return server, thread
+from conftest import free_port, start_agent
 
 
 def _make_sample_docx(path: Path) -> Path:
@@ -110,9 +73,9 @@ class TestDocumentAgent:
     @pytest.fixture(autouse=True)
     def _agent(self):
         """Start document-agent on a random port."""
-        self.port = _free_port()
+        self.port = free_port()
         self.base_url = f"http://127.0.0.1:{self.port}"
-        self.server, self.thread = _start_agent(
+        self.server, self.thread = start_agent(
             "document_agent", self.port,
         )
         yield
@@ -241,9 +204,9 @@ class TestEmailAgent:
 
     @pytest.fixture(autouse=True)
     def _agent(self):
-        self.port = _free_port()
+        self.port = free_port()
         self.base_url = f"http://127.0.0.1:{self.port}"
-        self.server, self.thread = _start_agent(
+        self.server, self.thread = start_agent(
             "email_agent", self.port,
         )
         yield
@@ -281,12 +244,12 @@ class TestMultiAgent:
 
     @pytest.fixture(autouse=True)
     def _agents(self):
-        self.doc_port = _free_port()
-        self.email_port = _free_port()
-        self.doc_server, self.doc_thread = _start_agent(
+        self.doc_port = free_port()
+        self.email_port = free_port()
+        self.doc_server, self.doc_thread = start_agent(
             "document_agent", self.doc_port,
         )
-        self.email_server, self.email_thread = _start_agent(
+        self.email_server, self.email_thread = start_agent(
             "email_agent", self.email_port,
         )
         yield
