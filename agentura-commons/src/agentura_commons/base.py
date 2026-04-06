@@ -127,6 +127,20 @@ class BaseAgentService(ABC):
     def agent_version(self) -> str:
         return "0.1.0"
 
+    # Optional LLM router for A2A natural language dispatch.
+    # Override in subclass if the agent should route NL to tools.
+    @property
+    def router_llm_model(self) -> str:
+        return ""
+
+    @property
+    def router_llm_api_key(self) -> str:
+        return ""
+
+    @property
+    def router_llm_api_base(self) -> str:
+        return ""
+
     @abstractmethod
     def get_tools(self) -> list[ToolDef]:
         """Return all MCP tools this agent exposes."""
