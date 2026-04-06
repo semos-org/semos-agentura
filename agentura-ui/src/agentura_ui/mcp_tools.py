@@ -70,8 +70,11 @@ def _json_schema_to_pydantic(
 _produced_files: list[FileEntry] = []
 
 # Status callback: set by __main__.py to update chat placeholder.
-# Signature: (status_text: str) -> None
 _status_callback: Any = None
+
+# File notify callback: called immediately when a file is produced.
+# Signature: (entry: FileEntry) -> None
+_file_notify_callback: Any = None
 
 
 def set_status_callback(fn: Any) -> None:
@@ -80,11 +83,26 @@ def set_status_callback(fn: Any) -> None:
     _status_callback = fn
 
 
+def set_file_notify_callback(fn: Any) -> None:
+    """Register a callback for real-time file notifications."""
+    global _file_notify_callback
+    _file_notify_callback = fn
+
+
 def _update_status(text: str) -> None:
     """Update the UI status indicator."""
     if _status_callback:
         try:
             _status_callback(text)
+        except Exception:
+            pass
+
+
+def _notify_file(entry: FileEntry) -> None:
+    """Notify the UI that a file was produced (real-time)."""
+    if _file_notify_callback:
+        try:
+            _file_notify_callback(entry)
         except Exception:
             pass
 
@@ -140,9 +158,11 @@ def _make_mcp_tool_class(
                 mcp_tool.name, result, agent, registry,
             )
 
-            if new_files:
-                _produced_files.extend(new_files)
+            for entry in new_files:
+                _produced_files.append(entry)
+                _notify_file(entry)
 
+            _update_status("")
             return text
 
     # Set a readable class name for debugging

@@ -158,6 +158,8 @@ class TestMakeMcpToolClass:
 
 class TestDrainProducedFiles:
     def test_drain_empty(self):
+        # Clear any leftovers from other tests
+        drain_produced_files()
         files = drain_produced_files()
         assert files == []
 

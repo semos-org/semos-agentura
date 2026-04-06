@@ -23,6 +23,7 @@ from .file_registry import (
 )
 from .mcp_tools import (
     _json_schema_to_pydantic,
+    _notify_file,
     _produced_files,
     _update_status,
 )
@@ -153,8 +154,9 @@ def _make_a2a_tool_class(
             new_files = await _fetch_a2a_files(
                 result.files, mcp_tool.name, registry,
             )
-            if new_files:
-                _produced_files.extend(new_files)
+            for entry in new_files:
+                _produced_files.append(entry)
+                _notify_file(entry)
 
             _update_status("")
             return result.text
@@ -220,8 +222,13 @@ def _make_a2a_delegate_tool(
                 "A2A delegate: %s(%s, context_id=%s)",
                 self.name, message, context_id,
             )
+            # Show agent name in status while working
+            short_msg = (
+                message[:60] + "..."
+                if len(message) > 60 else message
+            )
             _update_status(
-                f"Asking {a2a_info.name}...",
+                f"{a2a_info.name}: {short_msg}",
             )
 
             # Resolve files mentioned in message text
@@ -246,8 +253,9 @@ def _make_a2a_delegate_tool(
             new_files = await _fetch_a2a_files(
                 result.files, self.name, registry,
             )
-            if new_files:
-                _produced_files.extend(new_files)
+            for entry in new_files:
+                _produced_files.append(entry)
+                _notify_file(entry)
 
             _update_status("")
 

@@ -47,6 +47,50 @@ def render_file_entry(entry: FileEntry) -> pn.viewable.Viewable:
     return _download_button(entry)
 
 
+def render_file_notification(
+    entry: FileEntry,
+    on_preview=None,
+) -> pn.viewable.Viewable:
+    """Compact single-row file notification for chat.
+
+    Shows: File created: **name** (size) [Preview] [Download]
+    No inline image/HTML preview - user clicks Preview to see
+    it in the sidebar preview pane.
+    """
+    label = pn.pane.Markdown(
+        f"File created: **{entry.filename}** "
+        f"({human_size(entry.size)})",
+        margin=(5, 5, 5, 0),
+        sizing_mode="stretch_width",
+    )
+
+    buttons = []
+    if on_preview:
+        preview_btn = pn.widgets.Button(
+            name="Preview",
+            button_type="light",
+            width=70, height=28,
+        )
+        preview_btn.on_click(
+            lambda e, ent=entry: on_preview(ent),
+        )
+        buttons.append(preview_btn)
+
+    download_btn = pn.widgets.FileDownload(
+        callback=lambda ent=entry: io.BytesIO(ent.blob),
+        filename=entry.filename,
+        label="Download",
+        button_type="light",
+        width=80, height=28,
+    )
+    buttons.append(download_btn)
+
+    return pn.Row(
+        label, *buttons,
+        sizing_mode="stretch_width",
+    )
+
+
 def _download_button(entry: FileEntry) -> pn.widgets.FileDownload:
     """Create a download button for a file."""
     return pn.widgets.FileDownload(

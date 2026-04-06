@@ -19,13 +19,20 @@ from panelini.panels.ai.utils.ai_interface import (
     PROVIDER_CLASS_REGISTRY,
 )
 
-from .a2a_client import A2AAgentInfo, discover_agents
+from .a2a_client import discover_agents
 from .a2a_tools import create_a2a_delegates
 from .file_manager import FileManager
 from .file_registry import FileRegistry, human_size
 from .mcp_hub import AgentConnection, MCPHub
-from .mcp_tools import drain_produced_files, set_status_callback
-from .renderers import render_file_entry, resolve_file_references
+from .mcp_tools import (
+    drain_produced_files,
+    set_file_notify_callback,
+    set_status_callback,
+)
+from .renderers import (
+    render_file_notification,
+    resolve_file_references,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -146,33 +153,17 @@ def _wrap_chat_callback(original_callback, registry,
 
         # Resolve markdown file refs (![](file.png)) to
         # inline data URIs so images render in chat.
-        new_files = drain_produced_files()
-        resolved_any = False
         if last_chunk and isinstance(last_chunk, str):
             resolved = resolve_file_references(
                 last_chunk, registry,
             )
             if resolved != last_chunk:
-                resolved_any = True
                 yield resolved
 
-        # Notify about produced files + show download widget
-        # for non-image files. Images already rendered inline
-        # are skipped as widgets but still announced.
-        for entry in new_files:
-            instance.send(
-                f"File created: **{entry.filename}** "
-                f"({human_size(entry.size)})",
-                user="System", respond=False,
-            )
-            # Show download/preview widget for non-images,
-            # or images that weren't resolved inline.
-            if not (resolved_any
-                    and entry.mime.startswith("image/")):
-                widget = render_file_entry(entry)
-                instance.send(
-                    widget, user="System", respond=False,
-                )
+        # Files are notified in real-time via _notify_file
+        # callback (called from tool wrappers). Just drain
+        # the list and refresh the file manager.
+        new_files = drain_produced_files()
         if new_files:
             file_mgr.refresh()
 
@@ -193,15 +184,7 @@ def create_app() -> Panelini:
 
     # Increase max tool iterations (panelini default is 10).
     # A2A delegates with multi-step workflows need more.
-    _orig_handle = frontend.backend._handle_message_with_tools
-
-    async def _patched_handle(user_message, _orig=_orig_handle):
-        import inspect
-        src = inspect.getsource(type(frontend.backend))
-        # Can't cleanly patch a local var. Override the method.
-        return await _orig(user_message)
-
-    # Direct patch: replace the hardcoded constant in the method
+    # Patch max tool iterations (panelini default is 10).
     import types
     from langchain_core.messages import AIMessage
 
@@ -251,9 +234,36 @@ def create_app() -> Panelini:
         _handle_with_more_iterations, frontend.backend,
     )
 
-    # Connect tool status updates to the chat placeholder.
+    # Status updates: send as italicized System messages in chat.
+    # These appear immediately during tool execution, giving
+    # the user feedback on what's happening.
+    _last_status_msg = [None]  # mutable ref for closure
+
     def _on_status(text):
-        frontend.chat_interface.placeholder_text = text
+        if text:
+            # Remove previous status message (replace, not accumulate)
+            if _last_status_msg[0] is not None:
+                try:
+                    objs = frontend.chat_interface.objects
+                    if _last_status_msg[0] in objs:
+                        objs.remove(_last_status_msg[0])
+                except Exception:
+                    pass
+            msg = frontend.chat_interface.send(
+                f"*{text}*",
+                user="System", respond=False,
+            )
+            _last_status_msg[0] = msg
+        else:
+            # Clear status
+            if _last_status_msg[0] is not None:
+                try:
+                    objs = frontend.chat_interface.objects
+                    if _last_status_msg[0] in objs:
+                        objs.remove(_last_status_msg[0])
+                except Exception:
+                    pass
+                _last_status_msg[0] = None
 
     set_status_callback(_on_status)
 
@@ -343,6 +353,17 @@ def create_app() -> Panelini:
         on_preview=_preview,
         on_chat_notify=_chat_notify,
     )
+
+    # Real-time file notifications: when a tool produces a file,
+    # show a compact notification in the chat immediately.
+    def _on_file_produced(entry):
+        widget = render_file_notification(entry, on_preview=_preview)
+        frontend.chat_interface.send(
+            widget, user="System", respond=False,
+        )
+        file_mgr.refresh()
+
+    set_file_notify_callback(_on_file_produced)
 
     # Wrap chat callback
     frontend.chat_interface.callback = _wrap_chat_callback(
