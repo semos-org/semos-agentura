@@ -439,3 +439,77 @@ class TestA2AJsonRpc:
         }
         assert "HTTP+JSON" in bindings
         assert "JSONRPC" in bindings
+
+
+# AgenturaClient.ask_agent tests
+
+class TestAskAgent:
+    """Test AgenturaClient.ask_agent() A2A delegation."""
+
+    @pytest.fixture(autouse=True)
+    def _agent(self):
+        self.port = free_port()
+        self.base_url = f"http://127.0.0.1:{self.port}"
+        self.server, self.thread = start_agent(
+            "document_agent", self.port,
+        )
+        yield
+        self.server.should_exit = True
+        self.thread.join(timeout=5)
+
+    @pytest.mark.asyncio
+    async def test_ask_agent_explicit_tool(self, tmp_path):
+        """ask_agent dispatches to agent, gets result."""
+        from agentura_commons.client import AgenturaClient
+
+        async with AgenturaClient(
+            {"document": self.base_url},
+            download_dir=tmp_path,
+        ) as client:
+            result = await client.ask_agent(
+                "document",
+                "compose an HTML page with title Test",
+            )
+            assert not result.is_error, result.text
+            assert result.status == "completed"
+            assert result.text
+
+    @pytest.mark.asyncio
+    async def test_ask_agent_with_file(self, tmp_path):
+        """ask_agent with file from registry."""
+        from agentura_commons.client import AgenturaClient
+
+        docx_path = _make_sample_docx(tmp_path / "form.docx")
+        async with AgenturaClient(
+            {"document": self.base_url},
+            download_dir=tmp_path,
+        ) as client:
+            # Upload file to registry
+            client.upload(docx_path)
+            # Delegate with explicit file reference
+            result = await client.ask_agent(
+                "document",
+                "inspect this form",
+                files=["form.docx"],
+            )
+            # Should get some result (not necessarily FullName
+            # since NL routing may not be configured)
+            assert result.text
+            assert result.status in (
+                "completed", "input_required",
+            )
+
+    @pytest.mark.asyncio
+    async def test_ask_agent_unknown(self, tmp_path):
+        """ask_agent for unknown agent returns error."""
+        from agentura_commons.client import AgenturaClient
+
+        async with AgenturaClient(
+            {"document": self.base_url},
+            download_dir=tmp_path,
+        ) as client:
+            result = await client.ask_agent(
+                "nonexistent", "hello",
+            )
+            assert result.is_error
+            assert "not found" in result.text.lower()
