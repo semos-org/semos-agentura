@@ -554,7 +554,7 @@ class LLMExecutor:
                 url,
                 headers=headers,
                 json=payload,
-                timeout=120.0,
+                timeout=300.0,
             )
             if resp.status_code >= 400:
                 raise RuntimeError(f"Anthropic API error {resp.status_code}: {resp.text[:300]}")
@@ -594,7 +594,7 @@ class LLMExecutor:
                 url,
                 headers=headers,
                 json=payload,
-                timeout=120.0,
+                timeout=300.0,
             )
             if resp.status_code >= 400:
                 raise RuntimeError(f"OpenAI API error {resp.status_code}: {resp.text[:300]}")
