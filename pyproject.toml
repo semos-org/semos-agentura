@@ -1,7 +1,7 @@
 [project]
 name = "semos-agentura"
 version = "0.1.0"
-description = "Semos Agentura — Multi-agent system with MCP + A2A"
+description = "Semos Agentura - Multi-agent system with MCP + A2A"
 requires-python = ">=3.13"
 
 [tool.uv.workspace]
@@ -10,4 +10,10 @@ members = [
     "email-agent",
     "document-agent",
     "agentura-ui",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "strict"
+markers = [
+    "integration: requires external deps (COM, IMAP, pandoc, LLM API) - run with -m integration",
 ]

@@ -147,10 +147,12 @@ async def test_fill_form(service, sample_docx):
 # compose_document via MCP
 
 _needs_pandoc = pytest.mark.skipif(
-    not find_tool("pandoc"), reason="pandoc not installed"
+    not find_tool("pandoc"), reason="pandoc not installed",
 )
+_integration = pytest.mark.integration
 
 
+@_integration
 @_needs_pandoc
 @pytest.mark.asyncio
 async def test_compose_docx(service):
@@ -173,6 +175,7 @@ async def test_compose_docx(service):
         assert (service.output_dir / disk_name).exists()
 
 
+@_integration
 @_needs_pandoc
 @pytest.mark.asyncio
 async def test_compose_with_explicit_filename(service):
@@ -216,6 +219,7 @@ async def test_generate_diagram_mocked(service):
             assert data["iterations"] == 1
 
 
+@_integration
 @needs_llm
 @pytest.mark.asyncio
 async def test_generate_diagram_real(service):
@@ -233,6 +237,7 @@ async def test_generate_diagram_real(service):
 # digest_document via MCP
 
 
+@_integration
 @needs_llm
 @pytest.mark.asyncio
 async def test_digest_document_real(service, sample_png):

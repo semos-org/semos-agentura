@@ -37,3 +37,7 @@ packages = ["src/document_agent"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+    "integration: requires external tools (pandoc/marp/mmdc/libreoffice) - run with -m integration",
+]
+addopts = "-m 'not integration'"

@@ -1,6 +1,7 @@
 """Integration tests - require external tools (marp, pandoc, mmdc, libreoffice).
 
-Mark tests that need specific tools so they can be skipped in CI if unavailable.
+Skipped by default in CI. Run with: uv run pytest -m integration -v
+Individual tests also have @needs_* markers for finer-grained skipping.
 """
 
 from __future__ import annotations
@@ -10,6 +11,8 @@ import subprocess
 from pathlib import Path
 
 import pytest
+
+pytestmark = pytest.mark.integration
 
 from document_agent._utils import find_tool, _project_root
 from document_agent.composition._slides import _find_browser

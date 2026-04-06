@@ -1,9 +1,7 @@
 """Integration tests against a real backend.
 
 These tests require a running email backend (COM with Outlook, or IMAP with credentials).
-They are skipped if no backend is available.
-
-Run with: uv run pytest tests/test_integration.py -v
+Skipped by default in CI. Run with: uv run pytest -m integration -v
 """
 
 from __future__ import annotations
@@ -12,6 +10,8 @@ import sys
 from datetime import datetime, timedelta
 
 import pytest
+
+pytestmark = pytest.mark.integration
 
 from email_agent.config import Settings
 from email_agent.backend import create_backend, EmailBackend
