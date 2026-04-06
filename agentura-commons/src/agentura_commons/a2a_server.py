@@ -98,6 +98,18 @@ def _extract_tool_call(message) -> tuple[str, dict] | None:
     return None
 
 
+_STATUS_MAP = {
+    "completed": TaskState.TASK_STATE_COMPLETED,
+    "input_required": TaskState.TASK_STATE_INPUT_REQUIRED,
+    "rejected": TaskState.TASK_STATE_REJECTED,
+    "auth_required": TaskState.TASK_STATE_AUTH_REQUIRED,
+    "failed": TaskState.TASK_STATE_FAILED,
+}
+
+# In-memory store for conversation history (keyed by task_id)
+_task_histories: dict[str, list[dict]] = {}
+
+
 class _AgentExecutor(AgentExecutor):
     """Routes A2A requests to BaseAgentService tools."""
 
@@ -128,7 +140,7 @@ class _AgentExecutor(AgentExecutor):
         )
 
         try:
-            result_text, result_files = await self._dispatch(context)
+            result = await self._dispatch(context)
         except Exception as e:
             logger.exception("A2A execute failed")
             await event_queue.enqueue_event(
@@ -143,8 +155,21 @@ class _AgentExecutor(AgentExecutor):
             )
             return
 
+        # Emit progress updates
+        for update in result.progress_updates:
+            await event_queue.enqueue_event(
+                TaskStatusUpdateEvent(
+                    task_id=task_id,
+                    context_id=ctx_id,
+                    status=TaskStatus(
+                        state=TaskState.TASK_STATE_WORKING,
+                        message=_msg(update),
+                    ),
+                )
+            )
+
         # Emit file artifacts
-        for f in result_files:
+        for f in result.files:
             await event_queue.enqueue_event(
                 TaskArtifactUpdateEvent(
                     task_id=task_id,
@@ -162,23 +187,29 @@ class _AgentExecutor(AgentExecutor):
                 ),
             )
 
-        # Emit completed
+        # Store history for continuation if not terminal
+        if result.status in ("input_required", "auth_required"):
+            _task_histories[task_id] = result.history
+
+        # Emit final status
+        state = _STATUS_MAP.get(
+            result.status, TaskState.TASK_STATE_COMPLETED,
+        )
         await event_queue.enqueue_event(
             TaskStatusUpdateEvent(
                 task_id=task_id,
                 context_id=ctx_id,
                 status=TaskStatus(
-                    state=TaskState.TASK_STATE_COMPLETED,
-                    message=_msg(result_text),
+                    state=state,
+                    message=_msg(result.text),
                 ),
             )
         )
 
-    async def _dispatch(
-        self,
-        context: RequestContext,
-    ) -> tuple[str, list[dict]]:
-        """Route to tool and return (text, file_metadata_list)."""
+    async def _dispatch(self, context: RequestContext):
+        """Route request and return ExecutorResult."""
+        from .llm_executor import ExecutorResult
+
         message = context.message
 
         # 1. Explicit tool call via DataPart
@@ -186,24 +217,64 @@ class _AgentExecutor(AgentExecutor):
         if tool_call:
             tool_name, args = tool_call
             files = _extract_files(message)
-            return await self._call_tool(tool_name, args, files)
+            text, file_list = await self._call_tool(
+                tool_name, args, files,
+            )
+            return ExecutorResult(
+                text=text, files=file_list, status="completed",
+            )
 
-        # 2. Natural language - try LLM routing if configured
+        # 2. Natural language
         text = _extract_text(message)
         files = _extract_files(message)
 
+        # Try LLM executor if configured
         if self._service.router_llm_model:
-            routed = await self._route_via_llm(text, files)
-            if routed:
-                return routed
+            result = await self._run_llm_executor(
+                text, files, context.task_id,
+            )
+            if result:
+                return result
 
         # 3. Fallback: delegate to execute_skill
-        result = await self._service.execute_skill(
-            skill_id=self._service.get_skills()[0].id if self._service.get_skills() else "default",
+        skill_result = await self._service.execute_skill(
+            skill_id=(
+                self._service.get_skills()[0].id
+                if self._service.get_skills()
+                else "default"
+            ),
             message=text,
             task_id=context.task_id,
         )
-        return result, []
+        return ExecutorResult(text=skill_result, status="completed")
+
+    async def _run_llm_executor(
+        self,
+        text: str,
+        files: list[dict],
+        task_id: str | None,
+    ):
+        """Run multi-step LLM executor. Returns ExecutorResult or None."""
+        from .llm_executor import LLMExecutor
+
+        try:
+            # Retrieve history for task continuation
+            history = None
+            if task_id and task_id in _task_histories:
+                history = _task_histories.pop(task_id)
+
+            executor = LLMExecutor(
+                tools=self._service.get_tools(),
+                model=self._service.router_llm_model,
+                api_key=self._service.router_llm_api_key,
+                api_base=self._service.router_llm_api_base,
+            )
+            return await executor.run(
+                text, files=files, history=history,
+            )
+        except Exception:
+            logger.exception("LLM executor failed")
+            return None
 
     async def _call_tool(
         self,
@@ -217,9 +288,12 @@ class _AgentExecutor(AgentExecutor):
         if not td:
             return f"Unknown tool: {name}", []
 
-        # Inject file content into file params
         if files and td.file_params:
-            by_name = {f["name"]: f["content"] for f in files if f.get("name") and f.get("content")}
+            by_name = {
+                f["name"]: f["content"]
+                for f in files
+                if f.get("name") and f.get("content")
+            }
             for param in td.file_params:
                 val = args.get(param)
                 if isinstance(val, str) and val in by_name:
@@ -235,7 +309,6 @@ class _AgentExecutor(AgentExecutor):
         self,
         result: Any,
     ) -> tuple[str, list[dict]]:
-        """Parse a tool's return value into (text, files)."""
         if result is None:
             return "", []
         text = str(result)
@@ -247,37 +320,16 @@ class _AgentExecutor(AgentExecutor):
             return text, [data]
         return text, []
 
-    async def _route_via_llm(
-        self,
-        text: str,
-        files: list[dict],
-    ) -> tuple[str, list[dict]] | None:
-        """Route natural language to a tool via LLM."""
-        try:
-            from .llm_router import route_to_tool
-
-            result = await route_to_tool(
-                text,
-                self._service.get_tools(),
-                model=self._service.router_llm_model,
-                api_key=self._service.router_llm_api_key,
-                api_base=self._service.router_llm_api_base,
-            )
-            if result:
-                tool_name, args = result
-                return await self._call_tool(tool_name, args, files)
-        except Exception:
-            logger.exception("LLM routing failed")
-        return None
-
     async def cancel(
         self,
         context: RequestContext,
         event_queue: EventQueue,
     ) -> None:
+        task_id = context.task_id or "unknown"
+        _task_histories.pop(task_id, None)
         await event_queue.enqueue_event(
             TaskStatusUpdateEvent(
-                task_id=context.task_id or "unknown",
+                task_id=task_id,
                 context_id=context.context_id or "unknown",
                 status=TaskStatus(
                     state=TaskState.TASK_STATE_CANCELED,

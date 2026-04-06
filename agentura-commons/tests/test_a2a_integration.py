@@ -212,42 +212,26 @@ class TestA2ANaturalLanguage:
         self.port = free_port()
         self.base_url = f"http://127.0.0.1:{self.port}"
 
-        # Mock the LLM router to return predefined tool selections
+        # Mock the LLM executor to return predefined tool results
         self._mock_responses = []
 
-        async def _mock_route(msg, tools, **kwargs):
-            if self._mock_responses:
-                return self._mock_responses.pop(0)
-            return None
-
-        monkeypatch.setattr(
-            "agentura_commons.a2a_server._AgentExecutor"
-            "._route_via_llm",
-            None,
-        )
-
-        # Patch at module level so the executor picks it up
         import agentura_commons.a2a_server as a2a_mod
-        self._orig_executor = a2a_mod._AgentExecutor
+        from agentura_commons.llm_executor import ExecutorResult
 
         class _MockExecutor(a2a_mod._AgentExecutor):
-            _mock_responses_ref = self._mock_responses
+            _mock_ref = self._mock_responses
 
-            async def _route_via_llm(self_inner, text, files):
-                if _MockExecutor._mock_responses_ref:
-                    tool_name, args = (
-                        _MockExecutor._mock_responses_ref.pop(0)
-                    )
-                    return await self_inner._call_tool(
+            async def _run_llm_executor(self_inner, text, files, task_id):
+                if _MockExecutor._mock_ref:
+                    tool_name, args = _MockExecutor._mock_ref.pop(0)
+                    t, f = await self_inner._call_tool(
                         tool_name, args, files,
                     )
+                    return ExecutorResult(text=t, files=f)
                 return None
 
-        monkeypatch.setattr(
-            a2a_mod, "_AgentExecutor", _MockExecutor,
-        )
+        monkeypatch.setattr(a2a_mod, "_AgentExecutor", _MockExecutor)
 
-        # Enable router on the service so NL path is attempted
         from document_agent.service import _service
         monkeypatch.setattr(
             type(_service), "router_llm_model",
