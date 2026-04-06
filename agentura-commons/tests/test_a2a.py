@@ -321,3 +321,89 @@ def _state_of(event) -> int:
     if isinstance(event, TaskStatusUpdateEvent):
         return event.status.state
     return -1
+
+
+# File injection in _call_tool
+
+@pytest.mark.asyncio
+async def test_call_tool_injects_file_into_param(service):
+    """When files are provided, matching file_params get
+    resolved to FileAttachment dicts."""
+    received_args = {}
+
+    async def _capture(**kwargs):
+        received_args.update(kwargs)
+        return "ok"
+
+    service.get_tools = lambda: [
+        ToolDef(
+            name="digest",
+            description="Digest a doc",
+            fn=_capture,
+            file_params=["source"],
+        ),
+    ]
+    executor = _AgentExecutor(service)
+
+    files = [{"name": "doc.pdf", "content": "data:app/pdf;base64,abc"}]
+    text, file_list = await executor._call_tool(
+        "digest", {"source": "doc.pdf"}, files=files,
+    )
+    assert text == "ok"
+    # source should be replaced with FileAttachment dict
+    src = received_args["source"]
+    assert isinstance(src, dict), f"Expected dict, got {type(src)}"
+    assert src["name"] == "doc.pdf"
+    assert src["content"] == "data:app/pdf;base64,abc"
+
+
+@pytest.mark.asyncio
+async def test_call_tool_no_match_passes_through(service):
+    """File param value that doesn't match any file is unchanged."""
+    received_args = {}
+
+    async def _capture(**kwargs):
+        received_args.update(kwargs)
+        return "ok"
+
+    service.get_tools = lambda: [
+        ToolDef(
+            name="digest",
+            description="d",
+            fn=_capture,
+            file_params=["source"],
+        ),
+    ]
+    executor = _AgentExecutor(service)
+
+    files = [{"name": "other.pdf", "content": "data:app/pdf;base64,xyz"}]
+    await executor._call_tool(
+        "digest", {"source": "doc.pdf"}, files=files,
+    )
+    # No match - source stays as plain string
+    assert received_args["source"] == "doc.pdf"
+
+
+@pytest.mark.asyncio
+async def test_call_tool_no_files_no_change(service):
+    """Without files, file_params are not modified."""
+    received_args = {}
+
+    async def _capture(**kwargs):
+        received_args.update(kwargs)
+        return "ok"
+
+    service.get_tools = lambda: [
+        ToolDef(
+            name="digest",
+            description="d",
+            fn=_capture,
+            file_params=["source"],
+        ),
+    ]
+    executor = _AgentExecutor(service)
+
+    await executor._call_tool(
+        "digest", {"source": "doc.pdf"}, files=None,
+    )
+    assert received_args["source"] == "doc.pdf"

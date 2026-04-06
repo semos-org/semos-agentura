@@ -76,8 +76,6 @@ dev = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-httpx" },
-]
-ui = [
     { name = "pytest-playwright" },
 ]
 
@@ -97,8 +95,8 @@ dev = [
     { name = "pytest", specifier = ">=8" },
     { name = "pytest-asyncio", specifier = ">=0.24" },
     { name = "pytest-httpx", specifier = ">=0.35" },
+    { name = "pytest-playwright", specifier = ">=0.5" },
 ]
-ui = [{ name = "pytest-playwright", specifier = ">=0.5" }]
 
 [[package]]
 name = "aiohappyeyeballs"

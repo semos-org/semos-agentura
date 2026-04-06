@@ -20,8 +20,7 @@ from panelini.panels.ai.utils.ai_interface import (
 )
 
 from .a2a_client import A2AAgentInfo, discover_agents
-from .a2a_tools import create_a2a_tools
-from .agent_registry import AgentRegistry, Protocol
+from .a2a_tools import create_a2a_delegates
 from .file_manager import FileManager
 from .file_registry import FileRegistry, human_size
 from .mcp_hub import AgentConnection, MCPHub
@@ -180,113 +179,6 @@ def _wrap_chat_callback(original_callback, registry,
 # Module-level state (single-user app)
 _hub: MCPHub | None = None
 _registry = FileRegistry()
-_agent_registry: AgentRegistry | None = None
-
-
-def _build_agent_section(registry, frontend):
-    """Build the Agents sidebar card with protocol selectors."""
-    if registry is None:
-        return None
-    agents = registry.get_agents()
-    if not agents:
-        return None
-
-    rows = []
-    for agent in agents:
-        # Agent name + description tooltip
-        label = pn.pane.HTML(
-            f'<span title="{agent.description}">'
-            f"<b>{agent.display_name}</b></span>",
-            sizing_mode="stretch_width",
-            margin=(5, 0),
-        )
-
-        # Enable/disable
-        enable_cb = pn.widgets.Checkbox(
-            value=agent.enabled,
-            width=20,
-            margin=(5, 5, 5, 0),
-        )
-
-        # Protocol availability indicators + selector
-        options = {}
-        if agent.mcp_available:
-            options["MCP"] = "mcp"
-        if agent.a2a_available:
-            options["A2A"] = "a2a"
-
-        if len(options) > 1:
-            proto_select = pn.widgets.Select(
-                options=options,
-                value=agent.active_protocol.value,
-                width=70, height=28,
-                margin=(2, 0),
-            )
-
-            def _on_proto(event, name=agent.name):
-                registry.set_protocol(name, Protocol(event.new))
-                _swap_tools(registry, frontend, name)
-
-            proto_select.param.watch(_on_proto, "value")
-        else:
-            proto_label = list(options.keys())[0] if options else "-"
-            proto_select = pn.pane.HTML(
-                f"<small>{proto_label}</small>",
-                width=40,
-                margin=(5, 0),
-            )
-
-        def _on_enable(event, name=agent.name):
-            registry.set_enabled(name, event.new)
-            _toggle_agent_tools(frontend, registry, name)
-
-        enable_cb.param.watch(_on_enable, "value")
-
-        rows.append(pn.Row(
-            enable_cb, label, proto_select,
-            sizing_mode="stretch_width",
-        ))
-
-    return pn.Card(
-        *rows, title="Agents", collapsed=False,
-        styles={"padding": "8px", "margin-bottom": "10px"},
-    )
-
-
-def _swap_tools(registry, frontend, agent_name):
-    """Swap tool instances when protocol changes for an agent."""
-    agent = registry.get_agent(agent_name)
-    if not agent:
-        return
-    if agent.active_protocol == Protocol.A2A:
-        new_tools = agent.a2a_tools
-    else:
-        new_tools = agent.mcp_tools
-    # Swap in panelini's checkbox dict and ensure checked
-    for tool_name, tool in new_tools.items():
-        if tool_name in frontend.tool_checkboxes:
-            frontend.tool_checkboxes[tool_name]["tool"] = tool
-            frontend.tool_checkboxes[tool_name]["checkbox"].value = True
-    # Trigger backend update with all selected tools
-    frontend.backend.update_tools(frontend._get_selected_tools())
-    logger.info(
-        "Swapped %s tools to %s (%d tools)",
-        agent_name, agent.active_protocol.value,
-        len(new_tools),
-    )
-
-
-def _toggle_agent_tools(frontend, registry, agent_name):
-    """Enable/disable all tool checkboxes for an agent."""
-    agent = registry.get_agent(agent_name)
-    if not agent:
-        return
-    all_names = set(agent.mcp_tools) | set(agent.a2a_tools)
-    for name in all_names:
-        if name in frontend.tool_checkboxes:
-            frontend.tool_checkboxes[name]["checkbox"].value = (
-                agent.enabled
-            )
 
 
 def create_app() -> Panelini:
@@ -397,18 +289,11 @@ def create_app() -> Panelini:
         file_mgr,
     )
 
-    # Agents sidebar section (protocol selection)
-    agent_card = _build_agent_section(
-        _agent_registry, frontend,
-    )
-
     # Compose Panelini layout
     app = Panelini(title="Semos Agentura", sidebar_enabled=True)
-    sidebar = frontend.sidebar_objects
-    # Insert Agents card before the tools section
-    if agent_card:
-        sidebar = [agent_card] + sidebar
-    app.sidebar_set(objects=sidebar + [file_mgr.panel])
+    app.sidebar_set(
+        objects=frontend.sidebar_objects + [file_mgr.panel],
+    )
     app.main_set(objects=frontend.main_objects)
     return app
 
@@ -429,7 +314,7 @@ def main() -> None:
     agents = _build_agents()
 
     # 2. Discover MCP tools (sync - connect, list, disconnect)
-    global _hub, _agent_registry
+    global _hub
     _hub = MCPHub(agents)
     try:
         asyncio.run(_hub.discover())
@@ -438,79 +323,29 @@ def main() -> None:
             "MCP discovery failed. Continuing without MCP tools.",
         )
 
-    # 3. Discover A2A agents (Agent Cards)
+    # 3. Create MCP tool wrappers (structured, schema-validated)
+    from .mcp_tools import create_mcp_tools
+    mcp_tools = create_mcp_tools(_hub, _registry)
+
+    # 4. Discover A2A agents and create delegate tools
+    # (natural language, agent routes internally)
     base_urls = [a.base_url for a in agents]
-    a2a_agents: list[A2AAgentInfo] = []
+    delegates: list = []
     try:
         a2a_agents = asyncio.run(discover_agents(base_urls))
+        delegates = create_a2a_delegates(a2a_agents, _registry)
     except Exception:
         logger.exception(
-            "A2A discovery failed. Continuing without A2A.",
+            "A2A discovery failed. Continuing without delegates.",
         )
 
-    # 4. Build unified agent registry
-    _agent_registry = AgentRegistry(
-        default_protocol=Protocol(
-            os.environ.get("DEFAULT_PROTOCOL", "mcp"),
-        ),
-    )
-
-    # Register agents and MCP tools
-    mcp_tools_by_agent: dict[str, list] = {}
-    for conn in agents:
-        _agent_registry.register_agent(
-            conn.name, conn.name, "", conn.base_url,
-        )
-        # Collect MCP tools for this agent
-        agent_mcp_tools = [
-            t for t in _hub.all_tools()
-            if _hub.agent_for_tool(t.name).name == conn.name
-        ]
-        if agent_mcp_tools:
-            from .mcp_tools import _make_mcp_tool_class
-            wrappers = {}
-            meta = {}
-            for t in agent_mcp_tools:
-                wrappers[t.name] = _make_mcp_tool_class(
-                    t, _hub, _registry,
-                )
-                meta[t.name] = t
-            _agent_registry.set_mcp_tools(
-                conn.name, wrappers, meta,
-            )
-            mcp_tools_by_agent[conn.name] = agent_mcp_tools
-
-    # Register A2A tools (reuse MCP tool schemas)
-    a2a_by_base = {a.base_url: a for a in a2a_agents}
-    for conn in agents:
-        a2a_info = a2a_by_base.get(conn.base_url)
-        if not a2a_info:
-            continue
-        # Update display name from A2A card
-        _agent_registry.register_agent(
-            conn.name, a2a_info.name,
-            a2a_info.description, conn.base_url,
-        )
-        # Create A2A wrappers using MCP tool schemas
-        agent_mcp = mcp_tools_by_agent.get(conn.name, [])
-        if agent_mcp:
-            a2a_wrappers, delegate = create_a2a_tools(
-                a2a_info, agent_mcp, _registry,
-            )
-            _agent_registry.set_a2a_tools(
-                conn.name, a2a_wrappers, delegate,
-            )
-
-    # Auto-select protocol per agent based on tool annotations
-    _agent_registry.auto_select_protocols()
-
-    # 5. Register active tools in panelini
-    active_tools = _agent_registry.get_active_tools()
-    AVAILABLE_TOOLS.extend(active_tools)
+    # 5. Register all tools in panelini
+    all_tools = mcp_tools + delegates
+    AVAILABLE_TOOLS.extend(all_tools)
     logger.info(
-        "Registered %d tools (active): %s",
-        len(active_tools),
-        [t.name for t in active_tools],
+        "Registered %d tools (%d MCP + %d delegates): %s",
+        len(all_tools), len(mcp_tools), len(delegates),
+        [t.name for t in all_tools],
     )
 
     # 4. Start Panel server
