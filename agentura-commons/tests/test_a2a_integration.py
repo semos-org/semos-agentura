@@ -221,7 +221,7 @@ class TestA2ANaturalLanguage:
         class _MockExecutor(a2a_mod._AgentExecutor):
             _mock_ref = self._mock_responses
 
-            async def _run_llm_executor(self_inner, text, files, task_id):
+            async def _run_llm_executor(self_inner, text, files, task_id, **kw):
                 if _MockExecutor._mock_ref:
                     tool_name, args = _MockExecutor._mock_ref.pop(0)
                     t, f = await self_inner._call_tool(

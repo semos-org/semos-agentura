@@ -89,9 +89,7 @@ def _tool_schema(t: ToolDef) -> dict[str, Any]:
                 prop["type"] = "number"
             elif ann is bool:
                 prop["type"] = "boolean"
-            elif ann is list or (
-                hasattr(ann, "__origin__") and ann.__origin__ is list
-            ):
+            elif ann is list or (hasattr(ann, "__origin__") and ann.__origin__ is list):
                 prop["type"] = "array"
                 prop["items"] = {"type": "string"}
             props[name] = prop
@@ -205,10 +203,7 @@ def _synthetic_tool_schemas_anthropic() -> list[dict]:
         },
         {
             "name": TOOL_REQUEST_AUTH,
-            "description": (
-                "Request authentication from the requester. "
-                "Use when credentials are needed to proceed."
-            ),
+            "description": ("Request authentication from the requester. Use when credentials are needed to proceed."),
             "input_schema": {
                 "type": "object",
                 "properties": {
@@ -273,10 +268,14 @@ class LLMExecutor:
 
     def _default_system(self) -> str:
         return (
-            "You are an AI agent that completes tasks using the provided tools. "
-            "Work step by step. When done, provide your final answer. "
-            "If you need clarification, use _request_input. "
-            "If the task is outside your scope, use _reject_task."
+            "You are an AI agent. You MUST use the provided tools to "
+            "complete tasks. Do NOT describe what you would do - execute "
+            "it by calling the appropriate tool. After getting a tool "
+            "result, either call another tool or provide your final "
+            "answer as plain text. Use _request_input if you need "
+            "clarification. Use _reject_task if the task is outside "
+            "your capabilities. Use _return_result to provide your "
+            "final answer with specific files."
         )
 
     async def run(
@@ -308,7 +307,11 @@ class LLMExecutor:
 
         for step in range(self.max_steps):
             try:
-                response = await self._call_llm(messages)
+                force_tool = step == 0 and not history
+                response = await self._call_llm(
+                    messages,
+                    force_tool=force_tool,
+                )
             except Exception as e:
                 logger.exception("LLM call failed at step %d", step)
                 return ExecutorResult(
@@ -323,9 +326,7 @@ class LLMExecutor:
             if not tool_calls:
                 # LLM produced text only - done
                 final_text = "\n".join(text_parts)
-                messages.append(
-                    {"role": "assistant", "content": final_text}
-                )
+                messages.append({"role": "assistant", "content": final_text})
                 return ExecutorResult(
                     text=final_text,
                     files=self._produced_files,
@@ -335,31 +336,29 @@ class LLMExecutor:
                 )
 
             # Append assistant message with tool calls
-            messages.append(
-                self._assistant_message(text_parts, tool_calls)
-            )
+            messages.append(self._assistant_message(text_parts, tool_calls))
 
             # Execute each tool call
             for tc in tool_calls:
                 if tc.name in _SYNTHETIC_TOOLS:
                     result = self._handle_synthetic(
-                        tc, messages, progress_updates,
+                        tc,
+                        messages,
+                        progress_updates,
                     )
                     if result is not None:
                         result.progress_updates = progress_updates
                         return result
                     # report_progress returns None - continue
-                    messages.append(
-                        self._tool_result_message(tc.id, "Progress noted.")
-                    )
+                    messages.append(self._tool_result_message(tc.id, "Progress noted."))
                 else:
                     # Execute real tool
                     tool_result = await self._execute_tool(
-                        tc.name, tc.arguments, files,
+                        tc.name,
+                        tc.arguments,
+                        files,
                     )
-                    messages.append(
-                        self._tool_result_message(tc.id, tool_result)
-                    )
+                    messages.append(self._tool_result_message(tc.id, tool_result))
 
         # Max steps reached
         final_text = "Task partially completed (max steps reached)."
@@ -384,11 +383,7 @@ class LLMExecutor:
             text = args.get("message", "")
             requested_files = args.get("files")
             if requested_files:
-                files = [
-                    f
-                    for f in self._produced_files
-                    if f.get("filename") in requested_files
-                ]
+                files = [f for f in self._produced_files if f.get("filename") in requested_files]
             else:
                 files = self._produced_files
             return ExecutorResult(
@@ -400,6 +395,8 @@ class LLMExecutor:
 
         if tc.name == TOOL_REQUEST_INPUT:
             question = args.get("question", "")
+            # Append tool_result so history is valid for continuation
+            messages.append(self._tool_result_message(tc.id, "Waiting for input."))
             return ExecutorResult(
                 text=question,
                 files=self._produced_files,
@@ -410,6 +407,7 @@ class LLMExecutor:
 
         if tc.name == TOOL_REJECT_TASK:
             reason = args.get("reason", "Task rejected")
+            messages.append(self._tool_result_message(tc.id, "Task rejected."))
             return ExecutorResult(
                 text=reason,
                 status="rejected",
@@ -417,6 +415,7 @@ class LLMExecutor:
             )
 
         if tc.name == TOOL_REQUEST_AUTH:
+            messages.append(self._tool_result_message(tc.id, "Waiting for auth."))
             return ExecutorResult(
                 text=args.get("message", "Authentication required"),
                 status="auth_required",
@@ -449,20 +448,38 @@ class LLMExecutor:
         if not td:
             return f"Error: unknown tool '{name}'"
 
-        # Inject file content into file params
-        if files and td.file_params:
-            by_name = {
-                f["name"]: f["content"]
-                for f in files
-                if f.get("name") and f.get("content")
-            }
+        # Inject file content into file params.
+        # Check both input files and previously produced files.
+        if td.file_params:
+            by_name: dict[str, str] = {}
+            for f in files or []:
+                if f.get("name") and f.get("content"):
+                    by_name[f["name"]] = f["content"]
+            # Also make produced files available by download_url
+            for pf in self._produced_files:
+                fn = pf.get("filename", "")
+                url = pf.get("download_url", "")
+                if fn and url:
+                    by_name[fn] = url
             for param in td.file_params:
                 val = arguments.get(param)
-                if isinstance(val, str) and val in by_name:
-                    arguments[param] = {
-                        "name": val,
-                        "content": by_name[val],
-                    }
+                if isinstance(val, str):
+                    if val in by_name:
+                        fa = {"name": val, "content": by_name[val]}
+                        # Check if the tool expects a list
+                        sig = inspect.signature(td.fn)
+                        p = sig.parameters.get(param)
+                        if p and "list" in str(p.annotation).lower():
+                            arguments[param] = [fa]
+                        else:
+                            arguments[param] = fa
+                    else:
+                        logger.warning(
+                            "File param %s=%r not in files: %s",
+                            param,
+                            val,
+                            list(by_name.keys()),
+                        )
 
         try:
             result = await td.fn(**arguments)
@@ -483,12 +500,28 @@ class LLMExecutor:
 
     # LLM API calls
 
-    async def _call_llm(self, messages: list[dict]) -> dict:
+    async def _call_llm(
+        self,
+        messages: list[dict],
+        *,
+        force_tool: bool = False,
+    ) -> dict:
         if self._provider in ("azure_anthropic", "anthropic"):
-            return await self._call_anthropic(messages)
-        return await self._call_openai(messages)
+            return await self._call_anthropic(
+                messages,
+                force_tool=force_tool,
+            )
+        return await self._call_openai(
+            messages,
+            force_tool=force_tool,
+        )
 
-    async def _call_anthropic(self, messages: list[dict]) -> dict:
+    async def _call_anthropic(
+        self,
+        messages: list[dict],
+        *,
+        force_tool: bool = False,
+    ) -> dict:
         url = f"{self.api_base.rstrip('/')}/v1/messages"
         headers: dict[str, str] = {
             "Content-Type": "application/json",
@@ -504,30 +537,35 @@ class LLMExecutor:
         tools.extend(_synthetic_tool_schemas_anthropic())
 
         # Separate system from messages
-        api_messages = [
-            m for m in messages if m.get("role") != "system"
-        ]
+        api_messages = [m for m in messages if m.get("role") != "system"]
 
-        payload = {
+        payload: dict[str, Any] = {
             "model": self.model,
             "max_tokens": 4096,
             "system": self.system_prompt,
             "tools": tools,
             "messages": api_messages,
         }
+        if force_tool:
+            payload["tool_choice"] = {"type": "any"}
 
         async with httpx.AsyncClient() as client:
             resp = await client.post(
-                url, headers=headers, json=payload, timeout=120.0,
+                url,
+                headers=headers,
+                json=payload,
+                timeout=120.0,
             )
             if resp.status_code >= 400:
-                raise RuntimeError(
-                    f"Anthropic API error {resp.status_code}: "
-                    f"{resp.text[:300]}"
-                )
+                raise RuntimeError(f"Anthropic API error {resp.status_code}: {resp.text[:300]}")
             return resp.json()
 
-    async def _call_openai(self, messages: list[dict]) -> dict:
+    async def _call_openai(
+        self,
+        messages: list[dict],
+        *,
+        force_tool: bool = False,
+    ) -> dict:
         url = f"{self.api_base.rstrip('/')}/chat/completions"
         headers = {
             "Content-Type": "application/json",
@@ -542,28 +580,31 @@ class LLMExecutor:
         ]
         api_messages.extend(messages)
 
-        payload = {
+        payload: dict[str, Any] = {
             "model": self.model,
             "max_tokens": 4096,
             "tools": tools,
             "messages": api_messages,
         }
+        if force_tool:
+            payload["tool_choice"] = "required"
 
         async with httpx.AsyncClient() as client:
             resp = await client.post(
-                url, headers=headers, json=payload, timeout=120.0,
+                url,
+                headers=headers,
+                json=payload,
+                timeout=120.0,
             )
             if resp.status_code >= 400:
-                raise RuntimeError(
-                    f"OpenAI API error {resp.status_code}: "
-                    f"{resp.text[:300]}"
-                )
+                raise RuntimeError(f"OpenAI API error {resp.status_code}: {resp.text[:300]}")
             return resp.json()
 
     # Response parsing
 
     def _parse_response(
-        self, response: dict,
+        self,
+        response: dict,
     ) -> tuple[list[str], list[_ToolCall]]:
         """Parse LLM response into text parts and tool calls."""
         if self._provider in ("azure_anthropic", "anthropic"):
@@ -571,7 +612,8 @@ class LLMExecutor:
         return self._parse_openai(response)
 
     def _parse_anthropic(
-        self, response: dict,
+        self,
+        response: dict,
     ) -> tuple[list[str], list[_ToolCall]]:
         texts = []
         calls = []
@@ -589,7 +631,8 @@ class LLMExecutor:
         return texts, calls
 
     def _parse_openai(
-        self, response: dict,
+        self,
+        response: dict,
     ) -> tuple[list[str], list[_ToolCall]]:
         texts = []
         calls = []

@@ -106,8 +106,11 @@ _STATUS_MAP = {
     "failed": TaskState.TASK_STATE_FAILED,
 }
 
-# In-memory store for conversation history (keyed by task_id)
+# In-memory store for conversation state.
+# task_id -> history (for LLM continuation)
 _task_histories: dict[str, list[dict]] = {}
+# context_id -> files (shared across tasks in same conversation)
+_context_files: dict[str, list[dict]] = {}
 
 
 class _AgentExecutor(AgentExecutor):
@@ -187,13 +190,31 @@ class _AgentExecutor(AgentExecutor):
                 ),
             )
 
-        # Store history for continuation if not terminal
+        # Manage conversation state for multi-turn
+        # History is per task_id, files are per context_id
         if result.status in ("input_required", "auth_required"):
             _task_histories[task_id] = result.history
 
+        # Accumulate files in context (persist across tasks)
+        new_files = _extract_files(context.message)
+        if new_files and ctx_id:
+            prev = _context_files.get(ctx_id, [])
+            seen = {f.get("name") for f in prev}
+            for f in new_files:
+                if f.get("name") not in seen:
+                    prev.append(f)
+            _context_files[ctx_id] = prev
+
+        if result.status not in (
+            "input_required",
+            "auth_required",
+        ):
+            _task_histories.pop(task_id, None)
+
         # Emit final status
         state = _STATUS_MAP.get(
-            result.status, TaskState.TASK_STATE_COMPLETED,
+            result.status,
+            TaskState.TASK_STATE_COMPLETED,
         )
         await event_queue.enqueue_event(
             TaskStatusUpdateEvent(
@@ -218,10 +239,14 @@ class _AgentExecutor(AgentExecutor):
             tool_name, args = tool_call
             files = _extract_files(message)
             text, file_list = await self._call_tool(
-                tool_name, args, files,
+                tool_name,
+                args,
+                files,
             )
             return ExecutorResult(
-                text=text, files=file_list, status="completed",
+                text=text,
+                files=file_list,
+                status="completed",
             )
 
         # 2. Natural language
@@ -231,18 +256,17 @@ class _AgentExecutor(AgentExecutor):
         # Try LLM executor if configured
         if self._service.router_llm_model:
             result = await self._run_llm_executor(
-                text, files, context.task_id,
+                text,
+                files,
+                context.task_id,
+                context_id=context.context_id,
             )
             if result:
                 return result
 
         # 3. Fallback: delegate to execute_skill
         skill_result = await self._service.execute_skill(
-            skill_id=(
-                self._service.get_skills()[0].id
-                if self._service.get_skills()
-                else "default"
-            ),
+            skill_id=(self._service.get_skills()[0].id if self._service.get_skills() else "default"),
             message=text,
             task_id=context.task_id,
         )
@@ -253,6 +277,7 @@ class _AgentExecutor(AgentExecutor):
         text: str,
         files: list[dict],
         task_id: str | None,
+        context_id: str | None = None,
     ):
         """Run multi-step LLM executor. Returns ExecutorResult or None."""
         from .llm_executor import LLMExecutor
@@ -261,7 +286,14 @@ class _AgentExecutor(AgentExecutor):
             # Retrieve history for task continuation
             history = None
             if task_id and task_id in _task_histories:
-                history = _task_histories.pop(task_id)
+                history = _task_histories[task_id]
+
+            # Merge context files (persist across tasks)
+            if context_id and context_id in _context_files:
+                seen = {f.get("name") for f in files}
+                for cf in _context_files[context_id]:
+                    if cf.get("name") not in seen:
+                        files.append(cf)
 
             executor = LLMExecutor(
                 tools=self._service.get_tools(),
@@ -270,11 +302,21 @@ class _AgentExecutor(AgentExecutor):
                 api_base=self._service.router_llm_api_base,
             )
             return await executor.run(
-                text, files=files, history=history,
+                text,
+                files=files,
+                history=history,
             )
-        except Exception:
-            logger.exception("LLM executor failed")
-            return None
+        except Exception as exc:
+            logger.exception(
+                "LLM executor failed: %s",
+                exc,
+            )
+            from .llm_executor import ExecutorResult
+
+            return ExecutorResult(
+                text=f"LLM executor error: {exc}",
+                status="failed",
+            )
 
     async def _call_tool(
         self,
@@ -289,11 +331,7 @@ class _AgentExecutor(AgentExecutor):
             return f"Unknown tool: {name}", []
 
         if files and td.file_params:
-            by_name = {
-                f["name"]: f["content"]
-                for f in files
-                if f.get("name") and f.get("content")
-            }
+            by_name = {f["name"]: f["content"] for f in files if f.get("name") and f.get("content")}
             for param in td.file_params:
                 val = args.get(param)
                 if isinstance(val, str) and val in by_name:

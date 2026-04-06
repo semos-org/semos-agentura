@@ -82,6 +82,7 @@ def main():
             print(f"  {name}: port {port} still in use, skipping")
             continue
         print(f"  Starting {name} on port {port}...")
+        agent_dir = __import__("pathlib").Path(__file__).parent / name
         p = subprocess.Popen(
             [
                 sys.executable, "-m", "uvicorn",
@@ -90,7 +91,7 @@ def main():
                 "--port", str(port),
                 "--log-level", "info",
             ],
-            cwd=str(__import__("pathlib").Path(__file__).parent),
+            cwd=str(agent_dir),
         )
         procs.append(p)
 
