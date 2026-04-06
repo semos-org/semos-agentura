@@ -1,6 +1,6 @@
 [project]
 name = "semos-agentura"
-version = "0.1.0"
+version = "0.2.0"
 description = "Semos Agentura - Multi-agent system with MCP + A2A"
 requires-python = ">=3.13"
 

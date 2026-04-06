@@ -1,6 +1,6 @@
 [project]
 name = "agentura-ui"
-version = "0.1.0"
+version = "0.2.0"
 description = "Panel-based chat client for Semos Agentura MCP agents"
 requires-python = ">=3.13"
 dependencies = [
