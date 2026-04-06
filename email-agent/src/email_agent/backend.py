@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Protocol, runtime_checkable
 
 from .config import Settings
-from .exceptions import BackendNotAvailable, CalendarNotSupported
+from .exceptions import BackendNotAvailable
 from .models import EmailMessage, EventInfo
 
 logger = logging.getLogger(__name__)

@@ -7,15 +7,14 @@ import shutil
 import tempfile
 from pathlib import Path
 
-from .._utils import require_tool
+from .._utils import find_tool, require_tool
 from ..config import Settings
 from ..models import ComposeResult, OutputFormat
 from ._documents import compose_document
-from ._markdown_prep import prepare_markdown_file
 from ._drawio import replace_drawio_blocks
+from ._markdown_prep import prepare_markdown_file
 from ._mermaid import replace_mermaid_blocks
 from ._slides import compose_slides
-from .._utils import find_tool
 
 logger = logging.getLogger(__name__)
 

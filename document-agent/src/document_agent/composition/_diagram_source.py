@@ -10,7 +10,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .._llm_client import LLMClient
-from .._utils import find_tool
 from ..config import Settings
 
 logger = logging.getLogger(__name__)

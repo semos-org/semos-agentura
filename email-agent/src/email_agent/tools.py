@@ -7,7 +7,6 @@ import logging
 import re
 from datetime import datetime, timedelta
 
-from .exceptions import CalendarNotSupported
 from .formatting import md_to_plain
 
 logger = logging.getLogger(__name__)

@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import json
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import Any, AsyncGenerator
+from typing import Any
 
 from mcp.client.session import ClientSession
 from mcp.shared.memory import create_connected_server_and_client_session
@@ -14,7 +15,7 @@ from .mcp_server import create_mcp_server
 
 
 @asynccontextmanager
-async def mcp_client_for(service: BaseAgentService) -> AsyncGenerator[ClientSession, None]:
+async def mcp_client_for(service: BaseAgentService) -> AsyncGenerator[ClientSession]:
     """Create an in-memory MCP client connected to an agent service.
 
     Usage:

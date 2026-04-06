@@ -10,11 +10,11 @@ from typing import Any
 from mistralai.extra.utils.response_format import response_format_from_pydantic_model
 from pydantic import BaseModel
 
-from .._constants import IMAGE_EXTENSIONS, OFFICE_EXTENSIONS, PDF_EXTENSIONS, SUPPORTED_EXTENSIONS
-from ..config import Settings
-from ..exceptions import DocumentAgentError, OCRError
-from ..models import DigestResult, ImageDescription, OutputMode
+from .._constants import OFFICE_EXTENSIONS, PDF_EXTENSIONS, SUPPORTED_EXTENSIONS
 from .._utils import resolve_source
+from ..config import Settings
+from ..exceptions import DocumentAgentError
+from ..models import DigestResult, ImageDescription, OutputMode
 from ._images import collect_annotations, combine_markdown, inline_images_as_base64, save_images
 from ._ocr_models import OCRResponse
 from ._office import convert_office_to_pdf

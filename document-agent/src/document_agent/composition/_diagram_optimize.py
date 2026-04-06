@@ -6,8 +6,9 @@ import base64
 import json
 import logging
 import re
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Literal
+from typing import Literal
 
 from .._llm_client import LLMClient
 from ..models import DiagramResult
@@ -276,7 +277,7 @@ async def optimize_diagram(
         issues = review.get("issues", [])
         suggestions = review.get("suggestions", "")
         feedback = (
-            f"The diagram has these issues:\n"
+            "The diagram has these issues:\n"
             + "\n".join(f"- {i}" for i in issues)
             + f"\n\nSuggestions: {suggestions}\n\n"
             f"Fix all issues. Return ONLY the updated "

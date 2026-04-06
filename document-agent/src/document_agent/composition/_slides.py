@@ -8,9 +8,9 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from .._utils import _project_root
 from ..exceptions import CompositionError
 from ..models import OutputFormat
-from .._utils import _project_root
 
 logger = logging.getLogger(__name__)
 

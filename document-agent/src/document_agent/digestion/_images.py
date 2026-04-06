@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote as urlquote
 
-from .._constants import MIME_MAP
 from ._ocr_models import OCRResponse
 
 logger = logging.getLogger(__name__)

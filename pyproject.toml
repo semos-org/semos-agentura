@@ -17,3 +17,18 @@ asyncio_mode = "strict"
 markers = [
     "integration: requires external deps (COM, IMAP, pandoc, LLM API) - run with -m integration",
 ]
+
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = [
+    "E501",   # line too long (handled by formatter)
+    "UP042",  # str+Enum -> StrEnum (keep compat with older Python if needed)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"email-agent/src/email_agent/__init__.py" = ["F401"]
+"*/__init__.py" = ["F401"]

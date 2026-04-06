@@ -4,7 +4,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 
-from pydantic import BaseModel, Field as PydanticField
+from pydantic import BaseModel
+from pydantic import Field as PydanticField
 
 
 class OutputFormat(str, Enum):

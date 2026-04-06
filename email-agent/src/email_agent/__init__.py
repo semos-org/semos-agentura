@@ -16,7 +16,7 @@ __all__ = [
 
 # COM imports are platform-guarded
 try:
-    from .backend import COMBackend
+    from .backend import COMBackend  # noqa: F401
     __all__.append("COMBackend")
 except (ImportError, NameError):
     pass

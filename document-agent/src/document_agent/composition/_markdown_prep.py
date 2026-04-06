@@ -5,7 +5,6 @@ from __future__ import annotations
 import base64
 import logging
 import re
-import tempfile
 from pathlib import Path
 
 logger = logging.getLogger(__name__)

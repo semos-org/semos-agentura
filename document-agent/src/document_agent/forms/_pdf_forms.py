@@ -7,9 +7,6 @@ from pathlib import Path
 from typing import Any
 
 from pypdf import PdfReader, PdfWriter
-from pypdf.constants import AnnotationDictionaryAttributes as ADA
-
-from ..exceptions import DocumentAgentError
 
 logger = logging.getLogger(__name__)
 

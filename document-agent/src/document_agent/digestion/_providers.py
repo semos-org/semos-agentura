@@ -12,10 +12,9 @@ import httpx
 from mistralai.client import Mistral
 from mistralai.client.models.documenturlchunk import DocumentURLChunk
 from mistralai.client.models.imageurlchunk import ImageURLChunk
-from mistralai.extra.utils.response_format import response_format_from_pydantic_model
 from pydantic import BaseModel
 
-from .._constants import IMAGE_EXTENSIONS, MIME_MAP, PDF_EXTENSIONS
+from .._constants import MIME_MAP, PDF_EXTENSIONS
 from ..config import Settings
 from ..exceptions import ProviderError
 from ..models import ImageDescription

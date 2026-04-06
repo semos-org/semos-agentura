@@ -11,6 +11,7 @@ import subprocess
 import tempfile
 import zlib
 from pathlib import Path
+
 from ..exceptions import DrawioRenderError
 
 logger = logging.getLogger(__name__)

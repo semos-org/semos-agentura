@@ -15,7 +15,11 @@ import uuid
 from pathlib import Path
 
 from agentura_commons import (
-    BaseAgentService, FileAttachment, SkillDef, ToolDef, create_app,
+    BaseAgentService,
+    FileAttachment,
+    SkillDef,
+    ToolDef,
+    create_app,
 )
 
 from . import compose, digest, fill_form, generate_diagram, inspect_form

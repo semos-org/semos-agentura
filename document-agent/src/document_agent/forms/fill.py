@@ -63,8 +63,8 @@ def fill_form(
             # Try parsing as inline JSON
             try:
                 data = json.loads(data)
-            except json.JSONDecodeError:
-                raise DocumentAgentError(f"Could not parse data as JSON: {data[:100]}")
+            except json.JSONDecodeError as e:
+                raise DocumentAgentError(f"Could not parse data as JSON: {data[:100]}") from e
 
     if not isinstance(data, dict):
         raise DocumentAgentError(f"Data must be a dict or path to JSON file, got {type(data)}")

@@ -115,8 +115,8 @@ def main() -> None:
 
 
 def _run_digest(args: argparse.Namespace, settings: Settings) -> None:
-    from .digestion import digest
     from ._constants import SUPPORTED_EXTENSIONS
+    from .digestion import digest
 
     files: list[Path] = []
     if args.dir:
@@ -199,6 +199,7 @@ def _run_compose(args: argparse.Namespace, settings: Settings) -> None:
 
 def _run_inspect(args: argparse.Namespace) -> None:
     import json as json_mod
+
     from .forms import inspect_form
 
     file_path = Path(args.file)
@@ -241,6 +242,7 @@ def _run_diagram(
 ) -> None:
     import asyncio
     import shutil
+
     from .composition import generate_diagram
 
     if not args.description and not args.source:

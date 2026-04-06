@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+      - run: uv python install 3.13
+
+      - name: Ruff check
+        run: >
+          uvx ruff check
+          agentura-commons/src/
+          email-agent/src/
+          document-agent/src/
+
+      - name: Ruff format check
+        run: >
+          uvx ruff format --check
+          agentura-commons/src/
+          email-agent/src/
+          document-agent/src/
+
+  test:
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+      - run: uv python install 3.13
+
+      - name: Install dependencies
+        run: uv sync --all-packages
+
+      - name: Run tests (CI tier - no external deps)
+        run: >
+          uv run pytest
+          agentura-commons/tests/
+          email-agent/tests/
+          document-agent/tests/
+          --override-ini="addopts="
+          -m "not integration"
+          --tb=short -q

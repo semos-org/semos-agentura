@@ -11,15 +11,12 @@ from __future__ import annotations
 
 import logging
 import shutil
-import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 from zipfile import ZipFile
 
 from lxml import etree
-
-from ..exceptions import DocumentAgentError
 
 logger = logging.getLogger(__name__)
 
@@ -543,7 +540,7 @@ def _inspect_table_cells(root: etree._Element) -> list[dict]:
     fields = []
     seen: dict[str, int] = {}
 
-    for ti, tbl in enumerate(root.findall(".//w:tbl", NS)):
+    for ti, tbl in enumerate(root.findall(".//w:tbl", NS)):  # noqa: B007
         rows = tbl.findall("w:tr", NS)
         if not rows:
             continue
@@ -553,7 +550,7 @@ def _inspect_table_cells(root: etree._Element) -> list[dict]:
 
         # Pass 1: label-adjacent (takes priority)
         claimed: set[int] = set()  # id() of claimed cells
-        for ri, row in enumerate(rows):
+        for ri, row in enumerate(rows):  # noqa: B007
             cells = row.findall("w:tc", NS)
             for ci, cell in enumerate(cells):
                 if _cell_has_sdt(cell):
@@ -573,7 +570,7 @@ def _inspect_table_cells(root: etree._Element) -> list[dict]:
                         claimed.add(id(next_cell))
 
         # Pass 2: header-grid (only unclaimed empty cells)
-        for ri, row in enumerate(rows):
+        for ri, row in enumerate(rows):  # noqa: B007
             if ri == 0:
                 continue
             cells = row.findall("w:tc", NS)
@@ -678,7 +675,7 @@ def _fill_table_cells(root: etree._Element, data: dict[str, Any]) -> int:
     cell_map: dict[str, etree._Element] = {}
     seen: dict[str, int] = {}
 
-    for ti, tbl in enumerate(root.findall(".//w:tbl", NS)):
+    for ti, tbl in enumerate(root.findall(".//w:tbl", NS)):  # noqa: B007
         rows = tbl.findall("w:tr", NS)
         if not rows:
             continue
@@ -688,7 +685,7 @@ def _fill_table_cells(root: etree._Element, data: dict[str, Any]) -> int:
 
         claimed: set[int] = set()
         # Pass 1: label-adjacent
-        for ri, row in enumerate(rows):
+        for ri, row in enumerate(rows):  # noqa: B007
             cells = row.findall("w:tc", NS)
             for ci, cell in enumerate(cells):
                 if _cell_has_sdt(cell):
@@ -702,7 +699,7 @@ def _fill_table_cells(root: etree._Element, data: dict[str, Any]) -> int:
                         claimed.add(id(next_cell))
 
         # Pass 2: header-grid
-        for ri, row in enumerate(rows):
+        for ri, row in enumerate(rows):  # noqa: B007
             if ri == 0:
                 continue
             cells = row.findall("w:tc", NS)

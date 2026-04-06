@@ -7,7 +7,6 @@ import logging
 import os
 import re
 import secrets
-import sys
 import time
 from datetime import datetime
 
@@ -209,7 +208,7 @@ class Mailgent:
     def _poll_com(self) -> list[dict]:
         """COM-specific polling with server-side filtering."""
         import pythoncom
-        from .com_client import OL_FOLDER_INBOX, OL_FOLDER_DRAFTS, OL_MAIL
+        from .com_client import OL_FOLDER_INBOX, OL_FOLDER_DRAFTS
 
         found = []
         com = self.backend.raw_com
