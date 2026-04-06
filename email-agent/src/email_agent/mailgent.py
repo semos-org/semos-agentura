@@ -15,10 +15,10 @@ import litellm
 from .backend import create_backend
 from .config import Settings
 from .formatting import (
-    md_to_plain,
-    md_to_html,
-    html_to_annotated_text,
     extract_prompt_style,
+    html_to_annotated_text,
+    md_to_html,
+    md_to_plain,
 )
 from .tools import TOOL_DEFINITIONS, ToolExecutor
 
@@ -208,7 +208,8 @@ class Mailgent:
     def _poll_com(self) -> list[dict]:
         """COM-specific polling with server-side filtering."""
         import pythoncom
-        from .com_client import OL_FOLDER_INBOX, OL_FOLDER_DRAFTS
+
+        from .com_client import OL_FOLDER_DRAFTS, OL_FOLDER_INBOX
 
         found = []
         com = self.backend.raw_com

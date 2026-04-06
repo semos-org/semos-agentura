@@ -1,11 +1,11 @@
 """Unified email client - IMAP/SMTP + Outlook COM, with LLM agent and archive."""
 
+from .archive import EmailArchive
+from .backend import CalendarBackend, EmailBackend, IMAPBackend, create_backend
 from .client import MailClient
 from .config import Settings
-from .models import Attachment, EmailMessage, EventInfo
-from .backend import EmailBackend, CalendarBackend, IMAPBackend, create_backend
-from .archive import EmailArchive
 from .mailgent import Mailgent
+from .models import Attachment, EmailMessage, EventInfo
 
 __all__ = [
     "Attachment",

@@ -414,7 +414,7 @@ if sys.platform == "win32":
         # Read
 
         def list_messages(self, folder: str = "INBOX", limit: int = 25) -> list[EmailMessage]:
-            from .com_client import OL_FOLDER_INBOX, OL_FOLDER_DRAFTS, OL_FOLDER_SENT, OL_MAIL
+            from .com_client import OL_FOLDER_DRAFTS, OL_FOLDER_INBOX, OL_FOLDER_SENT, OL_MAIL
 
             folder_map = {
                 "INBOX": OL_FOLDER_INBOX,
@@ -457,7 +457,7 @@ if sys.platform == "win32":
             unread_only: bool = False,
             has_attachments: bool | None = None,
         ) -> list[EmailMessage]:
-            from .com_client import OL_FOLDER_INBOX, OL_FOLDER_DRAFTS, OL_FOLDER_SENT
+            from .com_client import OL_FOLDER_DRAFTS, OL_FOLDER_INBOX, OL_FOLDER_SENT
 
             folder_map = {
                 "INBOX": OL_FOLDER_INBOX,

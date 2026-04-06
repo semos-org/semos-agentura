@@ -1,5 +1,6 @@
 """Shared MCP + A2A base classes for Semos Agentura agents."""
 
+from .a2a_client import A2AAgentInfo, A2AResult, FileInfo
 from .base import (
     BaseAgentService,
     FileAttachment,
@@ -8,7 +9,6 @@ from .base import (
     ToolDef,
     ToolResult,
 )
-from .a2a_client import A2AAgentInfo, A2AResult, FileInfo
 from .client import AgenturaClient, ClientA2AResult, ClientToolResult
 from .file_middleware import FileEntry, FileRegistry
 from .llm_executor import ExecutorResult, LLMExecutor

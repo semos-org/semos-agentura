@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import base64
 import os
-from typing import Callable
+from collections.abc import Callable
 
 import msal
 
@@ -20,7 +20,7 @@ class TokenCache:
 
     def _load(self) -> None:
         if os.path.exists(self._path):
-            with open(self._path, "r") as f:
+            with open(self._path) as f:
                 self._cache.deserialize(f.read())
 
     def save(self) -> None:

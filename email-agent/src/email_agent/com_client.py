@@ -337,5 +337,4 @@ class OutlookCOM:
 
     def iter_calendar(self, start: datetime, end: datetime):
         """Iterate calendar events in range. Yields dicts."""
-        for ev in self.list_events(start, end, limit=100_000):
-            yield ev
+        yield from self.list_events(start, end, limit=100_000)

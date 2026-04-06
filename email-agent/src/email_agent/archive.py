@@ -95,7 +95,7 @@ class EmailArchive:
         return self._dump_emails_imap(folder_name, include_body, batch_size)
 
     def _dump_emails_com(self, folder_name: str, include_body: bool, batch_size: int) -> int:
-        from .com_client import OL_FOLDER_INBOX, OL_FOLDER_SENT, OL_FOLDER_DRAFTS, OL_FOLDER_DELETED
+        from .com_client import OL_FOLDER_DELETED, OL_FOLDER_DRAFTS, OL_FOLDER_INBOX, OL_FOLDER_SENT
 
         folder_map = {
             "Inbox": OL_FOLDER_INBOX,
