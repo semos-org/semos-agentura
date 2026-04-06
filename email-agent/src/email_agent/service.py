@@ -16,6 +16,13 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from dotenv import load_dotenv
+
+# Load .env from agent dir, then workspace root
+_agent_dir = Path(__file__).resolve().parent.parent.parent
+load_dotenv(_agent_dir / ".env")
+load_dotenv(_agent_dir.parent / ".env")
+
 from agentura_commons import BaseAgentService, FileAttachment, SkillDef, ToolDef, create_app
 
 from .backend import create_backend

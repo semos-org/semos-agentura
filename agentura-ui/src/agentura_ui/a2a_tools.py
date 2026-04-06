@@ -1,20 +1,19 @@
 """LangChain BaseTool wrappers for A2A tool/skill execution.
 
-Mirrors mcp_tools.py but routes calls through A2A JSON-RPC instead of
-MCP SSE. Uses the same file middleware (pre_process_tool_call for input,
+Mirrors mcp_tools.py but routes calls through A2A instead of MCP SSE.
+Uses the same file middleware (pre_process_tool_call for input,
 download_url fetching for output).
 """
 
 from __future__ import annotations
 
+import base64
 import logging
 from typing import Any
 
 from langchain_core.tools import BaseTool
 from mcp.types import Tool as MCPTool
 from pydantic import BaseModel, Field, create_model
-
-from a2a.types import a2a_pb2
 
 from .a2a_client import A2AAgentInfo, FileInfo, send_task, send_tool_call
 from .file_registry import (
@@ -66,6 +65,30 @@ async def _fetch_a2a_files(
     return new_files
 
 
+def _resolve_files_for_send(
+    message: str,
+    registry: FileRegistry,
+) -> list[dict] | None:
+    """Find registered filenames in message text.
+
+    Returns list of FileAttachment dicts {name, content} with
+    base64 data URIs, or None if no matches.
+    """
+    matched: list[dict] = []
+    for entry in registry.files.values():
+        if entry.filename in message:
+            b64 = base64.b64encode(entry.blob).decode()
+            matched.append({
+                "name": entry.filename,
+                "content": f"data:{entry.mime};base64,{b64}",
+            })
+            logger.info(
+                "A2A delegate: attaching %s (%d bytes)",
+                entry.filename, entry.size,
+            )
+    return matched or None
+
+
 def _make_a2a_tool_class(
     mcp_tool: MCPTool,
     a2a_info: A2AAgentInfo,
@@ -73,8 +96,8 @@ def _make_a2a_tool_class(
 ) -> BaseTool:
     """Create a LangChain BaseTool that executes via A2A.
 
-    Uses the same name/description/args_schema as the MCP wrapper so
-    the LLM sees identical tools regardless of protocol.
+    Uses the same name/description/args_schema as the MCP wrapper
+    so the LLM sees identical tools regardless of protocol.
     """
     schema = mcp_tool.inputSchema or {
         "type": "object", "properties": {},
@@ -111,9 +134,16 @@ def _make_a2a_tool_class(
                 mcp_tool.name, kwargs, mcp_tool, registry,
             )
 
-            # Call tool via A2A (DataPart with tool name + args)
-            text, file_infos = await send_tool_call(
+            # Call tool via A2A
+            result = await send_tool_call(
                 a2a_info, mcp_tool.name, processed,
+            )
+            logger.info(
+                "A2A tool %s response: status=%s "
+                "text=%s files=%d",
+                self.name, result.status,
+                result.text[:200] if result.text else "",
+                len(result.files),
             )
 
             # Post: fetch produced files from download URLs
@@ -121,40 +151,17 @@ def _make_a2a_tool_class(
                 f"Fetching results from {a2a_info.name}...",
             )
             new_files = await _fetch_a2a_files(
-                file_infos, mcp_tool.name, registry,
+                result.files, mcp_tool.name, registry,
             )
             if new_files:
                 _produced_files.extend(new_files)
 
-            return text
+            _update_status("")
+            return result.text
 
     _Tool.__name__ = f"A2ATool_{safe_name}"
     _Tool.__qualname__ = f"A2ATool_{safe_name}"
     return _Tool()
-
-
-def _resolve_files_in_message(
-    message: str,
-    registry: FileRegistry,
-) -> list[a2a_pb2.Part]:
-    """Find registered filenames mentioned in the message text.
-
-    Returns A2A file Parts with inline base64 content for each
-    match so the agent receives the actual file data.
-    """
-    parts: list[a2a_pb2.Part] = []
-    for entry in registry.files.values():
-        if entry.filename in message:
-            parts.append(a2a_pb2.Part(
-                raw=entry.blob,
-                filename=entry.filename,
-                media_type=entry.mime.split(";")[0],
-            ))
-            logger.info(
-                "A2A delegate: attaching %s (%d bytes)",
-                entry.filename, entry.size,
-            )
-    return parts
 
 
 def _make_a2a_delegate_tool(
@@ -164,6 +171,7 @@ def _make_a2a_delegate_tool(
     """Create an 'ask_<agent>' tool for natural-language delegation.
 
     The agent decides which tools to call based on the message.
+    Returns format_for_llm() text with status/task_id hints.
     """
     slug = (
         a2a_info.name.lower()
@@ -174,12 +182,24 @@ def _make_a2a_delegate_tool(
     desc = (
         f"Send a natural-language task to {a2a_info.name}. "
         f"The agent decides which tools to use. "
+        f"If the agent needs more info it will ask - "
+        f"continue with the same context_id. "
         f"{a2a_info.description}"
     )
 
     input_model = create_model(
         f"{tool_name}_Input",
         message=(str, Field(description="Task description")),
+        context_id=(
+            str | None,
+            Field(
+                default=None,
+                description=(
+                    "Continue a conversation with the agent "
+                    "(context_id from a previous response)"
+                ),
+            ),
+        ),
     )
 
     class _Tool(BaseTool):
@@ -195,26 +215,53 @@ def _make_a2a_delegate_tool(
 
         async def _arun(self, **kwargs: Any) -> str:
             message = kwargs.get("message", "")
-            logger.info("A2A delegate: %s(%s)", self.name, message)
+            context_id = kwargs.get("context_id")
+            logger.info(
+                "A2A delegate: %s(%s, context_id=%s)",
+                self.name, message, context_id,
+            )
             _update_status(
-                f"Working: {a2a_info.name} processing task...",
+                f"Asking {a2a_info.name}...",
             )
 
-            # Auto-attach files mentioned by name in the message
-            file_parts = _resolve_files_in_message(
+            # Resolve files mentioned in message text
+            file_dicts = _resolve_files_for_send(
                 message, registry,
             )
-            text, file_infos = await send_task(
-                a2a_info, message, file_parts or None,
+
+            result = await send_task(
+                a2a_info, message,
+                files=file_dicts,
+                context_id=context_id,
+            )
+            logger.info(
+                "A2A delegate %s response: "
+                "status=%s task_id=%s text=%s files=%d",
+                self.name, result.status,
+                result.task_id,
+                result.text[:200] if result.text else "",
+                len(result.files),
             )
 
             new_files = await _fetch_a2a_files(
-                file_infos, self.name, registry,
+                result.files, self.name, registry,
             )
             if new_files:
                 _produced_files.extend(new_files)
 
-            return text
+            _update_status("")
+
+            # Format for LLM with status/task_id hints
+            from agentura_commons.client import ClientA2AResult
+            llm_result = ClientA2AResult(
+                text=result.text,
+                agent_name=a2a_info.name,
+                files=new_files,
+                task_id=result.task_id,
+                context_id=result.context_id,
+                status=result.status,
+            )
+            return llm_result.format_for_llm()
 
     _Tool.__name__ = f"A2ADelegate_{slug}"
     _Tool.__qualname__ = f"A2ADelegate_{slug}"
@@ -226,12 +273,7 @@ def create_a2a_tools(
     mcp_tools: list[MCPTool],
     registry: FileRegistry,
 ) -> tuple[dict[str, BaseTool], BaseTool]:
-    """Create A2A tool wrappers + delegate tool for an agent.
-
-    Returns (tool_wrappers_by_name, delegate_tool).
-    tool_wrappers_by_name maps tool_name to an A2A-backed BaseTool
-    with the same schema as the MCP wrapper.
-    """
+    """Create A2A tool wrappers + delegate tool for an agent."""
     wrappers: dict[str, BaseTool] = {}
     for mcp_tool in mcp_tools:
         tool = _make_a2a_tool_class(
@@ -250,12 +292,7 @@ def create_a2a_delegates(
     a2a_agents: list[A2AAgentInfo],
     registry: FileRegistry,
 ) -> list[BaseTool]:
-    """Create one delegate tool per A2A agent.
-
-    Each delegate is an ask_<agent> tool that sends natural
-    language to the agent via A2A. No per-tool wrappers -
-    MCP handles structured tool calls, A2A handles delegation.
-    """
+    """Create one delegate tool per A2A agent."""
     delegates: list[BaseTool] = []
     for agent in a2a_agents:
         delegate = _make_a2a_delegate_tool(agent, registry)

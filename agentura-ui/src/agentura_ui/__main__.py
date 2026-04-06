@@ -34,24 +34,27 @@ _UI_DIR = _PKG_DIR.parent.parent  # agentura-ui/
 _CONFIG_YML = _UI_DIR / "config.yml"
 
 _SYSTEM_MESSAGE = """\
-You are a helpful assistant with access to email and document \
-processing tools.
+You are a helpful assistant that orchestrates tasks across \
+multiple agents via tools.
 
-IMPORTANT - file handling:
-- When the user uploads a file, it is stored locally. You will \
-see a message like "I have uploaded a file: report.pdf (240 KB)".
-- To process an uploaded file, call the appropriate tool and pass \
-the EXACT filename as the source or file_path parameter. \
-Example: digest_document(source="report.pdf")
-- The system automatically resolves filenames to file content - \
-never ask for file paths or base64. Just use the filename.
-- Always call the tool immediately when the user asks to process \
-an uploaded file.
+PLANNING:
+- For multi-step requests, plan the steps first, then execute \
+them one by one using the available tools.
+- Chain results: tool outputs produce files. Use the output \
+filename from one step as input to the next.
+- You can combine tools from different agents in one workflow.
 
-Available tool groups:
-- Email: search, read, draft, reply, calendar events
-- Documents: digest (OCR), compose (PDF/PPTX/DOCX/HTML), \
-diagrams, form inspect/fill
+FILES:
+- The system resolves filenames automatically. Never ask for \
+paths or base64 - just use the filename.
+- Uploaded files appear as "I have uploaded: report.pdf (240 KB)".
+- Tool outputs appear as "File created: output.pdf (1.2 MB)".
+- Pass exact filenames between tool calls to chain them.
+
+TOOL SELECTION:
+- Use specific tools when you know which operation is needed.
+- Use ask_* delegate tools for open-ended requests where the \
+agent should decide how to proceed.
 """
 
 
@@ -186,6 +189,66 @@ def create_app() -> Panelini:
     frontend = Frontend(
         system_message=_SYSTEM_MESSAGE,
         config_path=_CONFIG_YML,
+    )
+
+    # Increase max tool iterations (panelini default is 10).
+    # A2A delegates with multi-step workflows need more.
+    _orig_handle = frontend.backend._handle_message_with_tools
+
+    async def _patched_handle(user_message, _orig=_orig_handle):
+        import inspect
+        src = inspect.getsource(type(frontend.backend))
+        # Can't cleanly patch a local var. Override the method.
+        return await _orig(user_message)
+
+    # Direct patch: replace the hardcoded constant in the method
+    import types
+    from langchain_core.messages import AIMessage
+
+    async def _handle_with_more_iterations(self, user_message):
+        if not self.ai_interface:
+            return "Error: AI interface not initialized"
+        max_iterations = 50
+        iteration = 0
+        while iteration < max_iterations:
+            if iteration == 0:
+                response_data = (
+                    await self.ai_interface
+                    .get_response_with_tools(user_message)
+                )
+            else:
+                response = await self.ai_interface.model.ainvoke(
+                    self.ai_interface.conversation_history,
+                )
+                response_text = (
+                    response.content
+                    if isinstance(response.content, str)
+                    else str(response.content)
+                )
+                tool_calls = getattr(response, "tool_calls", [])
+                self.ai_interface.conversation_history.append(
+                    AIMessage(
+                        content=response_text,
+                        tool_calls=tool_calls,
+                    ),
+                )
+                response_data = {
+                    "text": response_text,
+                    "tool_calls": tool_calls,
+                }
+            if not response_data.get("tool_calls"):
+                return str(response_data.get("text", ""))
+            tool_results = await self._execute_tool_calls(
+                response_data["tool_calls"],
+            )
+            self.ai_interface.conversation_history.extend(
+                tool_results,
+            )
+            iteration += 1
+        return "Maximum tool execution iterations reached."
+
+    frontend.backend._handle_message_with_tools = types.MethodType(
+        _handle_with_more_iterations, frontend.backend,
     )
 
     # Connect tool status updates to the chat placeholder.

@@ -146,12 +146,14 @@ class TestA2ATool:
         from agentura_ui.a2a_client import send_tool_call
 
         agent = await _discover_a2a(email_agent["base_url"])
-        text, files = await send_tool_call(
+        result = await send_tool_call(
             agent, "search_emails",
             {"query": "test", "limit": 5},
         )
-        assert isinstance(text, str)
-        assert len(text) > 10, f"Expected results, got: {text!r}"
+        assert isinstance(result.text, str)
+        assert len(result.text) > 10, (
+            f"Expected results, got: {result.text!r}"
+        )
 
     @pytest.mark.asyncio
     async def test_compose_via_a2a_returns_file(self, doc_agent):
@@ -159,18 +161,21 @@ class TestA2ATool:
         import httpx
 
         agent = await _discover_a2a(doc_agent["base_url"])
-        text, files = await send_tool_call(
+        result = await send_tool_call(
             agent, "compose_document",
             {"source": "# A2A Test\n\nContent.", "format": "html"},
         )
-        assert len(files) >= 1, (
-            f"Expected file artifact. text={text!r} files={files}"
+        assert len(result.files) >= 1, (
+            f"Expected file artifact. text={result.text!r} "
+            f"files={result.files}"
         )
-        assert files[0].url.startswith("http")
+        assert result.files[0].url.startswith("http")
 
         # Verify file is downloadable
         async with httpx.AsyncClient() as client:
-            resp = await client.get(files[0].url, timeout=10)
+            resp = await client.get(
+                result.files[0].url, timeout=10,
+            )
             resp.raise_for_status()
             assert len(resp.content) > 50
 
