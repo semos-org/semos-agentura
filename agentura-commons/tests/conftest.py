@@ -105,7 +105,11 @@ def _patch_document_service_mock_tools():
 
     compose -> writes a minimal DOCX/HTML to output_path
     digest -> returns mock markdown
+
+    Patches at multiple levels to catch both direct imports
+    and re-exports through __init__.py.
     """
+    import document_agent
     import document_agent.composition.compose as _compose_mod
     import document_agent.digestion.digest as _digest_mod
     from document_agent.models import ComposeResult, DigestResult
@@ -122,7 +126,8 @@ def _patch_document_service_mock_tools():
             )
         else:
             output_path.write_text(
-                f"Mock {ext} output", encoding="utf-8",
+                f"Mock {ext} output",
+                encoding="utf-8",
             )
         return ComposeResult(output_path=output_path, format=format)
 
@@ -131,8 +136,11 @@ def _patch_document_service_mock_tools():
             markdown="# Mock Digest\n\nContent from mock.",
         )
 
+    # Patch at all import levels
     _compose_mod.compose = _mock_compose
     _digest_mod.digest = _mock_digest
+    document_agent.compose = _mock_compose
+    document_agent.digest = _mock_digest
 
 
 def make_app(agent_module: str, port: int):

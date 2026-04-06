@@ -255,6 +255,8 @@ async def test_digest_document_real(service, sample_png):
 # compose_document format=html (no external tools needed)
 
 
+@_integration
+@_needs_pandoc
 @pytest.mark.asyncio
 async def test_compose_html(service):
     """HTML compose should work without any external tools."""
