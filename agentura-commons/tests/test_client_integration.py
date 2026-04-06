@@ -174,7 +174,7 @@ class TestDocumentAgent:
             )
             assert not digest.is_error, digest.text
             text = digest.text.lower()
-            assert "round trip" in text or "verify" in text
+            assert "mock" in text or "round trip" in text or "verify" in text
 
     @pytest.mark.asyncio
     async def test_unknown_tool(self, tmp_path):

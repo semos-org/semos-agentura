@@ -116,31 +116,37 @@ def _patch_document_service_mock_tools():
 
     def _mock_compose(source, output_path, format, **_kw):
         output_path = Path(output_path)
+        src_text = str(source)[:100]
         ext = output_path.suffix.lower()
         if ext == ".docx":
             _make_minimal_docx(output_path)
         elif ext == ".html":
             output_path.write_text(
-                f"<html><body><p>{source[:100]}</p></body></html>",
+                f"<html><body><p>{src_text}</p></body></html>",
                 encoding="utf-8",
             )
         else:
             output_path.write_text(
-                f"Mock {ext} output",
+                f"Mock {ext}: {src_text}",
                 encoding="utf-8",
             )
         return ComposeResult(output_path=output_path, format=format)
 
-    def _mock_digest(_source, **_kw):
+    def _mock_digest(source=None, **_kw):
         return DigestResult(
             markdown="# Mock Digest\n\nContent from mock.",
         )
 
-    # Patch at all import levels
+    # Patch at all import levels (module attrs + service module)
     _compose_mod.compose = _mock_compose
     _digest_mod.digest = _mock_digest
     document_agent.compose = _mock_compose
     document_agent.digest = _mock_digest
+    # Patch in service module (already imported, holds direct ref)
+    import document_agent.service as _svc_mod
+
+    _svc_mod.compose = _mock_compose
+    _svc_mod.digest = _mock_digest
 
 
 def make_app(agent_module: str, port: int):
