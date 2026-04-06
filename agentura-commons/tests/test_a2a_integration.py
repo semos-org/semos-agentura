@@ -18,13 +18,24 @@ import pytest
 import uvicorn
 from google.protobuf.struct_pb2 import Struct, Value
 
-from a2a.client import Client, ClientFactory
+from a2a.client import Client, ClientConfig, ClientFactory
 from a2a.types import (
     Message,
     Part,
     Role,
     SendMessageRequest,
 )
+
+
+async def _connect(base_url: str) -> Client:
+    """Connect to an A2A agent using REST (HTTP+JSON) binding."""
+    config = ClientConfig(
+        supported_protocol_bindings=["HTTP+JSON"],
+        httpx_client=httpx.AsyncClient(timeout=60),
+    )
+    return await ClientFactory.connect(
+        base_url, client_config=config,
+    )
 
 
 def _free_port() -> int:
@@ -193,7 +204,7 @@ class TestA2AToolCalls:
 
     @pytest.mark.asyncio
     async def test_compose_html(self):
-        client = await ClientFactory.connect(self.base_url)
+        client = await _connect(self.base_url)
         msg = _tool_call_message(
             "compose_document",
             {"source": "# A2A Test\n\nHello.", "format": "html"},
@@ -208,7 +219,7 @@ class TestA2AToolCalls:
         docx_path = _make_sample_docx(tmp_path / "form.docx")
         docx_bytes = docx_path.read_bytes()
 
-        client = await ClientFactory.connect(self.base_url)
+        client = await _connect(self.base_url)
         msg = _tool_call_message(
             "inspect_form",
             {"file_path": "form.docx"},
@@ -289,7 +300,7 @@ class TestA2ANaturalLanguage:
             "compose_document",
             {"source": "# NL Test\n\nGenerated.", "format": "html"},
         ))
-        client = await ClientFactory.connect(self.base_url)
+        client = await _connect(self.base_url)
         # Send natural language (no DataPart, just text)
         msg = Message(
             message_id=str(uuid4()),
@@ -310,7 +321,7 @@ class TestA2ANaturalLanguage:
             "inspect_form",
             {"file_path": "form.docx"},
         ))
-        client = await ClientFactory.connect(self.base_url)
+        client = await _connect(self.base_url)
         msg = Message(
             message_id=str(uuid4()),
             role=Role.ROLE_USER,
@@ -350,7 +361,7 @@ class TestA2AFileRoundTrip:
     @pytest.mark.asyncio
     async def test_compose_then_digest(self):
         """Compose DOCX, fetch it, send back for digestion."""
-        client = await ClientFactory.connect(self.base_url)
+        client = await _connect(self.base_url)
 
         # Step 1: Compose
         compose_msg = _tool_call_message(
@@ -395,7 +406,8 @@ class TestA2AFileRoundTrip:
         )
         digest_text, _ = await _send_and_collect(client, digest_msg)
         assert digest_text
-        assert "round trip" in digest_text.lower() or "content" in digest_text.lower()
+        low = digest_text.lower()
+        assert "round trip" in low or "content" in low
         await client.close()
 
 
@@ -415,7 +427,7 @@ class TestEmailA2A:
 
     @pytest.mark.asyncio
     async def test_search_via_a2a(self):
-        client = await ClientFactory.connect(self.base_url)
+        client = await _connect(self.base_url)
         msg = _tool_call_message(
             "search_emails",
             {"query": "test", "limit": 3},
@@ -432,3 +444,46 @@ class TestEmailA2A:
         assert resp.status_code == 200
         data = resp.json()
         assert data["name"] == "Email Agent"
+
+
+# JSON-RPC binding test
+
+class TestA2AJsonRpc:
+    """Verify JSON-RPC binding works alongside REST."""
+
+    @pytest.fixture(autouse=True)
+    def _agent(self):
+        self.port = _free_port()
+        self.base_url = f"http://127.0.0.1:{self.port}"
+        self.server, self.thread = _start_agent(
+            "document_agent", self.port,
+        )
+        yield
+        self.server.should_exit = True
+        self.thread.join(timeout=5)
+
+    @pytest.mark.asyncio
+    async def test_compose_via_jsonrpc(self):
+        """Call compose_document via JSON-RPC binding."""
+        # ClientFactory defaults to JSONRPC when no config given
+        client = await ClientFactory.connect(self.base_url)
+        msg = _tool_call_message(
+            "compose_document",
+            {"source": "# RPC Test\n\nHello.", "format": "html"},
+        )
+        text, files = await _send_and_collect(client, msg)
+        assert text or files
+        await client.close()
+
+    @pytest.mark.asyncio
+    async def test_agent_card_has_both_bindings(self):
+        url = f"{self.base_url}/.well-known/agent-card.json"
+        async with httpx.AsyncClient() as http:
+            resp = await http.get(url, timeout=5)
+        data = resp.json()
+        bindings = {
+            i["protocolBinding"] for i in
+            data.get("supportedInterfaces", [])
+        }
+        assert "HTTP+JSON" in bindings
+        assert "JSONRPC" in bindings

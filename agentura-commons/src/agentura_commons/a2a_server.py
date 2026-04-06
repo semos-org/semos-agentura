@@ -283,6 +283,10 @@ def create_agent_card(
         supported_interfaces=[
             AgentInterface(
                 url=f"{base_url}/a2a",
+                protocol_binding="HTTP+JSON",
+            ),
+            AgentInterface(
+                url=f"{base_url}/a2a/rpc",
                 protocol_binding="JSONRPC",
             ),
         ],

@@ -90,23 +90,46 @@ def create_app(
     mcp_sse = mcp_server.sse_app(mount_path="")
     app.mount("/mcp", mcp_sse)
 
-    # A2A: Agent Card + JSON-RPC handler
+    # A2A: REST + JSON-RPC (dual binding)
     try:
         from a2a.server.apps.jsonrpc.fastapi_app import (
             A2AFastAPIApplication,
         )
+        from a2a.server.apps.rest.fastapi_app import (
+            A2ARESTFastAPIApplication,
+        )
+        from fastapi.responses import JSONResponse
+        from google.protobuf.json_format import MessageToDict
+
         agent_card = create_agent_card(service, base_url=url)
         a2a_handler = create_a2a_handler(service)
-        a2a_app = A2AFastAPIApplication(
+
+        # REST (HTTP+JSON) at /a2a/*
+        a2a_rest = A2ARESTFastAPIApplication(
             agent_card=agent_card,
             http_handler=a2a_handler,
         )
-        a2a_app.add_routes_to_app(
-            app,
-            agent_card_url="/.well-known/agent-card.json",
-            rpc_url="/a2a",
+        a2a_rest_app = a2a_rest.build(rpc_url="/a2a")
+        for route in a2a_rest_app.routes:
+            app.routes.append(route)
+
+        # JSON-RPC at /a2a/rpc
+        a2a_rpc = A2AFastAPIApplication(
+            agent_card=agent_card,
+            http_handler=a2a_handler,
         )
-        logger.info("A2A routes mounted at /a2a")
+        a2a_rpc.add_routes_to_app(app, rpc_url="/a2a/rpc")
+
+        # Agent card (shared, served at well-known path)
+        @app.get("/.well-known/agent-card.json")
+        async def get_agent_card():
+            return JSONResponse(
+                content=MessageToDict(agent_card),
+            )
+
+        logger.info(
+            "A2A routes: REST at /a2a, JSON-RPC at /a2a/rpc",
+        )
     except ImportError:
         logger.warning(
             "a2a-sdk not available, A2A routes not mounted",

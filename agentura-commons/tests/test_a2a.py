@@ -157,8 +157,15 @@ def test_create_agent_card(service):
     assert card.description == "A test agent"
     assert len(card.skills) == 1
     assert card.skills[0].id == "test-skill"
-    assert len(card.supported_interfaces) == 1
-    assert "8001/a2a" in card.supported_interfaces[0].url
+    assert len(card.supported_interfaces) == 2
+    bindings = {
+        i.protocol_binding: i.url
+        for i in card.supported_interfaces
+    }
+    assert "HTTP+JSON" in bindings
+    assert "JSONRPC" in bindings
+    assert "8001/a2a" in bindings["HTTP+JSON"]
+    assert "8001/a2a/rpc" in bindings["JSONRPC"]
 
 
 # -- Executor tests --
