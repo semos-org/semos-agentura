@@ -17,58 +17,21 @@ def parse_styles_from_markdown(md_text: str) -> dict | None:
 
     Returns None if no styles block is present.
     """
+    import yaml
+
     m = re.match(r"^---\s*\n(.*?)\n---\s*\n", md_text, re.DOTALL)
     if not m:
         return None
-    yaml_block = m.group(1)
 
-    # Lightweight YAML parsing (no PyYAML dependency needed)
-    # Handles our simple nested structure: styles: / section: / key: value
-    result: dict = {}
-    current_section: dict | None = None
-    current_key: str | None = None
+    try:
+        data = yaml.safe_load(m.group(1))
+    except yaml.YAMLError:
+        logger.warning("Failed to parse YAML front matter")
+        return None
 
-    for line in yaml_block.split("\n"):
-        stripped = line.rstrip()
-        if not stripped or stripped.startswith("#"):
-            continue
-
-        # Top level: "styles:"
-        if stripped == "styles:":
-            continue
-
-        # Section level: "  body:" / "  heading1:" / "  page:"
-        indent = len(line) - len(line.lstrip())
-        if indent == 2 and stripped.endswith(":"):
-            current_key = stripped.strip().rstrip(":")
-            current_section = {}
-            result[current_key] = current_section
-            continue
-
-        # Property level: "    font: "Times New Roman""
-        if indent >= 4 and current_section is not None and ":" in stripped:
-            k, _, v = stripped.strip().partition(":")
-            raw = v.strip()
-            was_quoted = (raw.startswith('"') and raw.endswith('"')) or (
-                raw.startswith("'") and raw.endswith("'")
-            )
-            v = raw.strip('"').strip("'")
-            if v.lower() == "true":
-                current_section[k] = True
-            elif v.lower() == "false":
-                current_section[k] = False
-            elif was_quoted:
-                current_section[k] = v
-            else:
-                try:
-                    current_section[k] = int(v)
-                except ValueError:
-                    try:
-                        current_section[k] = float(v)
-                    except ValueError:
-                        current_section[k] = v
-
-    return result if result else None
+    if not isinstance(data, dict):
+        return None
+    return data.get("styles") if isinstance(data.get("styles"), dict) else None
 
 
 def generate_reference_doc(
@@ -254,16 +217,62 @@ def _build_styles_xml(styles: dict) -> str:
     <w:rPr>{body_rpr}</w:rPr>
   </w:style>"""
 
-    # Heading styles
+    # Title style (used by pandoc for YAML title: metadata)
+    title_props = styles.get("title", {})
+    if not title_props:
+        title_props = dict(body)
+        title_props["size"] = body.get("size", 11) + 10
+        title_props["bold"] = True
+        title_props.pop("color", None)  # default: black
+    title_rpr = _build_rpr(title_props)
+    title_ppr = _build_ppr(title_props)
+    title_style = f"""<w:style w:type="paragraph" w:styleId="Title">
+    <w:name w:val="Title"/>
+    <w:basedOn w:val="Normal"/>
+    <w:next w:val="Normal"/>
+    <w:pPr>{title_ppr}<w:jc w:val="center"/></w:pPr>
+    <w:rPr>{title_rpr}</w:rPr>
+  </w:style>"""
+
+    # Subtitle style
+    subtitle_props = styles.get("subtitle", {})
+    if not subtitle_props:
+        subtitle_props = dict(body)
+        subtitle_props["size"] = body.get("size", 11) + 4
+        subtitle_props["italic"] = True
+        subtitle_props.pop("color", None)  # default: black
+    subtitle_rpr = _build_rpr(subtitle_props)
+    subtitle_ppr = _build_ppr(subtitle_props)
+    subtitle_style = f"""<w:style w:type="paragraph" w:styleId="Subtitle">
+    <w:name w:val="Subtitle"/>
+    <w:basedOn w:val="Normal"/>
+    <w:next w:val="Normal"/>
+    <w:pPr>{subtitle_ppr}<w:jc w:val="center"/></w:pPr>
+    <w:rPr>{subtitle_rpr}</w:rPr>
+  </w:style>"""
+
+    # Heading styles (levels 1-9)
     heading_styles = []
-    for level in range(1, 4):
+    body_size = body.get("size", 11)
+    for level in range(1, 10):
         key = f"heading{level}"
         hprops = styles.get(key, {})
         if not hprops:
-            # Default: inherit body font, increase size, add bold
+            # Defaults: inherit body font, bold, size decreases with level
             hprops = dict(body)
             hprops["bold"] = True
-            hprops["size"] = body.get("size", 11) + (4 - level) * 2
+            if level <= 3:
+                hprops["size"] = body_size + (4 - level) * 2
+            else:
+                hprops["size"] = body_size
+            if level >= 4:
+                hprops["italic"] = True
+            # Inherit color from closest defined heading
+            for fallback in range(level - 1, 0, -1):
+                fb = styles.get(f"heading{fallback}", {})
+                if "color" in fb:
+                    hprops["color"] = fb["color"]
+                    break
 
         hrpr = _build_rpr(hprops)
         hppr = _build_ppr(hprops)
@@ -328,6 +337,11 @@ def _build_styles_xml(styles: dict) -> str:
     <w:rPr>{small_font_rpr}</w:rPr>
   </w:style>"""
 
+    footnote_ref_style = """<w:style w:type="character" w:styleId="FootnoteReference">
+    <w:name w:val="footnote reference"/>
+    <w:rPr><w:vertAlign w:val="superscript"/></w:rPr>
+  </w:style>"""
+
     caption_style = f"""<w:style w:type="paragraph" w:styleId="Caption">
     <w:name w:val="caption"/>
     <w:basedOn w:val="Normal"/>
@@ -352,10 +366,13 @@ def _build_styles_xml(styles: dict) -> str:
 <w:styles xmlns:w="{_W}">
   {doc_defaults}
   {normal_style}
+  {title_style}
+  {subtitle_style}
   {"".join(heading_styles)}
   {table_style}
   {compact_style}
   {footnote_style}
+  {footnote_ref_style}
   {caption_style}
   {table_caption_style}
   {image_caption_style}

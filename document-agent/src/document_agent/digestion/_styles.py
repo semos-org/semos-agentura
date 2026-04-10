@@ -43,7 +43,10 @@ def format_yaml_frontmatter(styles: dict) -> str:
     if not styles:
         return ""
     lines = ["---", "styles:"]
-    for section_key in ["page", "body", "heading1", "heading2", "heading3"]:
+    _keys = ["page", "title", "subtitle", "body"]
+    _keys += [f"heading{i}" for i in range(1, 10)]
+    _keys.append("table")
+    for section_key in _keys:
         section = styles.get(section_key)
         if not section:
             continue
@@ -76,16 +79,15 @@ def _extract_text_styles(root: etree._Element) -> dict:
         if body:
             result["body"] = body
 
-    # Named styles
+    # Named styles (heading levels 1-9, title, subtitle)
     style_map = {
         "Normal": "body",
-        "Heading1": "heading1",
-        "heading1": "heading1",
-        "Heading2": "heading2",
-        "heading2": "heading2",
-        "Heading3": "heading3",
-        "heading3": "heading3",
+        "Title": "title",
+        "Subtitle": "subtitle",
     }
+    for lvl in range(1, 10):
+        style_map[f"Heading{lvl}"] = f"heading{lvl}"
+        style_map[f"heading{lvl}"] = f"heading{lvl}"
 
     for style in root.findall(".//w:style", NS):
         sid = style.get(f"{{{NS['w']}}}styleId", "")

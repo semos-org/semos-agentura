@@ -156,38 +156,28 @@ def _normalize_pandoc_images(
     if not media_dir.exists():
         return markdown, image_map
 
+    _IMG_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".bmp", ".tiff"}
+
     images_dir = output_dir / f"{stem}_images"
     images_dir.mkdir(parents=True, exist_ok=True)
 
     # Collect and sort image files
-    image_files = sorted(
-        f
-        for f in media_dir.iterdir()
-        if f.is_file()
-        and f.suffix.lower()
-        in {
-            ".png",
-            ".jpg",
-            ".jpeg",
-            ".gif",
-            ".svg",
-            ".webp",
-            ".bmp",
-            ".tiff",
-        }
-    )
+    image_files = sorted(f for f in media_dir.iterdir() if f.is_file() and f.suffix.lower() in _IMG_EXTS)
     if not image_files:
         images_dir.rmdir()
         return markdown, image_map
 
     for i, src in enumerate(image_files, 1):
+        if not src.exists():
+            logger.warning("Image file not found, skipping: %s", src)
+            continue
         ext = src.suffix.lower()
         new_name = f"{stem}_{i:03d}{ext}"
         dest = images_dir / new_name
         shutil.copy2(src, dest)
 
-        # Build the old reference (as pandoc writes it)
-        old_ref = f"media/{src.name}"
+        # Build the old reference as pandoc writes it (relative to work_dir)
+        old_ref = str(src.relative_to(media_dir.parent)).replace("\\", "/")
         new_ref = f"{stem}_images/{new_name}"
         encoded_ref = _encode_md_path(new_ref)
         markdown = markdown.replace(old_ref, encoded_ref)
