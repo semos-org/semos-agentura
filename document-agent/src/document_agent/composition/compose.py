@@ -10,7 +10,7 @@ from pathlib import Path
 from .._utils import find_tool, require_tool
 from ..config import Settings
 from ..models import ComposeResult, OutputFormat
-from ._documents import compose_document
+from ._documents import autofit_tables, compose_document
 from ._drawio import replace_drawio_blocks
 from ._markdown_prep import prepare_markdown_file
 from ._mermaid import replace_mermaid_blocks
@@ -150,6 +150,7 @@ def compose(
             ref = Path(reference_doc) if reference_doc else None
 
             # Auto-generate reference doc from YAML front matter styles
+            yaml_styles = None
             if ref is None and format in (OutputFormat.DOCX, OutputFormat.ODT):
                 md_content = md_path.read_text(encoding="utf-8")
                 yaml_styles = parse_styles_from_markdown(md_content)
@@ -160,6 +161,11 @@ def compose(
                     logger.info("Generated reference doc from YAML front matter styles")
 
             compose_document(md_path, output_path, format, pandoc_path=pandoc, reference_doc=ref)
+
+            # Auto-fit tables unless styles.table.fixed is true
+            fixed = yaml_styles.get("table", {}).get("fixed", False) if yaml_styles else False
+            if format == OutputFormat.DOCX and not fixed:
+                autofit_tables(output_path)
 
         return ComposeResult(output_path=output_path, format=format)
 

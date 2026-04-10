@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import subprocess
 from pathlib import Path
+from zipfile import ZipFile
 
 from ..exceptions import CompositionError
 from ..models import OutputFormat
@@ -66,5 +67,27 @@ def compose_document(
 
     if not output_path.exists():
         raise CompositionError(f"Pandoc did not produce output: {output_path}")
+
     logger.info("Document written: %s", output_path)
     return output_path
+
+
+def autofit_tables(docx_path: Path) -> None:
+    """Change table layout from fixed to autofit in a DOCX file.
+
+    Pandoc generates fixed-width equal columns by default. This
+    post-processes the DOCX to let Word auto-size columns to content.
+    """
+    tmp = docx_path.with_suffix(".tmp")
+    with ZipFile(docx_path, "r") as zin, ZipFile(tmp, "w") as zout:
+        for item in zin.infolist():
+            data = zin.read(item.filename)
+            if item.filename == "word/document.xml":
+                text = data.decode("utf-8")
+                text = text.replace(
+                    '<w:tblLayout w:type="fixed"',
+                    '<w:tblLayout w:type="autofit"',
+                )
+                data = text.encode("utf-8")
+            zout.writestr(item, data)
+    tmp.replace(docx_path)
