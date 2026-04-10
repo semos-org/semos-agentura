@@ -16,11 +16,11 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
-
 from agentura_commons.testing import mcp_client_for, parse_tool_result
 from document_agent._utils import find_tool
 from document_agent.models import DiagramResult
 from document_agent.service import DocumentAgentService
+
 
 def _check_llm_available() -> bool:
     """Check if an LLM endpoint is configured (env var or .env file)."""

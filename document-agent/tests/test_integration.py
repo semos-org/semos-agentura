@@ -6,20 +6,16 @@ Individual tests also have @needs_* markers for finer-grained skipping.
 
 from __future__ import annotations
 
-import shutil
 import subprocess
-from pathlib import Path
 
 import pytest
 
 pytestmark = pytest.mark.integration
 
-from document_agent._utils import find_tool, _project_root
+from document_agent._utils import _project_root, find_tool
 from document_agent.composition._slides import _find_browser
-from document_agent.config import Settings
 from document_agent.exceptions import ToolNotFoundError
-from document_agent.models import OutputFormat, OutputMode
-
+from document_agent.models import OutputFormat
 
 # --- Tool availability markers ---
 

@@ -318,15 +318,32 @@ def _run_diagram(
             )
         )
 
-        # Copy final image to requested output
-        shutil.copy2(result.image_path, output_path)
-        print(f"Written: {output_path}")
-        print(f"Iterations: {result.iterations}, passed: {any(r.get('pass') for r in result.review_log)}")
-
-        if args.code_output:
+        # Always save code output if requested (even if render failed)
+        if args.code_output and result.code:
             code_path = Path(args.code_output)
             code_path.write_text(result.code, encoding="utf-8")
             print(f"Code: {code_path}")
+
+        # Copy final image to requested output
+        if result.image_path and Path(result.image_path).exists():
+            shutil.copy2(result.image_path, output_path)
+            print(f"Written: {output_path}")
+        else:
+            print(
+                "Warning: No rendered image produced. Check the code output for issues.",
+                file=sys.stderr,
+            )
+            if not args.code_output and result.code:
+                # Save code anyway so user can debug
+                fallback = output_path.with_suffix(".drawio")
+                fallback.write_text(result.code, encoding="utf-8")
+                print(f"Code saved to: {fallback}", file=sys.stderr)
+
+        print(f"Iterations: {result.iterations}, passed: {any(r.get('pass') for r in result.review_log)}")
+
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
 
     finally:
         shutil.rmtree(output_dir, ignore_errors=True)

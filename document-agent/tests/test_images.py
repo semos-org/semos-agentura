@@ -1,12 +1,10 @@
 """Tests for digestion/_images.py - annotation parsing and markdown assembly."""
 
-import json
 
 from document_agent.digestion._images import (
     _build_alt_text,
     _clean_json_alt_text,
     _parse_annotation,
-    collect_annotations,
     combine_markdown,
     inline_images_as_base64,
     replace_images_in_markdown,

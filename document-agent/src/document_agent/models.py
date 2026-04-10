@@ -64,6 +64,6 @@ class DiagramResult:
     """Result of diagram generation with optimization."""
 
     code: str
-    image_path: Path
+    image_path: Path | None
     iterations: int
     review_log: list[dict] = field(default_factory=list)

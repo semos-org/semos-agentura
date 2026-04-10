@@ -2,10 +2,9 @@
 
 from pathlib import Path
 
-from pypdf import PdfWriter
-
 from document_agent.digestion._ocr_models import OCRResponse
 from document_agent.digestion._pdf import merge_ocr_responses, split_pdf
+from pypdf import PdfWriter
 
 
 def _create_pdf(path: Path, num_pages: int) -> Path:

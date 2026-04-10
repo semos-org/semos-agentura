@@ -101,10 +101,21 @@ async def generate_diagram(
         )
     else:
         drawio = require_tool("drawio", settings.drawio_path)
-        render_fn = partial(
+        _base_render = partial(
             render_drawio_to_png,
             drawio_path=drawio,
+            drawio_desktop_path=settings.drawio_desktop_path,
         )
+        # Wrap render to restore embedded images before rendering
+        # (the LLM works on stripped XML, but rendering needs full images)
+        embedded = diagram_source.embedded_images if diagram_source else None
+        if embedded:
+
+            def render_fn(code: str, path: Path) -> Path:
+                full_code = restore_embedded_images(code, embedded)
+                return _base_render(full_code, path)
+        else:
+            render_fn = _base_render
 
     result = await optimize_diagram(
         description,
@@ -117,9 +128,9 @@ async def generate_diagram(
         output_dir=output_dir,
     )
 
-    # Re-insert stripped embedded images into the final code
+    # Restore embedded images in the final code output
     if diagram_source and diagram_source.embedded_images and result.code:
         result.code = restore_embedded_images(result.code, diagram_source.embedded_images)
-        logger.info("Restored %d embedded images into output diagram", len(diagram_source.embedded_images))
+        logger.info("Restored %d embedded images into output", len(diagram_source.embedded_images))
 
     return result

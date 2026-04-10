@@ -1,11 +1,8 @@
 """Tests for _utils.py - tool finding, source resolution, base64 encoding."""
 
 import base64
-import tempfile
-from pathlib import Path
 
 import pytest
-
 from document_agent._utils import (
     decode_image_base64,
     encode_image_base64,

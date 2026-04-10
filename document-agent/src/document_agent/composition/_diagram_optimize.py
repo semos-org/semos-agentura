@@ -280,7 +280,7 @@ async def optimize_diagram(
 
     review_log: list[dict] = []
     code = ""
-    image_path = output_dir / "diagram.png"
+    image_path: Path | None = None
 
     for iteration in range(1, max_iterations + 1):
         logger.info(

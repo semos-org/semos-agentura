@@ -49,6 +49,10 @@ class Settings(BaseSettings):
     pandoc_path: str | None = Field(default=None)
     mmdc_path: str | None = Field(default=None)
     drawio_path: str | None = Field(default=None)
+    # draw.io desktop app (not the npm CLI) - needed for rendering
+    # diagrams with embedded images. Auto-detected from common install
+    # paths, or set DRAWIO_DESKTOP_PATH explicitly.
+    drawio_desktop_path: str | None = Field(default=None)
 
     @property
     def provider_type(self) -> str:

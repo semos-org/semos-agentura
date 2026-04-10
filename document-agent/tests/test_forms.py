@@ -1,10 +1,8 @@
 """Tests for forms/ - PDF and DOCX form inspection and filling."""
 
 import json
-from pathlib import Path
 
 import pytest
-
 from document_agent.exceptions import DocumentAgentError
 from document_agent.forms.fill import fill_form, inspect_form
 

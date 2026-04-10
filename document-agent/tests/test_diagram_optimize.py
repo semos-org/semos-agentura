@@ -1,6 +1,5 @@
 """Tests for composition/_diagram_optimize.py - code extraction and review parsing."""
 
-import json
 
 from document_agent.composition._diagram_optimize import (
     _build_initial_messages,

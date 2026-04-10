@@ -1,7 +1,6 @@
 """Tests for composition/_markdown_prep.py - base64 image extraction."""
 
 import base64
-from pathlib import Path
 
 from document_agent.composition._markdown_prep import (
     extract_base64_images,

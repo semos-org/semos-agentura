@@ -197,3 +197,107 @@ class TestDiagramImageStrippingIntegration:
         restored = restore_embedded_images(llm_output, source.embedded_images)
         # Image cell should be re-injected
         assert f"data:image/png,{b64_img}" in restored
+
+    def test_extract_from_drawio_png(self, tmp_path: Path):
+        """Test extracting from a .drawio.png with embedded compressed XML."""
+
+        from document_agent.composition._diagram_source import extract_diagram_source
+        from document_agent.composition._drawio import (
+            _embed_xml_in_png,
+        )
+
+        b64_img = "A" * 200
+        inner_xml = (
+            f'<mxfile><diagram id="t" name="P"><mxGraphModel><root>'
+            f'<mxCell id="0"/>'
+            f'<mxCell id="1" value="Hello" style="rounded=1"/>'
+            f'<mxCell id="img1" style="shape=image;image=data:image/png,{b64_img}"/>'
+            f"</root></mxGraphModel></diagram></mxfile>"
+        )
+
+        # Create a minimal PNG and embed the XML
+        from tests.conftest import _make_png_bytes
+
+        png_path = tmp_path / "test.drawio.png"
+        png_path.write_bytes(_make_png_bytes())
+        _embed_xml_in_png(png_path, inner_xml)
+
+        import asyncio
+
+        source = asyncio.run(extract_diagram_source(png_path))
+        assert source.diagram_type == "drawio"
+        assert source.image_b64 is not None
+        assert "Hello" in source.code
+        # Images should be stripped
+        assert b64_img not in source.code
+        if source.embedded_images:
+            assert source.embedded_images.get("cells")
+
+    def test_llm_keeps_placeholders(self):
+        """When LLM keeps __IMG_N__ placeholders, inline restore works."""
+        b64 = "A" * 200
+        xml = (
+            f'<mxfile><diagram name="P"><mxGraphModel><root>'
+            f'<mxCell id="0"/>'
+            f'<mxCell id="1" value="Original" style="rounded=1"/>'
+            f'<mxCell id="img1" style="shape=image;image=data:image/png,{b64}"/>'
+            f"</root></mxGraphModel></diagram></mxfile>"
+        )
+        stripped, store = strip_embedded_images(xml)
+
+        # Simulate LLM changing label but keeping image placeholder
+        llm_output = stripped.replace("Original", "Updated")
+        restored = restore_embedded_images(llm_output, store)
+
+        assert "Updated" in restored
+        assert f"data:image/png,{b64}" in restored
+        assert "__IMG_" not in restored
+        # Image cell not duplicated
+        assert restored.count('id="img1"') == 1
+
+    def test_llm_rewrites_xml_completely(self):
+        """When LLM drops image cells entirely, they get re-injected."""
+        b64 = "A" * 200
+        xml = (
+            f'<mxfile><diagram name="P"><mxGraphModel><root>'
+            f'<mxCell id="0"/>'
+            f'<mxCell id="1" value="Original" style="rounded=1"/>'
+            f'<mxCell id="img1" style="shape=image;image=data:image/png,{b64}"/>'
+            f"</root></mxGraphModel></diagram></mxfile>"
+        )
+        stripped, store = strip_embedded_images(xml)
+
+        # Simulate LLM generating completely new XML without image cells
+        llm_output = (
+            '<mxfile><diagram name="P"><mxGraphModel><root>'
+            '<mxCell id="0"/>'
+            '<mxCell id="1" value="Rewritten" style="rounded=1"/>'
+            '<mxCell id="2" value="New cell" style="ellipse"/>'
+            "</root></mxGraphModel></diagram></mxfile>"
+        )
+        restored = restore_embedded_images(llm_output, store)
+
+        assert "Rewritten" in restored
+        assert "New cell" in restored
+        # Image cell should be re-injected
+        assert f"data:image/png,{b64}" in restored
+        assert 'id="img1"' in restored
+
+    def test_restored_xml_is_valid(self):
+        """Restored XML should always be parseable."""
+        from lxml import etree
+
+        b64 = "A" * 200
+        xml = (
+            f'<mxfile><diagram name="P"><mxGraphModel><root>'
+            f'<mxCell id="0"/>'
+            f'<mxCell id="img1" style="shape=image;image=data:image/png,{b64}"/>'
+            f"</root></mxGraphModel></diagram></mxfile>"
+        )
+        stripped, store = strip_embedded_images(xml)
+
+        # Both paths: LLM keeps placeholder, LLM drops cell
+        for scenario_xml in [stripped, stripped.replace('id="img1"', 'id="gone"')]:
+            restored = restore_embedded_images(scenario_xml, store)
+            root = etree.fromstring(restored.encode("utf-8"))
+            assert root is not None
