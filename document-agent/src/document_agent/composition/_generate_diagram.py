@@ -13,7 +13,7 @@ from ..config import Settings
 from ..exceptions import ProviderError
 from ..models import DiagramResult
 from ._diagram_optimize import optimize_diagram
-from ._diagram_source import DiagramSource, extract_diagram_source
+from ._diagram_source import DiagramSource, extract_diagram_source, restore_embedded_images
 from ._drawio import render_drawio_to_png
 from ._mermaid import render_mermaid_to_png
 
@@ -106,7 +106,7 @@ async def generate_diagram(
             drawio_path=drawio,
         )
 
-    return await optimize_diagram(
+    result = await optimize_diagram(
         description,
         diagram_type,
         source=diagram_source,
@@ -116,3 +116,10 @@ async def generate_diagram(
         render_fn=render_fn,
         output_dir=output_dir,
     )
+
+    # Re-insert stripped embedded images into the final code
+    if diagram_source and diagram_source.embedded_images and result.code:
+        result.code = restore_embedded_images(result.code, diagram_source.embedded_images)
+        logger.info("Restored %d embedded images into output diagram", len(diagram_source.embedded_images))
+
+    return result

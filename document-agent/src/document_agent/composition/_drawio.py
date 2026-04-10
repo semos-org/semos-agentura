@@ -110,14 +110,16 @@ def _decompress_diagram_content(encoded: str) -> str:
 def _parse_mxfile_from_png(mxfile_xml: str) -> str:
     """Reverse of _build_mxfile_for_png: decompress <diagram> text
     content back to inline <mxGraphModel> children."""
+    from urllib.parse import unquote
+
     from lxml import etree
 
     root = etree.fromstring(mxfile_xml.encode("utf-8"))
     for diagram in root.iter("diagram"):
         if diagram.text and not list(diagram):
-            inner_xml = _decompress_diagram_content(
-                diagram.text.strip(),
-            )
+            raw = _decompress_diagram_content(diagram.text.strip())
+            # draw.io URL-encodes the decompressed XML
+            inner_xml = unquote(raw)
             inner_el = etree.fromstring(inner_xml.encode("utf-8"))
             diagram.text = None
             diagram.append(inner_el)
@@ -131,6 +133,8 @@ def _parse_mxfile_from_png(mxfile_xml: str) -> str:
 def extract_xml_from_png(png_path: Path) -> str | None:
     """Reverse of _embed_xml_in_png: walk PNG chunks, find tEXt
     with keyword 'mxfile', return full decompressed drawio XML."""
+    from urllib.parse import unquote
+
     data = png_path.read_bytes()
     offset = 8  # skip PNG signature
     while offset < len(data):
@@ -142,6 +146,9 @@ def extract_xml_from_png(png_path: Path) -> str | None:
             keyword = chunk_data[:nul]
             if keyword == b"mxfile":
                 raw = chunk_data[nul + 1 :].decode("utf-8")
+                # draw.io URL-encodes the entire mxfile XML in PNG metadata
+                if not raw.startswith("<"):
+                    raw = unquote(raw)
                 return _parse_mxfile_from_png(raw)
         offset += 12 + clen
     return None

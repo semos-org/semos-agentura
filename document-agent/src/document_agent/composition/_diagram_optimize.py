@@ -16,6 +16,52 @@ from ._diagram_source import DiagramSource
 
 logger = logging.getLogger(__name__)
 
+
+def _downscale_image_b64(raw_b64: str, target_b64_len: int) -> str:
+    """Downscale a PNG/JPEG image so its base64 fits within target_b64_len.
+
+    Uses progressive JPEG quality reduction, falling back to resize.
+    Returns the base64 string (without data URI prefix).
+    """
+    import io
+
+    try:
+        from PIL import Image
+    except ImportError:
+        # No Pillow - just truncate (LLM gets a broken image but won't crash)
+        logger.warning("Pillow not installed, cannot downscale image")
+        return raw_b64[:target_b64_len]
+
+    raw_bytes = base64.b64decode(raw_b64)
+    img = Image.open(io.BytesIO(raw_bytes))
+
+    # Try JPEG quality reduction first
+    for quality in (60, 40, 20, 10):
+        buf = io.BytesIO()
+        rgb = img.convert("RGB") if img.mode != "RGB" else img
+        rgb.save(buf, format="JPEG", quality=quality, optimize=True)
+        b64 = base64.b64encode(buf.getvalue()).decode()
+        if len(b64) <= target_b64_len:
+            logger.info("Downscaled image: quality=%d, %d -> %d chars", quality, len(raw_b64), len(b64))
+            return b64
+
+    # Still too large - resize progressively
+    for scale in (0.5, 0.25, 0.1):
+        w, h = int(img.width * scale), int(img.height * scale)
+        if w < 50 or h < 50:
+            break
+        resized = img.resize((w, h), Image.LANCZOS)
+        buf = io.BytesIO()
+        resized.convert("RGB").save(buf, format="JPEG", quality=30, optimize=True)
+        b64 = base64.b64encode(buf.getvalue()).decode()
+        if len(b64) <= target_b64_len:
+            logger.info("Downscaled image: scale=%.0f%%, %d -> %d chars", scale * 100, len(raw_b64), len(b64))
+            return b64
+
+    logger.warning("Could not downscale image to target size, using smallest version")
+    return b64
+
+
 _CODEGEN_SYSTEM_MERMAID = """\
 You are an expert at creating Mermaid diagrams. \
 Generate valid Mermaid diagram code for the user's description. \
@@ -116,23 +162,59 @@ def _build_initial_messages(
             {"role": "assistant", "content": source.code},
         )
         if description:
-            messages.append(
-                {
-                    "role": "user",
-                    "content": (f"Refine this diagram: {description}\n\nReturn ONLY the updated {diagram_type} code."),
-                }
-            )
+            text = f"Refine this diagram: {description}\n\nReturn ONLY the updated {diagram_type} code."
         else:
-            messages.append(
-                {
-                    "role": "user",
-                    "content": (
-                        "Improve this diagram for visual clarity "
-                        "and completeness. Return ONLY the updated "
-                        f"{diagram_type} code."
-                    ),
-                }
+            text = (
+                "Improve this diagram for visual clarity "
+                "and completeness. Return ONLY the updated "
+                f"{diagram_type} code."
             )
+
+        # If embedded images were stripped, include them as visual reference
+        uris = (source.embedded_images or {}).get("uris", {})
+        if uris:
+            text += (
+                "\n\nNote: Some mxCell elements contain image placeholders "
+                "(__IMG_N__). Do NOT remove these cells - they will be "
+                "restored automatically. Just edit the non-image cells."
+            )
+            content: list[dict] = [{"type": "text", "text": text}]
+            # Attach images for visual reference (cap total to ~1 MB base64)
+            max_total_b64 = 1_000_000
+            total = 0
+            attached = 0
+            n_images = len(uris)
+            per_image_budget = max_total_b64 // max(n_images, 1)
+            for _pid, data_uri in uris.items():
+                if "," in data_uri:
+                    raw_b64 = data_uri.split(",", 1)[1]
+                else:
+                    raw_b64 = data_uri
+                if len(raw_b64) > per_image_budget:
+                    raw_b64 = _downscale_image_b64(raw_b64, per_image_budget)
+                if total + len(raw_b64) > max_total_b64:
+                    logger.info(
+                        "Image budget exhausted, skipping remaining %d images",
+                        n_images - attached,
+                    )
+                    break
+                content.append(
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": "image/png",
+                            "data": raw_b64,
+                        },
+                    }
+                )
+                total += len(raw_b64)
+                attached += 1
+            if attached:
+                content[0]["text"] += f" {attached} reference image(s) attached below."
+            messages.append({"role": "user", "content": content})
+        else:
+            messages.append({"role": "user", "content": text})
     elif source and source.description:
         # VLM analysis of an image (hand-drawing, screenshot)
         prompt = (
