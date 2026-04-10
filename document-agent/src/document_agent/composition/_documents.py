@@ -25,8 +25,18 @@ def compose_document(
     format: OutputFormat,
     *,
     pandoc_path: Path,
+    reference_doc: Path | None = None,
 ) -> Path:
-    """Generate a document from markdown using pandoc."""
+    """Generate a document from markdown using pandoc.
+
+    Args:
+        md_path: Path to the Markdown source file.
+        output_path: Where to write the output document.
+        format: Target format (PDF, DOCX, ODT, HTML).
+        pandoc_path: Path to pandoc binary.
+        reference_doc: Optional DOCX/ODT file whose styles (fonts, sizes,
+            margins, headers/footers) are applied to the output.
+    """
     output_path = output_path.resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     pandoc_format = _FORMAT_MAP.get(format)
@@ -40,6 +50,10 @@ def compose_document(
         str(output_path),
         "--standalone",
     ]
+
+    # Apply styles from a reference document (DOCX/ODT only)
+    if reference_doc and format in (OutputFormat.DOCX, OutputFormat.ODT):
+        cmd.extend(["--reference-doc", str(reference_doc)])
 
     # For PDF, pandoc needs a PDF engine
     if format == OutputFormat.PDF:

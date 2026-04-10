@@ -14,6 +14,7 @@ from ._documents import compose_document
 from ._drawio import replace_drawio_blocks
 from ._markdown_prep import prepare_markdown_file
 from ._mermaid import replace_mermaid_blocks
+from ._reference_doc import generate_reference_doc, parse_styles_from_markdown
 from ._slides import compose_slides
 
 logger = logging.getLogger(__name__)
@@ -76,6 +77,8 @@ def compose(
     is_slides: bool = False,
     render_mermaid: bool = True,
     render_drawio: bool = True,
+    reference_doc: Path | str | None = None,
+    header_footer_doc: Path | str | None = None,
     settings: Settings | None = None,
 ) -> ComposeResult:
     """Compose a document from Markdown.
@@ -86,6 +89,7 @@ def compose(
         format: Target format (PDF, DOCX, ODT, PPTX, HTML).
         is_slides: If True, use Marp for slide generation. If False, use Pandoc.
         render_mermaid: Pre-render mermaid code blocks to images before conversion.
+        reference_doc: Optional DOCX/ODT whose styles are applied to the output.
         settings: Settings instance (auto-created from env if None).
 
     Returns:
@@ -143,7 +147,19 @@ def compose(
             compose_slides(md_path, output_path, format, marp_path=marp, libre_office_path=settings.libre_office_path)
         else:
             pandoc = require_tool("pandoc", settings.pandoc_path)
-            compose_document(md_path, output_path, format, pandoc_path=pandoc)
+            ref = Path(reference_doc) if reference_doc else None
+
+            # Auto-generate reference doc from YAML front matter styles
+            if ref is None and format in (OutputFormat.DOCX, OutputFormat.ODT):
+                md_content = md_path.read_text(encoding="utf-8")
+                yaml_styles = parse_styles_from_markdown(md_content)
+                if yaml_styles:
+                    hf_src = Path(header_footer_doc) if header_footer_doc else None
+                    ref = work_dir / "_reference.docx"
+                    generate_reference_doc(yaml_styles, ref, header_footer_source=hf_src)
+                    logger.info("Generated reference doc from YAML front matter styles")
+
+            compose_document(md_path, output_path, format, pandoc_path=pandoc, reference_doc=ref)
 
         return ComposeResult(output_path=output_path, format=format)
 

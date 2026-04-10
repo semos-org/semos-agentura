@@ -33,6 +33,28 @@ def main() -> None:
         choices=["markdown", "html"],
         help="Table output format (default: from settings, usually markdown)",
     )
+    dig.add_argument(
+        "--mode",
+        choices=["auto", "ocr", "pandoc"],
+        default="auto",
+        help="Digest mode: auto (pandoc for DOCX/ODT, OCR otherwise), ocr, or pandoc",
+    )
+    dig.add_argument(
+        "--track-changes",
+        choices=["accept", "reject", "all"],
+        default="accept",
+        help="DOCX tracked changes: accept (final text), reject (original), all (annotated)",
+    )
+    dig.add_argument(
+        "--describe-images",
+        action="store_true",
+        help="Send extracted images to VLM for alt-text annotation (pandoc path only)",
+    )
+    dig.add_argument(
+        "--no-styles",
+        action="store_true",
+        help="Do not extract document styles as YAML front matter",
+    )
 
     # --- compose subcommand ---
     comp = subparsers.add_parser("compose", help="Markdown to document")
@@ -47,6 +69,14 @@ def main() -> None:
     comp.add_argument("--slides", action="store_true", help="Use Marp for slide generation")
     comp.add_argument("--no-mermaid", action="store_true", help="Skip mermaid diagram rendering")
     comp.add_argument("--no-drawio", action="store_true", help="Skip drawio diagram rendering")
+    comp.add_argument(
+        "--reference-doc",
+        help="DOCX/ODT file whose styles, headers, footers, and page layout are applied to the output",
+    )
+    comp.add_argument(
+        "--header-footer-doc",
+        help="DOCX to copy only headers and footers from (use with YAML styles in the markdown)",
+    )
 
     # --- inspect subcommand ---
     insp = subparsers.add_parser("inspect", help="Inspect form fields in a PDF or DOCX")
@@ -170,6 +200,10 @@ def _run_digest(args: argparse.Namespace, settings: Settings) -> None:
             schema=args.schema,
             annotation_prompt=args.prompt,
             max_pages=args.max_pages,
+            digest_mode=args.mode,
+            track_changes=args.track_changes,
+            describe_images=args.describe_images,
+            include_styles=not args.no_styles,
             settings=settings,
         )
         if output_mode == OutputMode.INLINE:
@@ -195,6 +229,9 @@ def _run_compose(args: argparse.Namespace, settings: Settings) -> None:
         print(f"Error: Input file not found: {input_path}", file=sys.stderr)
         sys.exit(1)
 
+    ref = Path(args.reference_doc) if args.reference_doc else None
+    hf = Path(args.header_footer_doc) if args.header_footer_doc else None
+
     result = compose(
         input_path,
         output_path,
@@ -202,6 +239,8 @@ def _run_compose(args: argparse.Namespace, settings: Settings) -> None:
         is_slides=args.slides,
         render_mermaid=not args.no_mermaid,
         render_drawio=not args.no_drawio,
+        reference_doc=ref,
+        header_footer_doc=hf,
         settings=settings,
     )
     print(f"Written: {result.output_path}")

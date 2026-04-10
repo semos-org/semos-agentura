@@ -11,10 +11,11 @@ from mistralai.extra.utils.response_format import response_format_from_pydantic_
 from pydantic import BaseModel
 
 from .._constants import OFFICE_EXTENSIONS, PDF_EXTENSIONS, SUPPORTED_EXTENSIONS
-from .._utils import resolve_source
+from .._utils import find_tool, resolve_source
 from ..config import Settings
 from ..exceptions import DocumentAgentError
 from ..models import DigestResult, ImageDescription, OutputMode
+from ._docx_digest import digest_docx_with_pandoc
 from ._images import collect_annotations, combine_markdown, inline_images_as_base64, save_images
 from ._ocr_models import OCRResponse
 from ._office import convert_office_to_pdf
@@ -34,6 +35,10 @@ def digest(
     schema: type[BaseModel] | str | None = None,
     annotation_prompt: str | None = None,
     max_pages: int | None = None,
+    digest_mode: str = "auto",
+    track_changes: str = "accept",
+    describe_images: bool = False,
+    include_styles: bool = True,
     settings: Settings | None = None,
 ) -> DigestResult:
     """Digest a document into Markdown.
@@ -46,6 +51,10 @@ def digest(
         schema: Pydantic BaseModel class or path to .py file for structured extraction.
         annotation_prompt: Prompt for structured extraction (requires schema).
         max_pages: Override max pages per PDF chunk.
+        digest_mode: "auto" (pandoc for DOCX/ODT, OCR otherwise),
+            "ocr" (force OCR), or "pandoc" (force pandoc).
+        track_changes: For DOCX pandoc path: "accept", "reject", or "all".
+        describe_images: For pandoc path: send images to VLM for annotation.
         settings: Settings instance (auto-created from env if None).
 
     Returns:
@@ -66,6 +75,10 @@ def digest(
             schema=schema,
             annotation_prompt=annotation_prompt,
             max_pages=max_pages,
+            digest_mode=digest_mode,
+            track_changes=track_changes,
+            describe_images=describe_images,
+            include_styles=include_styles,
             settings=settings,
         )
     finally:
@@ -81,11 +94,32 @@ def _digest_file(
     schema: type[BaseModel] | str | None,
     annotation_prompt: str | None,
     max_pages: int,
+    digest_mode: str,
+    track_changes: str,
+    describe_images: bool,
+    include_styles: bool,
     settings: Settings,
 ) -> DigestResult:
     ext = file_path.suffix.lower()
     if ext not in SUPPORTED_EXTENSIONS:
         raise DocumentAgentError(f"Unsupported file type: {ext}")
+
+    # Pandoc path for DOCX/ODT - preserves footnotes, tracked changes, comments
+    _pandoc_exts = {".docx", ".odt"}
+    if ext in _pandoc_exts and digest_mode != "ocr":
+        pandoc = find_tool("pandoc", settings.pandoc_path)
+        if pandoc:
+            return digest_docx_with_pandoc(
+                file_path,
+                output_dir=output_dir or file_path.parent,
+                output_mode=output_mode,
+                track_changes=track_changes,
+                describe_images=describe_images,
+                include_styles=include_styles,
+                pandoc_path=pandoc,
+                settings=settings,
+            )
+        logger.warning("pandoc not found, falling back to OCR pipeline for %s", ext)
 
     # Convert Office documents to PDF first
     temp_pdf: Path | None = None

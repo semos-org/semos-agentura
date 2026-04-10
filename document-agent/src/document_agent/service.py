@@ -57,7 +57,18 @@ class DocumentAgentService(BaseAgentService):
         return [
             ToolDef(
                 name="digest_document",
-                description=f"Digest a document (PDF, image, Office) into Markdown via OCR. {_fh}",
+                description=(
+                    "Digest a document (PDF, image, Office) into Markdown. "
+                    "DOCX/ODT use pandoc and preserve: "
+                    "(1) footnotes as [^N] / [^N]: text, "
+                    "(2) tracked changes as {.insertion}/{.deletion} spans with author+date, "
+                    "(3) comments as {.comment-start id='N' author='X' date='Y'}...{.comment-end id='N'}, "
+                    "(4) document styles as YAML front matter (fonts, sizes, colors, margins). "
+                    "All four round-trip through compose_document. "
+                    "Use track_changes='all' to see revisions, 'accept' for final text, "
+                    "'reject' for original text. "
+                    f"PDF/images use OCR. {_fh}"
+                ),
                 fn=self._digest,
                 file_params=["source"],
                 read_only=True,
@@ -65,8 +76,20 @@ class DocumentAgentService(BaseAgentService):
             ),
             ToolDef(
                 name="compose_document",
-                description="Render Markdown source text into a document (PDF, PPTX, DOCX, HTML). Returns a download URL.",
+                description=(
+                    "Render Markdown source text into a document (PDF, PPTX, DOCX, HTML). "
+                    "Footnotes, comments, and tracked changes from digest_document "
+                    "round-trip back to DOCX. "
+                    "Styles can be controlled via YAML front matter in the Markdown: "
+                    "styles.page (size, margins), styles.body (font, size, line-spacing, "
+                    "spacing-before/after), styles.heading1/2/3 (font, size, bold, italic, "
+                    "color, spacing), styles.table (size, border-color, border-size). "
+                    "Footnotes and captions use table.size (default 9pt). "
+                    "If no YAML styles are present, an optional reference_doc DOCX "
+                    "can be provided for style inheritance. Returns a download URL."
+                ),
                 fn=self._compose,
+                file_params=["reference_doc", "header_footer_doc"],
                 task_support="optional",
                 idempotent=True,
             ),
@@ -115,7 +138,11 @@ class DocumentAgentService(BaseAgentService):
             return "Use the fill_form tool with a file path and field data."
         elif "form" in msg and "inspect" in msg:
             return "Use the inspect_form tool with a file path."
-        return "Available tools: digest_document, compose_document, generate_diagram, inspect_form, fill_form."
+        return (
+            "Available tools: digest_document (supports DOCX tracked changes, footnotes, comments), "
+            "compose_document (supports footnotes and reference doc for styles), "
+            "generate_diagram, inspect_form, fill_form."
+        )
 
     def _resolve_file(
         self,
@@ -169,32 +196,96 @@ class DocumentAgentService(BaseAgentService):
         source: FileAttachment | str,
         output_mode: str = "text",
         max_pages: int | None = None,
+        digest_mode: str = "auto",
+        track_changes: str = "accept",
+        describe_images: bool = False,
     ) -> str:
         """Digest a document into Markdown.
+
+        DOCX/ODT files are processed via pandoc, preserving:
+        - Footnotes as [^N] with [^N]: definition at end
+        - Tracked changes as {.insertion author="X" date="Y"} /
+          {.deletion author="X" date="Y"} spans (when track_changes='all')
+        - Comments as {.comment-start id="N" author="X" date="Y"}...
+          {.comment-end id="N"} spans
+        - Document styles as YAML front matter block (page size/margins,
+          body/heading fonts/sizes/colors/spacing, table properties)
+
+        All four round-trip through compose_document back to DOCX.
 
         Args:
             source: File as {name, content} object, file path, or base64.
             output_mode: 'text' for inline markdown, 'file' to write to disk.
             max_pages: Maximum number of pages to process.
+            digest_mode: 'auto' (pandoc for DOCX/ODT, OCR otherwise),
+                'ocr' (force OCR), or 'pandoc' (force pandoc).
+            track_changes: 'accept' (final text, default), 'reject'
+                (original text), or 'all' (both with author/date annotations).
+            describe_images: Send extracted images to VLM for alt-text annotation.
         """
         mode = OutputMode.INLINE if output_mode == "text" else OutputMode.FILE
         src = self._resolve_file_attachment(source, ".pdf")
         settings = self._settings
 
         def _run():
-            return digest(source=src, output_mode=mode, max_pages=max_pages, settings=settings)
+            return digest(
+                source=src,
+                output_mode=mode,
+                max_pages=max_pages,
+                digest_mode=digest_mode,
+                track_changes=track_changes,
+                describe_images=describe_images,
+                settings=settings,
+            )
 
         result = await asyncio.to_thread(_run)
         return json.dumps({"markdown": result.markdown or ""}, ensure_ascii=False)
 
-    async def _compose(self, source: str, format: str, is_slides: bool = False, filename: str = "") -> str:
+    async def _compose(
+        self,
+        source: str,
+        format: str,
+        is_slides: bool = False,
+        filename: str = "",
+        reference_doc: FileAttachment | str = "",
+        header_footer_doc: FileAttachment | str = "",
+    ) -> str:
         """Render Markdown into a document. Source is a file path or raw Markdown text.
+
+        Footnotes ([^1]: text), comments ({.comment-start/end} spans),
+        and tracked changes ({.insertion}/{.deletion} spans) from
+        digest_document output are reproduced in the output DOCX.
+
+        Styles can be defined in three ways (in priority order):
+        1. YAML front matter in the Markdown source (auto-generates a
+           reference doc):
+             ---
+             styles:
+               page: {size: "A4", margin-top: "1.5cm", ...}
+               body: {font: "Calibri", size: 11, line-spacing: 1.1,
+                      spacing-before: "0.0cm", spacing-after: "0.1cm"}
+               heading1: {font: "Calibri", size: 13, bold: true,
+                          color: "000080", spacing-before: "0.3cm"}
+               heading2: {font: "Calibri", size: 11, bold: true, ...}
+               heading3: {font: "Calibri", size: 11, bold: true, italic: true}
+               table: {size: 9, border-color: "999999", border-size: 4}
+             ---
+           Table size also controls footnote and caption font size.
+           Combine with header_footer_doc to also get headers/footers.
+        2. reference_doc parameter: a DOCX/ODT file whose styles, headers,
+           footers, and page layout are all applied (overrides YAML styles).
+        3. Neither: pandoc default styles.
 
         Args:
             source: Path to a .md file, or raw Markdown content.
             format: Output format - 'pdf', 'pptx', 'docx', or 'html'.
             is_slides: Set to true for slide/presentation output.
             filename: Optional output filename. Auto-generated if omitted.
+            reference_doc: Optional DOCX/ODT file whose styles, headers,
+                footers, and page layout are all applied.
+            header_footer_doc: Optional DOCX to copy only headers and footers
+                from. Use with YAML styles to get custom fonts/spacing plus
+                template headers/footers.
         """
         fmt = OutputFormat(format)
         if not filename:
@@ -210,9 +301,25 @@ class DocumentAgentService(BaseAgentService):
             tmp_md.write_text(source, encoding="utf-8")
             source_path = tmp_md
 
+        # Resolve reference document if provided
+        ref_path = None
+        if reference_doc:
+            ref_path = self._resolve_file_attachment(reference_doc, ".docx")
+
+        # Resolve header/footer source if provided
+        hf_path = None
+        if header_footer_doc:
+            hf_path = self._resolve_file_attachment(header_footer_doc, ".docx")
+
         def _run():
             return compose(
-                source=source_path, output_path=out_path, format=fmt, is_slides=is_slides, settings=self._settings
+                source=source_path,
+                output_path=out_path,
+                format=fmt,
+                is_slides=is_slides,
+                reference_doc=ref_path,
+                header_footer_doc=hf_path,
+                settings=self._settings,
             )
 
         result = await asyncio.to_thread(_run)
