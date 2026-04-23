@@ -23,8 +23,15 @@ def main() -> None:
     dig = subparsers.add_parser("digest", help="OCR document(s) to Markdown")
     dig.add_argument("files", nargs="*", help="PDF, image, or Office files to process")
     dig.add_argument("--dir", help="Process all supported files in a directory")
-    dig.add_argument("--output-dir", help="Output directory (default: same as input)")
-    dig.add_argument("--inline", action="store_true", help="Return markdown with base64 images (print to stdout)")
+    dig.add_argument(
+        "--output-dir",
+        help="Output directory for .md and images (default: same as input file)",
+    )
+    dig.add_argument(
+        "--inline",
+        action="store_true",
+        help="Print self-contained markdown to stdout with base64 images (no files written)",
+    )
     dig.add_argument("--schema", help="Path to a Pydantic schema .py file for structured extraction")
     dig.add_argument("--prompt", help="Annotation prompt (requires --schema)")
     dig.add_argument("--max-pages", type=int, help="Max pages per PDF chunk")
@@ -209,13 +216,13 @@ def _run_digest(args: argparse.Namespace, settings: Settings) -> None:
         if output_mode == OutputMode.INLINE:
             print(result.markdown)
         else:
-            print(f"Written: {result.output_path}")
+            print(f"Written: {result.output_path}", file=sys.stderr)
             if result.images_dir:
-                print(f"Images: {result.images_dir}")
+                print(f"Images: {result.images_dir}", file=sys.stderr)
             if result.annotation_path:
-                print(f"Annotation: {result.annotation_path}")
+                print(f"Annotation: {result.annotation_path}", file=sys.stderr)
 
-    print(f"\nDone. Processed {len(files)} file(s).")
+    print(f"\nDone. Processed {len(files)} file(s).", file=sys.stderr)
 
 
 def _run_compose(args: argparse.Namespace, settings: Settings) -> None:
