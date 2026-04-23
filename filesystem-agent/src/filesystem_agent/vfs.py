@@ -234,6 +234,8 @@ class VirtualFileSystem:
         return self.info(uri).get("type") == "directory"
 
     def cat(self, uri: str) -> bytes:
+        if ARCHIVE_SEPARATOR in uri:
+            return self.cat_archive(uri)
         return self._cat_robust(uri)
 
     def tree(self, uri: str = "", depth: int = 1) -> list[dict[str, Any]]:
@@ -305,6 +307,18 @@ class VirtualFileSystem:
             self.rm(src_uri)
 
     def cp(self, src_uri: str, dst_uri: str) -> None:
+        # Handle archive sources transparently
+        if ARCHIVE_SEPARATOR in src_uri:
+            data = self.cat_archive(src_uri)
+            if ARCHIVE_SEPARATOR in dst_uri:
+                self.put_archive(dst_uri, data)
+            else:
+                self.put(dst_uri, data)
+            return
+        if ARCHIVE_SEPARATOR in dst_uri:
+            data = self.cat(src_uri)
+            self.put_archive(dst_uri, data)
+            return
         src_root, _, src_rel = self._resolve(src_uri)
         dst_root, _, dst_rel = self._resolve(dst_uri)
         if src_root == dst_root:

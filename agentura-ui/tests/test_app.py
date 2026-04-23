@@ -21,11 +21,13 @@ class TestBuildAgents:
         from agentura_ui.__main__ import _build_agents
 
         agents = _build_agents()
-        assert len(agents) == 2
+        assert len(agents) == 3
         assert agents[0].name == "email-agent"
         assert "8001" in agents[0].url
         assert agents[1].name == "document-agent"
         assert "8002" in agents[1].url
+        assert agents[2].name == "filesystem-agent"
+        assert "8003" in agents[2].url
 
     def test_from_env(self, monkeypatch):
         monkeypatch.setenv(
@@ -76,11 +78,8 @@ class TestWrapChatCallback:
     @pytest.fixture
     def setup(self):
         from agentura_ui.__main__ import _wrap_chat_callback
-        from agentura_ui.file_manager import FileManager
-
         registry = FileRegistry()
         pending_uploads: list[str] = []
-        file_mgr = FileManager(registry, pending_uploads)
 
         async def original(contents, user, instance):
             yield f"Echo: {contents}"
@@ -89,7 +88,7 @@ class TestWrapChatCallback:
             original,
             registry,
             pending_uploads,
-            file_mgr,
+            None,
         )
         instance = MagicMock()
         instance.send = MagicMock()
@@ -138,6 +137,15 @@ class TestWrapChatCallback:
             chunks.append(chunk)
 
         assert "Please enter a message" in "".join(chunks)
+
+    def test_create_app_succeeds(self, monkeypatch):
+        """create_app() runs without error (catches param bugs)."""
+        monkeypatch.setenv("AZURE_API_KEY", "dummy")
+        monkeypatch.setenv("AZURE_API_BASE", "http://dummy")
+        from agentura_ui.__main__ import create_app
+
+        app = create_app()
+        assert type(app).__name__ == "Panelini"
 
     async def test_non_string_guard(self, setup):
         """Non-string content (e.g. from ChatInterface FileInput
@@ -226,14 +234,11 @@ class TestFileUploadThenDigest:
             )
             yield result
 
-        from agentura_ui.file_manager import FileManager
-
-        file_mgr = FileManager(registry, pending_uploads)
         wrapped = _wrap_chat_callback(
             fake_frontend_callback,
             registry,
             pending_uploads,
-            file_mgr,
+            None,
         )
         instance = MagicMock()
         instance.send = MagicMock()

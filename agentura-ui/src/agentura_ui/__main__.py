@@ -20,15 +20,18 @@ from panelini.panels.ai.utils.ai_interface import (
     PROVIDER_CLASS_REGISTRY,
 )
 
+from filesystem_agent.panel_tree import VFSTreeBrowser
+from filesystem_agent.vfs import VirtualFileSystem
+
 from .a2a_client import discover_agents
 from .a2a_tools import create_a2a_delegates
-from .file_manager import FileManager
-from .file_registry import FileRegistry, human_size
+from .file_registry import VFSFileRegistry, human_size
 from .mcp_hub import AgentConnection, MCPHub
 from .mcp_tools import (
     drain_produced_files,
     set_file_notify_callback,
     set_status_callback,
+    set_vfs_changed_callback,
 )
 from .renderers import (
     render_file_notification,
@@ -115,10 +118,22 @@ def _build_agents() -> list[AgentConnection]:
                 "http://localhost:8002",
             ),
         ),
+        AgentConnection(
+            name="filesystem-agent",
+            url=os.environ.get(
+                "FILESYSTEM_AGENT_URL",
+                "http://localhost:8003/mcp/sse",
+            ),
+            base_url=os.environ.get(
+                "FILESYSTEM_AGENT_BASE",
+                "http://localhost:8003",
+            ),
+        ),
     ]
 
 
-def _wrap_chat_callback(original_callback, registry, pending_uploads, file_mgr):
+def _wrap_chat_callback(original_callback, registry, pending_uploads,
+                        _unused=None):
     """Wrap Frontend chat callback to prepend file context,
     resolve file references, and register tool outputs."""
 
@@ -160,19 +175,78 @@ def _wrap_chat_callback(original_callback, registry, pending_uploads, file_mgr):
             if resolved != last_chunk:
                 yield resolved
 
-        # Files are notified in real-time via _notify_file
-        # callback (called from tool wrappers). Just drain
-        # the list and refresh the file manager.
-        new_files = drain_produced_files()
-        if new_files:
-            file_mgr.refresh()
+        # Files are notified in real-time via _on_file_produced
+        # callback. Drain the list here to prevent accumulation.
+        drain_produced_files()
 
     return wrapped
 
 
+def _start_filesystem_agent_inprocess(
+    vfs: VirtualFileSystem, port: int,
+) -> None:
+    """Start the filesystem-agent as a uvicorn thread sharing our VFS.
+
+    The agent exposes MCP SSE + A2A on the given port so the UI's
+    MCP tool wrappers connect to it like any other agent. But the
+    VFS instance is shared - files written by tools or by the UI's
+    file registry are visible to both.
+    """
+    import socket
+    import threading
+
+    import uvicorn
+
+    from filesystem_agent.service import FilesystemAgentService
+
+    # Check if port is already in use (external agent running)
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        if s.connect_ex(("127.0.0.1", port)) == 0:
+            logger.info(
+                "Filesystem-agent port %d in use, "
+                "skipping in-process start",
+                port,
+            )
+            return
+
+    from agentura_commons import create_app as create_agent_app
+
+    service = FilesystemAgentService(vfs=vfs)
+    agent_app = create_agent_app(
+        service, base_url=f"http://127.0.0.1:{port}",
+    )
+
+    config = uvicorn.Config(
+        agent_app,
+        host="127.0.0.1",
+        port=port,
+        log_level="warning",
+    )
+    server = uvicorn.Server(config)
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+
+    # Wait for startup
+    import time
+
+    for _ in range(50):
+        time.sleep(0.1)
+        if server.started:
+            break
+
+    logger.info(
+        "Filesystem-agent started in-process on port %d "
+        "(shared VFS with %d roots)",
+        port, len(vfs.roots),
+    )
+
+
 # Module-level state (single-user app)
 _hub: MCPHub | None = None
-_registry = FileRegistry()
+_vfs = VirtualFileSystem()
+_vfs.add_root_from_protocol("session", "memory", base_path="/")
+_registry = VFSFileRegistry(_vfs, root="session")
+_fs_agent_port: int | None = None  # set in main()
 
 
 def create_app() -> Panelini:
@@ -276,16 +350,12 @@ def create_app() -> Panelini:
         welcome = frontend.chat_interface.objects[0]
         frontend.chat_interface.objects = [welcome]
 
-    # File manager (sidebar)
+    # VFS tree browser (sidebar file manager)
     pending_uploads: list[str] = []
+    tree_browser = VFSTreeBrowser(_vfs, preload_depth=2)
 
-    def _preview(entry):
-        """Show file preview in panelini's preview pane.
-
-        Natively supports: markdown, images, PDF, HTML.
-        Other formats show metadata (a future generate_preview
-        tool could convert e.g. DOCX to PDF for preview).
-        """
+    def _preview_entry(entry):
+        """Show file preview in panelini's preview pane."""
         import base64 as b64mod
 
         mime = entry.mime.split(";")[0].strip()
@@ -300,7 +370,6 @@ def create_app() -> Panelini:
                 f'height:auto;object-fit:contain;">'
             )
         elif mime == "application/pdf":
-            # Embedded PDF viewer via iframe + data URI
             frontend.preview_content.object = (
                 f"# {entry.filename}\n\n"
                 f'<iframe src="data:application/pdf;base64,'
@@ -321,59 +390,110 @@ def create_app() -> Panelini:
         elif mime == "text/markdown" or entry.filename.endswith(
             ".md",
         ):
-            frontend.preview_content.object = entry.blob.decode("utf-8", errors="replace")
+            frontend.preview_content.object = (
+                entry.blob.decode("utf-8", errors="replace")
+            )
         else:
-            # Unsupported format - show metadata.
-            # TODO: add generate_preview tool that converts
-            # DOCX/PPTX/XLSX to PDF via document-agent's
-            # compose_document, then preview the PDF.
             frontend.preview_content.object = (
                 f"# {entry.filename}\n\n"
                 f"**Type:** {mime}  \n"
                 f"**Size:** {human_size(entry.size)}"
-                f"\n\n*Preview not available for this "
-                f"format. Use download to open.*"
+                f"\n\n*Preview not available. Use download.*"
             )
 
-    def _chat_notify(msg):
-        frontend.chat_interface.send(
-            msg,
-            user="System",
-            respond=False,
-        )
+    # Wire tree activation to preview pane by wrapping
+    # the tree browser's on_tree_event method.
+    _orig_on_tree_event = tree_browser.on_tree_event
 
-    file_mgr = FileManager(
-        _registry,
-        pending_uploads,
-        on_preview=_preview,
-        on_chat_notify=_chat_notify,
+    def _on_tree_event(event_name, event_params):
+        _orig_on_tree_event(event_name, event_params)
+        if event_name == "activate":
+            uri = event_params.get("key", "")
+            if uri and not _vfs.isdir(uri):
+                _, rel = _vfs.parse_uri(uri)
+                fn = rel.rsplit("/", 1)[-1] if "/" in rel else rel
+                entry = _registry.get(fn)
+                if entry:
+                    _preview_entry(entry)
+
+    tree_browser.on_tree_event = _on_tree_event
+
+    # File upload from tree browser adds to registry
+    orig_upload = tree_browser._on_file_upload
+
+    def _upload_and_register(event):
+        """Intercept tree upload to also register in middleware."""
+        if event.new is not None:
+            blob = event.new
+            fn = tree_browser.file_input.filename or "upload"
+            mime = (
+                tree_browser.file_input.mime_type
+                or "application/octet-stream"
+            )
+            # Register in middleware (also writes to VFS)
+            entry = _registry.register(fn, bytes(blob), mime, "upload")
+            note = f"{entry.filename} ({human_size(entry.size)})"
+            pending_uploads.append(note)
+            logger.info("File registered via tree: %s", note)
+            frontend.chat_interface.send(
+                f"File received: **{note}**. "
+                f"You can now ask me to process it.",
+                user="System",
+                respond=False,
+            )
+            # Refresh tree to show new file
+            tree_browser.tree.source = tree_browser.build_source()
+            return  # Skip original handler (we already wrote to VFS)
+        orig_upload(event)
+
+    # Add our upload handler. The original VFSTreeBrowser
+    # handler also fires but our early return prevents
+    # double-writing to VFS.
+    tree_browser.file_input.param.watch(
+        _upload_and_register, "value",
     )
 
-    # Real-time file notifications: when a tool produces a file,
-    # show a compact notification in the chat immediately.
+    # Real-time file notifications from tools
     def _on_file_produced(entry):
-        widget = render_file_notification(entry, on_preview=_preview)
+        widget = render_file_notification(
+            entry, on_preview=_preview_entry,
+        )
         frontend.chat_interface.send(
             widget,
             user="System",
             respond=False,
         )
-        file_mgr.refresh()
+        # Refresh tree to show new file
+        tree_browser.tree.source = tree_browser.build_source()
 
     set_file_notify_callback(_on_file_produced)
+
+    # Refresh tree after filesystem-agent MCP tools modify VFS
+    def _on_vfs_changed():
+        tree_browser.tree.source = tree_browser.build_source()
+
+    set_vfs_changed_callback(_on_vfs_changed)
 
     # Wrap chat callback
     frontend.chat_interface.callback = _wrap_chat_callback(
         frontend.chat_interface.callback,
         _registry,
         pending_uploads,
-        file_mgr,
+        None,  # no FileManager - tree refreshes via callbacks
     )
 
     # Compose Panelini layout
     app = Panelini(title="Semos Agentura", sidebar_enabled=True)
     app.sidebar_set(
-        objects=frontend.sidebar_objects + [file_mgr.panel],
+        objects=frontend.sidebar_objects + [
+            pn.Card(
+                tree_browser.tree,
+                tree_browser.file_input,
+                tree_browser.status,
+                title="Files",
+                collapsed=False,
+            ),
+        ],
     )
     app.main_set(objects=frontend.main_objects)
     return app
@@ -392,9 +512,15 @@ def main() -> None:
     # 1. Register litellm provider (sync, before anything)
     _register_litellm_provider()
 
+    # 2. Start filesystem-agent in-process with shared VFS.
+    # It runs as a uvicorn thread so MCP tools connect normally.
+    global _fs_agent_port
+    _fs_agent_port = int(os.environ.get("FILESYSTEM_AGENT_PORT", "8003"))
+    _start_filesystem_agent_inprocess(_vfs, _fs_agent_port)
+
     agents = _build_agents()
 
-    # 2. Discover MCP tools (sync - connect, list, disconnect)
+    # 3. Discover MCP tools (sync - connect, list, disconnect)
     global _hub
     _hub = MCPHub(agents)
     try:
@@ -404,12 +530,12 @@ def main() -> None:
             "MCP discovery failed. Continuing without MCP tools.",
         )
 
-    # 3. Create MCP tool wrappers (structured, schema-validated)
+    # 4. Create MCP tool wrappers (structured, schema-validated)
     from .mcp_tools import create_mcp_tools
 
     mcp_tools = create_mcp_tools(_hub, _registry)
 
-    # 4. Discover A2A agents and create delegate tools
+    # 5. Discover A2A agents and create delegate tools
     # (natural language, agent routes internally)
     base_urls = [a.base_url for a in agents]
     delegates: list = []
@@ -421,7 +547,7 @@ def main() -> None:
             "A2A discovery failed. Continuing without delegates.",
         )
 
-    # 5. Register all tools in panelini
+    # 6. Register all tools in panelini
     all_tools = mcp_tools + delegates
     AVAILABLE_TOOLS.extend(all_tools)
     logger.info(
@@ -432,7 +558,7 @@ def main() -> None:
         [t.name for t in all_tools],
     )
 
-    # 4. Start Panel server
+    # 7. Start Panel server
     pn.extension(sizing_mode="stretch_width")
     port = int(os.environ.get("UI_PORT", "5006"))
     pn.serve(

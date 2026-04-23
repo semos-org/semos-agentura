@@ -76,6 +76,10 @@ _status_callback: Any = None
 # Signature: (entry: FileEntry) -> None
 _file_notify_callback: Any = None
 
+# VFS changed callback: called after filesystem-agent tools modify the VFS.
+# Signature: () -> None
+_vfs_changed_callback: Any = None
+
 
 def set_status_callback(fn: Any) -> None:
     """Register a callback for tool execution status updates."""
@@ -87,6 +91,12 @@ def set_file_notify_callback(fn: Any) -> None:
     """Register a callback for real-time file notifications."""
     global _file_notify_callback
     _file_notify_callback = fn
+
+
+def set_vfs_changed_callback(fn: Any) -> None:
+    """Register a callback for VFS changes (tree refresh)."""
+    global _vfs_changed_callback
+    _vfs_changed_callback = fn
 
 
 def _update_status(text: str) -> None:
@@ -144,25 +154,42 @@ def _make_mcp_tool_class(
             logger.info("MCP tool call: %s(%s)", self.name, kwargs)
             _update_status(f"Calling {self.name} (MCP)...")
 
-            # Pre-middleware: resolve file references from registry
-            processed = pre_process_tool_call(
-                mcp_tool.name,
-                kwargs,
-                mcp_tool,
-                registry,
-            )
+            agent = hub.agent_for_tool(mcp_tool.name)
+            # Filesystem-agent has direct VFS access - skip
+            # file middleware (no base64 injection needed).
+            is_fs = agent.name == "filesystem-agent"
 
-            # Call MCP tool via hub (reconnects lazily if needed)
+            if is_fs:
+                processed = kwargs
+            else:
+                processed = pre_process_tool_call(
+                    mcp_tool.name,
+                    kwargs,
+                    mcp_tool,
+                    registry,
+                )
+
             result = await hub.call_tool(mcp_tool.name, processed)
 
-            # Post-middleware: fetch produced files, register, sanitize
-            agent = hub.agent_for_tool(mcp_tool.name)
-            text, new_files = await post_process_tool_result(
-                mcp_tool.name,
-                result,
-                agent,
-                registry,
-            )
+            if is_fs:
+                # Return raw text, no file fetching
+                text = (
+                    result.content[0].text
+                    if result.content
+                    and hasattr(result.content[0], "text")
+                    else str(result.content)
+                )
+                new_files = []
+                # Refresh tree after VFS modification
+                if _vfs_changed_callback:
+                    _vfs_changed_callback()
+            else:
+                text, new_files = await post_process_tool_result(
+                    mcp_tool.name,
+                    result,
+                    agent,
+                    registry,
+                )
 
             for entry in new_files:
                 _produced_files.append(entry)

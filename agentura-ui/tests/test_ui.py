@@ -96,9 +96,12 @@ import pytest  # noqa: E402
 
 @pytest.fixture()
 def full_app(page: Page):
-    """Launch full Panelini app with fake tools (no agents)."""
+    """Launch full Panelini app with fake tools, VFS tree, no agents."""
+    from filesystem_agent.panel_tree import VFSTreeBrowser
+    from filesystem_agent.vfs import VirtualFileSystem
+
     from agentura_ui.__main__ import _wrap_chat_callback
-    from agentura_ui.file_manager import FileManager
+    from agentura_ui.file_registry import VFSFileRegistry
     from langchain_core.tools import BaseTool
     from panelini.panels.ai.frontend import (
         AVAILABLE_TOOLS,
@@ -107,9 +110,12 @@ def full_app(page: Page):
         AiChat as Frontend,
     )
 
-    registry = FileRegistry()
+    # VFS with in-memory session root
+    vfs = VirtualFileSystem()
+    vfs.add_root_from_protocol("session", "memory", base_path="/")
+    registry = VFSFileRegistry(vfs, root="session")
 
-    # Fake tools that don't need real agents
+    # Fake tools
     class FakeSearch(BaseTool):
         name: str = "search_emails"
         description: str = "Search emails"
@@ -133,11 +139,7 @@ def full_app(page: Page):
 
     AVAILABLE_TOOLS.clear()
     AVAILABLE_TOOLS.extend(
-        [
-            FakeSearch(),
-            FakeDigest(),
-            FakeAskEmail(),
-        ]
+        [FakeSearch(), FakeDigest(), FakeAskEmail()],
     )
 
     frontend = Frontend(
@@ -145,7 +147,6 @@ def full_app(page: Page):
         config_path=_test_config_path(),
     )
 
-    # Enable all tools
     for info in frontend.tool_checkboxes.values():
         info["checkbox"].value = True
     frontend.backend.update_tools(
@@ -153,20 +154,24 @@ def full_app(page: Page):
     )
 
     pending: list[str] = []
-    file_mgr = FileManager(registry, pending)
     frontend.chat_interface.callback = _wrap_chat_callback(
         frontend.chat_interface.callback,
         registry,
         pending,
-        file_mgr,
     )
 
-    # Serve sidebar + main as a simple layout (Panelini
-    # wraps Bokeh which doesn't play well with serve_component)
+    # VFS tree browser for sidebar
+    tree_browser = VFSTreeBrowser(vfs, preload_depth=2)
+
     layout = pn.Row(
         pn.Column(
             *frontend.sidebar_objects,
-            file_mgr.panel,
+            pn.Card(
+                tree_browser.tree,
+                tree_browser.file_input,
+                title="Files",
+                collapsed=False,
+            ),
             width=300,
         ),
         pn.Column(*frontend.main_objects),
@@ -175,7 +180,13 @@ def full_app(page: Page):
 
     serve_component(page, layout)
 
-    yield {"page": page, "frontend": frontend, "registry": registry}
+    yield {
+        "page": page,
+        "frontend": frontend,
+        "registry": registry,
+        "vfs": vfs,
+        "tree_browser": tree_browser,
+    }
 
     AVAILABLE_TOOLS.clear()
 
@@ -215,7 +226,6 @@ def test_full_app_send_message(full_app):
 def tool_roundtrip_app(page: Page):
     """App with a fake callback that simulates LLM calling a tool
     and returning a response with the tool result."""
-    from agentura_ui.file_manager import FileManager
     from langchain_core.tools import BaseTool
     from panelini.panels.ai.frontend import (
         AVAILABLE_TOOLS,
@@ -258,13 +268,9 @@ def tool_roundtrip_app(page: Page):
 
     frontend.chat_interface.callback = _mock_llm_callback
 
-    pending: list[str] = []
-    file_mgr = FileManager(registry, pending)
-
     layout = pn.Row(
         pn.Column(
             *frontend.sidebar_objects,
-            file_mgr.panel,
             width=300,
         ),
         pn.Column(*frontend.main_objects),
@@ -304,4 +310,270 @@ def test_tool_roundtrip(tool_roundtrip_app):
     # The response references the search result
     expect(
         page.locator("text=Meeting tomorrow").first,
+    ).to_be_visible(timeout=5000)
+
+
+# VFS tree browser tests
+
+
+def test_vfs_tree_renders_in_sidebar(full_app):
+    """VFS tree browser card appears in the sidebar."""
+    page = full_app["page"]
+
+    # The Files card should be visible
+    expect(
+        page.locator("text=Files"),
+    ).to_be_visible(timeout=15000)
+
+    # The session root node should appear in the tree
+    expect(
+        page.locator("text=session"),
+    ).to_be_visible(timeout=10000)
+
+
+def test_vfs_tree_shows_registered_file(full_app):
+    """When a file is registered in the VFS-backed registry,
+    it appears in the tree after refresh."""
+    page = full_app["page"]
+    registry = full_app["registry"]
+    tree_browser = full_app["tree_browser"]
+
+    # Wait for tree to render
+    expect(
+        page.locator("text=session"),
+    ).to_be_visible(timeout=15000)
+
+    # Register a file (simulating tool output)
+    registry.register(
+        "report.pdf", b"PDF-content",
+        "application/pdf", "tool:compose",
+    )
+
+    # Refresh the tree source
+    tree_browser.tree.source = tree_browser.build_source()
+
+    # The file should appear in the tree
+    expect(
+        page.locator("text=report.pdf"),
+    ).to_be_visible(timeout=10000)
+
+
+def test_vfs_tree_multiple_files(full_app):
+    """Multiple registered files all show in the tree."""
+    page = full_app["page"]
+    registry = full_app["registry"]
+    tree_browser = full_app["tree_browser"]
+
+    expect(
+        page.locator("text=session"),
+    ).to_be_visible(timeout=15000)
+
+    registry.register(
+        "diagram.png", b"\x89PNG" + b"x" * 50,
+        "image/png", "tool:generate_diagram",
+    )
+    registry.register(
+        "output.html", b"<html>test</html>",
+        "text/html", "tool:compose",
+    )
+    tree_browser.tree.source = tree_browser.build_source()
+
+    expect(
+        page.locator("text=diagram.png"),
+    ).to_be_visible(timeout=10000)
+    expect(
+        page.locator("text=output.html"),
+    ).to_be_visible(timeout=5000)
+
+
+# VFS + MCP roundtrip test (in-process filesystem-agent)
+
+
+@pytest.fixture()
+def vfs_mcp_app(page: Page):
+    """Full app with in-process filesystem-agent sharing the VFS.
+
+    Starts a uvicorn thread for the filesystem-agent so MCP tools
+    (list_files, copy_file, etc.) connect via SSE as usual but
+    share the same VFS instance as the tree browser.
+    """
+    import socket
+    import threading
+    import time
+
+    import uvicorn
+    from filesystem_agent.panel_tree import VFSTreeBrowser
+    from filesystem_agent.service import FilesystemAgentService
+    from filesystem_agent.vfs import VirtualFileSystem
+
+    from agentura_ui.__main__ import _wrap_chat_callback
+    from agentura_ui.file_registry import VFSFileRegistry
+    from agentura_commons import create_app as create_agent_app
+    from langchain_core.tools import BaseTool
+    from panelini.panels.ai.frontend import (
+        AVAILABLE_TOOLS,
+        AiChat as Frontend,
+    )
+
+    # Shared VFS
+    vfs = VirtualFileSystem()
+    vfs.add_root_from_protocol("session", "memory", base_path="/")
+    registry = VFSFileRegistry(vfs, root="session")
+
+    # Start filesystem-agent in-process on random port
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        fs_port = s.getsockname()[1]
+
+    service = FilesystemAgentService(vfs=vfs)
+    agent_app = create_agent_app(
+        service, base_url=f"http://127.0.0.1:{fs_port}",
+    )
+    config = uvicorn.Config(
+        agent_app, host="127.0.0.1", port=fs_port,
+        log_level="warning",
+    )
+    server = uvicorn.Server(config)
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+    for _ in range(50):
+        time.sleep(0.1)
+        if server.started:
+            break
+
+    # Fake tool so Frontend has something to show
+    class FakeTool(BaseTool):
+        name: str = "dummy"
+        description: str = "Dummy"
+
+        def _run(self, **kw):
+            return "ok"
+
+    AVAILABLE_TOOLS.clear()
+    AVAILABLE_TOOLS.extend([FakeTool()])
+
+    frontend = Frontend(
+        system_message="Test",
+        config_path=_test_config_path(),
+    )
+
+    pending: list[str] = []
+    frontend.chat_interface.callback = _wrap_chat_callback(
+        frontend.chat_interface.callback, registry, pending,
+    )
+
+    tree_browser = VFSTreeBrowser(vfs, preload_depth=2)
+
+    layout = pn.Row(
+        pn.Column(
+            *frontend.sidebar_objects,
+            pn.Card(
+                tree_browser.tree,
+                tree_browser.file_input,
+                title="Files",
+                collapsed=False,
+            ),
+            width=300,
+        ),
+        pn.Column(*frontend.main_objects),
+        sizing_mode="stretch_both",
+    )
+
+    serve_component(page, layout)
+
+    yield {
+        "page": page,
+        "registry": registry,
+        "vfs": vfs,
+        "tree_browser": tree_browser,
+        "fs_port": fs_port,
+    }
+
+    AVAILABLE_TOOLS.clear()
+    server.should_exit = True
+    thread.join(timeout=5)
+
+
+def test_vfs_mcp_roundtrip(vfs_mcp_app):
+    """Roundtrip: upload file -> list_files via MCP -> copy_file
+    via MCP -> tree shows the copy."""
+    import asyncio
+    import concurrent.futures
+
+    from agentura_commons.mcp_client import (
+        AgentConnection,
+        MCPHub,
+    )
+
+    page = vfs_mcp_app["page"]
+    registry = vfs_mcp_app["registry"]
+    vfs = vfs_mcp_app["vfs"]
+    tree_browser = vfs_mcp_app["tree_browser"]
+    fs_port = vfs_mcp_app["fs_port"]
+
+    # Wait for tree
+    expect(
+        page.locator("text=session"),
+    ).to_be_visible(timeout=15000)
+
+    # 1. Upload a file via registry (simulates sidebar upload)
+    registry.register(
+        "test_doc.txt", b"Hello roundtrip!",
+        "text/plain", "upload",
+    )
+    tree_browser.tree.source = tree_browser.build_source()
+    expect(
+        page.locator("text=test_doc.txt"),
+    ).to_be_visible(timeout=10000)
+
+    # 2. Call MCP tools in a separate thread (Panel owns the
+    # event loop, so we can't use asyncio.run() here).
+    def _mcp_calls():
+        async def _inner():
+            hub = MCPHub([
+                AgentConnection(
+                    "fs",
+                    f"http://127.0.0.1:{fs_port}/mcp/sse",
+                    f"http://127.0.0.1:{fs_port}",
+                ),
+            ])
+            await hub.discover()
+
+            # list_files should show test_doc.txt
+            result = await hub.call_tool(
+                "list_files", {"uri": "session://"},
+            )
+            text = result.content[0].text
+            assert "test_doc.txt" in text, (
+                f"File not in list_files: {text}"
+            )
+
+            # copy_file to a new name
+            await hub.call_tool(
+                "copy_file",
+                {
+                    "source": "session://test_doc.txt",
+                    "destination": "session://test_doc_copy.txt",
+                },
+            )
+
+        asyncio.run(_inner())
+
+    with concurrent.futures.ThreadPoolExecutor() as pool:
+        future = pool.submit(_mcp_calls)
+        future.result(timeout=30)
+
+    # 3. Verify copy exists in VFS
+    data = vfs.cat("session://test_doc_copy.txt")
+    assert data == b"Hello roundtrip!"
+
+    # 4. Refresh tree and verify copy shows up
+    tree_browser.tree.source = tree_browser.build_source()
+    expect(
+        page.locator("text=test_doc_copy.txt"),
+    ).to_be_visible(timeout=10000)
+
+    # Original still there
+    expect(
+        page.locator("text=test_doc.txt"),
     ).to_be_visible(timeout=5000)

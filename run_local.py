@@ -7,12 +7,14 @@ Starts:
     - email-agent on port 8001
     - document-agent on port 8002
     - agentura-ui on port 5006 (opens browser)
+      - filesystem-agent on port 8003 (in-process, shared VFS)
 
 Press Ctrl+C to stop everything.
 """
 
 from __future__ import annotations
 
+import os
 import signal
 import socket
 import subprocess
@@ -22,7 +24,8 @@ import time
 AGENTS = [
     ("email-agent", "email_agent.service:app", 8001),
     ("document-agent", "document_agent.service:app", 8002),
-    ("filesystem-agent", "filesystem_agent.service:app", 8003),
+    # filesystem-agent is hosted in-process by the UI
+    # (shares the same VFS instance for session:// files)
 ]
 UI_PORT = 5006
 
@@ -75,7 +78,9 @@ def main():
     procs: list[subprocess.Popen] = []
 
     # Kill existing processes on our ports
-    all_ports = [p for _, _, p in AGENTS] + [UI_PORT]
+    # Include 8003 (filesystem-agent, hosted in-process by UI)
+    fs_port = int(os.environ.get("FILESYSTEM_AGENT_PORT", "8003"))
+    all_ports = [p for _, _, p in AGENTS] + [UI_PORT, fs_port]
     for port in all_ports:
         _kill_port(port)
 
@@ -123,9 +128,10 @@ def main():
         procs.append(p)
 
     print()
-    print(f"  UI:             http://localhost:{UI_PORT}")
+    print(f"  UI:               http://localhost:{UI_PORT}")
+    print(f"  filesystem-agent   http://localhost:{fs_port} (in-process)")
     for name, _, port in AGENTS:
-        print(f"  {name:16s} http://localhost:{port}")
+        print(f"  {name:16s}   http://localhost:{port}")
     print()
     print("  Press Ctrl+C to stop all.")
 

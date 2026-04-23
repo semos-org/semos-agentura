@@ -20,8 +20,16 @@ logger = logging.getLogger(__name__)
 
 
 def _build_vfs(settings: Settings) -> VirtualFileSystem:
-    """Build the VFS with roots from settings. SharePoint is optional."""
+    """Build the VFS with roots from settings.
+
+    Always creates a session:// in-memory root for scratch files.
+    SharePoint is optional.
+    """
     vfs = VirtualFileSystem()
+
+    # Always available: in-memory scratch space
+    vfs.add_root_from_protocol("session", "memory", base_path="/")
+    logger.info("Session root added (in-memory)")
 
     if settings.sharepoint_site_url:
         try:
@@ -51,9 +59,9 @@ def _build_vfs(settings: Settings) -> VirtualFileSystem:
 
 
 class FilesystemAgentService(BaseAgentService):
-    def __init__(self) -> None:
+    def __init__(self, vfs: VirtualFileSystem | None = None) -> None:
         self._settings = Settings()
-        self._vfs: VirtualFileSystem | None = None
+        self._vfs = vfs
 
     def _ensure_vfs(self) -> VirtualFileSystem:
         if self._vfs is None:
@@ -90,7 +98,11 @@ class FilesystemAgentService(BaseAgentService):
             ),
             ToolDef(
                 name="read_file",
-                description="Read the contents of a file. Returns text for text files, base64 for binary.",
+                description=(
+                    "Read the contents of a file. Returns text for text files, base64 for binary. "
+                    "Also reads files inside archives using the ! separator, "
+                    "e.g. downloads://data.zip!path/to/file.csv"
+                ),
                 fn=self._read_file,
                 read_only=True,
             ),
@@ -119,7 +131,10 @@ class FilesystemAgentService(BaseAgentService):
             ),
             ToolDef(
                 name="copy_file",
-                description="Copy a file/folder to a new location. Works across roots.",
+                description=(
+                    "Copy a file/folder to a new location. Works across roots. "
+                    "Can extract from archives: copy_file(source='root://data.zip!file.txt', destination='session://file.txt')"
+                ),
                 fn=self._copy_file,
             ),
             ToolDef(
@@ -201,9 +216,11 @@ class FilesystemAgentService(BaseAgentService):
             # Try to extract a URI from the message
             uri = self._extract_uri(message) or ""
             return await self._list_files(uri=uri)
-        elif "read" in msg or "open" in msg or "content" in msg:
+        elif ("read" in msg or "open" in msg) and "://" in message:
             uri = self._extract_uri(message) or ""
             return await self._read_file(uri=uri)
+        elif "write" in msg or "save" in msg or "create" in msg:
+            return "Use the write_file tool with a URI like session://filename.md and the content."
         elif "tree" in msg:
             uri = self._extract_uri(message) or ""
             return await self._file_tree(uri=uri)
@@ -300,6 +317,8 @@ class FilesystemAgentService(BaseAgentService):
         return json.dumps(info, ensure_ascii=False, indent=2)
 
     async def _read_file(self, uri: str = "") -> str:
+        if not uri or "://" not in uri:
+            return "Error: provide a valid URI (e.g. session://file.txt)"
         vfs = self._ensure_vfs()
         data = vfs.cat(uri)
         try:
