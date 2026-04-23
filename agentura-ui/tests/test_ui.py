@@ -14,11 +14,9 @@ import tempfile
 from pathlib import Path
 
 import panel as pn
-from playwright.sync_api import Page, expect
-from panel.tests.util import serve_component, wait_until
-
 from agentura_ui.file_registry import FileRegistry
-
+from panel.tests.util import serve_component, wait_until
+from playwright.sync_api import Page, expect
 
 _TEST_CONFIG = """\
 providers:
@@ -46,6 +44,7 @@ def _test_config_path():
 
 
 # Smoke tests
+
 
 def test_panel_serve_smoke(page: Page):
     """Basic smoke: serve a Panel pane and find it."""
@@ -98,14 +97,15 @@ import pytest  # noqa: E402
 @pytest.fixture()
 def full_app(page: Page):
     """Launch full Panelini app with fake tools (no agents)."""
+    from agentura_ui.__main__ import _wrap_chat_callback
+    from agentura_ui.file_manager import FileManager
     from langchain_core.tools import BaseTool
     from panelini.panels.ai.frontend import (
         AVAILABLE_TOOLS,
+    )
+    from panelini.panels.ai.frontend import (
         AiChat as Frontend,
     )
-
-    from agentura_ui.__main__ import _wrap_chat_callback
-    from agentura_ui.file_manager import FileManager
 
     registry = FileRegistry()
 
@@ -132,9 +132,13 @@ def full_app(page: Page):
             return "Mock email response"
 
     AVAILABLE_TOOLS.clear()
-    AVAILABLE_TOOLS.extend([
-        FakeSearch(), FakeDigest(), FakeAskEmail(),
-    ])
+    AVAILABLE_TOOLS.extend(
+        [
+            FakeSearch(),
+            FakeDigest(),
+            FakeAskEmail(),
+        ]
+    )
 
     frontend = Frontend(
         system_message="Test assistant.",
@@ -152,7 +156,9 @@ def full_app(page: Page):
     file_mgr = FileManager(registry, pending)
     frontend.chat_interface.callback = _wrap_chat_callback(
         frontend.chat_interface.callback,
-        registry, pending, file_mgr,
+        registry,
+        pending,
+        file_mgr,
     )
 
     # Serve sidebar + main as a simple layout (Panelini
@@ -209,13 +215,14 @@ def test_full_app_send_message(full_app):
 def tool_roundtrip_app(page: Page):
     """App with a fake callback that simulates LLM calling a tool
     and returning a response with the tool result."""
+    from agentura_ui.file_manager import FileManager
     from langchain_core.tools import BaseTool
     from panelini.panels.ai.frontend import (
         AVAILABLE_TOOLS,
+    )
+    from panelini.panels.ai.frontend import (
         AiChat as Frontend,
     )
-
-    from agentura_ui.file_manager import FileManager
 
     registry = FileRegistry()
 
@@ -224,10 +231,7 @@ def tool_roundtrip_app(page: Page):
         description: str = "Search emails by keyword"
 
         def _run(self, query: str = "", **kw):
-            return (
-                '[{"subject": "Meeting tomorrow",'
-                ' "from": "alice@test.com"}]'
-            )
+            return '[{"subject": "Meeting tomorrow", "from": "alice@test.com"}]'
 
     AVAILABLE_TOOLS.clear()
     AVAILABLE_TOOLS.extend([FakeSearch()])
@@ -250,10 +254,7 @@ def tool_roundtrip_app(page: Page):
 
     async def _mock_llm_callback(contents, user, instance):
         result = tool._run(query=contents)
-        yield (
-            f"I searched for \"{contents}\" and found: {result}\n\n"
-            f"The email from alice@test.com is about a meeting."
-        )
+        yield (f'I searched for "{contents}" and found: {result}\n\nThe email from alice@test.com is about a meeting.')
 
     frontend.chat_interface.callback = _mock_llm_callback
 

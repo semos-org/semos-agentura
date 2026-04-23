@@ -1,14 +1,14 @@
 """CLI entry point for email-agent."""
 
-import json
 import logging
 import sys
 from datetime import datetime, timedelta
 
 from dotenv import load_dotenv
+
 load_dotenv()
 
-from email_agent import create_backend, EmailArchive, Mailgent, Settings
+from email_agent import EmailArchive, Mailgent, Settings, create_backend
 
 
 def setup_logging():
@@ -25,6 +25,7 @@ def _safe_print(text: str) -> None:
 
 
 # Email commands
+
 
 def cmd_search_emails(query: str):
     backend = create_backend()
@@ -62,7 +63,7 @@ def cmd_draft(to: str, subject: str, body: str, cc: str = "", attachments: str =
     backend = create_backend()
     backend.connect()
     att_list = [a.strip() for a in attachments.split(",") if a.strip()] if attachments else None
-    entry_id = backend.create_draft(to, subject, body, cc=cc, attachments=att_list)
+    backend.create_draft(to, subject, body, cc=cc, attachments=att_list)
     print(f"Draft created: {subject} -> {to}")
 
 
@@ -75,6 +76,7 @@ def cmd_send(to: str, subject: str, body: str, cc: str = "", attachments: str = 
 
 
 # Calendar commands
+
 
 def cmd_events(days: int = 14):
     backend = create_backend()
@@ -110,8 +112,7 @@ def cmd_free_slots(days: int = 14):
             _safe_print(f"  {day}: (no free slots)")
 
 
-def cmd_create_event(subject: str, start_str: str, end_str: str,
-                     location: str = "", attendees: str = ""):
+def cmd_create_event(subject: str, start_str: str, end_str: str, location: str = "", attendees: str = ""):
     backend = create_backend()
     backend.connect()
     cal = backend.calendar
@@ -126,12 +127,13 @@ def cmd_create_event(subject: str, start_str: str, end_str: str,
 
 # Archive commands
 
+
 def cmd_archive(include_body: bool = True):
     archive = EmailArchive()
     print("Starting incremental archive dump...")
     print("(This may take hours for the first run. Safe to interrupt and resume.)\n")
     results = archive.dump_all(include_body=include_body)
-    print(f"\nArchive complete:")
+    print("\nArchive complete:")
     for folder, count in results.items():
         print(f"  {folder}: {count} new items")
     stats = archive.stats()
@@ -144,8 +146,8 @@ def cmd_archive_stats():
     stats = archive.stats()
     print(f"Archive: {stats['emails']} emails, {stats['events']} events, {stats['db_size_mb']} MB")
     for folder, state in stats["sync_states"].items():
-        last = state['last'][:19] if state['last'] else 'never'
-        updated = state['updated'][:19] if state['updated'] else 'never'
+        last = state["last"][:19] if state["last"] else "never"
+        updated = state["updated"][:19] if state["updated"] else "never"
         print(f"  {folder}: last={last}, count={state['count']}, updated={updated}")
     archive.close()
 
@@ -161,6 +163,7 @@ def cmd_archive_search(query: str):
 
 
 # Main
+
 
 def main():
     setup_logging()
@@ -206,15 +209,13 @@ def main():
                 print("Usage: draft <to> <subject> <body> [--cc=...] [--att=file1,file2]")
                 sys.exit(1)
             flags = {a.split("=", 1)[0].lstrip("-"): a.split("=", 1)[1] for a in sys.argv[5:] if "=" in a}
-            cmd_draft(sys.argv[2], sys.argv[3], sys.argv[4],
-                      cc=flags.get("cc", ""), attachments=flags.get("att", ""))
+            cmd_draft(sys.argv[2], sys.argv[3], sys.argv[4], cc=flags.get("cc", ""), attachments=flags.get("att", ""))
         case "send":
             if len(sys.argv) < 5:
                 print("Usage: send <to> <subject> <body> [--cc=...] [--att=file1,file2]")
                 sys.exit(1)
             flags = {a.split("=", 1)[0].lstrip("-"): a.split("=", 1)[1] for a in sys.argv[5:] if "=" in a}
-            cmd_send(sys.argv[2], sys.argv[3], sys.argv[4],
-                     cc=flags.get("cc", ""), attachments=flags.get("att", ""))
+            cmd_send(sys.argv[2], sys.argv[3], sys.argv[4], cc=flags.get("cc", ""), attachments=flags.get("att", ""))
         case "events":
             days = int(sys.argv[2]) if len(sys.argv) > 2 else 14
             cmd_events(days)
@@ -225,8 +226,7 @@ def main():
             if len(sys.argv) < 5:
                 print("Usage: create-event <subject> '<YYYY-MM-DD HH:MM>' '<YYYY-MM-DD HH:MM>'")
                 sys.exit(1)
-            cmd_create_event(sys.argv[2], sys.argv[3], sys.argv[4],
-                             location=sys.argv[5] if len(sys.argv) > 5 else "")
+            cmd_create_event(sys.argv[2], sys.argv[3], sys.argv[4], location=sys.argv[5] if len(sys.argv) > 5 else "")
         case "archive":
             cmd_archive()
         case "archive-stats":

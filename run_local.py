@@ -39,7 +39,8 @@ def _kill_port(port: int) -> bool:
         # netstat -ano | findstr :PORT
         out = subprocess.run(
             ["netstat", "-ano"],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         for line in out.stdout.splitlines():
             # "LISTENING" (en) or "ABHREN" (de)
@@ -57,7 +58,8 @@ def _kill_port(port: int) -> bool:
         # lsof -ti :PORT | xargs kill
         out = subprocess.run(
             ["lsof", "-ti", f":{port}"],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         if out.stdout.strip():
             for pid in out.stdout.strip().split("\n"):
@@ -85,11 +87,16 @@ def main():
         agent_dir = __import__("pathlib").Path(__file__).parent / name
         p = subprocess.Popen(
             [
-                sys.executable, "-m", "uvicorn",
+                sys.executable,
+                "-m",
+                "uvicorn",
                 module,
-                "--host", "127.0.0.1",
-                "--port", str(port),
-                "--log-level", "info",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                str(port),
+                "--log-level",
+                "info",
             ],
             cwd=str(agent_dir),
         )

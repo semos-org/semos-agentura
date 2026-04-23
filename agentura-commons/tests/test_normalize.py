@@ -4,9 +4,6 @@ from __future__ import annotations
 
 import io
 import json
-from pathlib import Path
-
-import pytest
 
 from agentura_commons.base import NamedFile, ToolResult
 from agentura_commons.mcp_server import (
@@ -16,8 +13,8 @@ from agentura_commons.mcp_server import (
     _tool_result_to_call_tool_result,
 )
 
-
 # _is_file_like
+
 
 class TestIsFileLike:
     def test_bytesio(self):
@@ -46,6 +43,7 @@ class TestIsFileLike:
 
 
 # _materialize_file
+
 
 class TestMaterializeFile:
     def test_bytesio(self, tmp_path):
@@ -77,6 +75,7 @@ class TestMaterializeFile:
 
 # _normalize_to_tool_result
 
+
 class TestNormalizeToToolResult:
     # str
     def test_plain_string(self):
@@ -90,7 +89,7 @@ class TestNormalizeToToolResult:
         assert r.data == {"key": "value"}
 
     def test_json_string_list(self):
-        r = _normalize_to_tool_result('[1, 2, 3]')
+        r = _normalize_to_tool_result("[1, 2, 3]")
         assert r.data == [1, 2, 3]
 
     def test_json_string_download_url(self):
@@ -200,6 +199,7 @@ class TestNormalizeToToolResult:
 
 
 # _tool_result_to_call_tool_result
+
 
 class TestToolResultToCallToolResult:
     def test_text_only(self):

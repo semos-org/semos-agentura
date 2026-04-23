@@ -2,15 +2,9 @@
 
 from __future__ import annotations
 
-import json
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-
-from langchain_core.utils.function_calling import convert_to_openai_tool
-from mcp.types import CallToolResult, TextContent
-from pydantic import BaseModel
-
 from agentura_ui.file_registry import FileRegistry
 from agentura_ui.mcp_hub import AgentConnection
 from agentura_ui.mcp_tools import (
@@ -19,7 +13,9 @@ from agentura_ui.mcp_tools import (
     create_mcp_tools,
     drain_produced_files,
 )
-
+from langchain_core.utils.function_calling import convert_to_openai_tool
+from mcp.types import CallToolResult, TextContent
+from pydantic import BaseModel
 
 # _json_schema_to_pydantic
 
@@ -110,20 +106,25 @@ class TestMakeMcpToolClass:
 
     @pytest.mark.asyncio
     async def test_arun_pre_processes_and_calls_hub(
-        self, digest_tool,
+        self,
+        digest_tool,
     ):
         """CRITICAL: _arun resolves file from registry
         before calling the MCP hub."""
         registry = FileRegistry()
         registry.register(
-            "test.pdf", b"PDF-BYTES",
-            "application/pdf", "upload",
+            "test.pdf",
+            b"PDF-BYTES",
+            "application/pdf",
+            "upload",
         )
 
         # Mock hub
         hub = MagicMock()
         hub.agent_for_tool.return_value = AgentConnection(
-            "doc", "http://x/mcp/sse", "http://x",
+            "doc",
+            "http://x/mcp/sse",
+            "http://x",
         )
         hub.call_tool = AsyncMock(
             return_value=CallToolResult(
@@ -147,9 +148,7 @@ class TestMakeMcpToolClass:
         att = processed_args["source"]
         assert isinstance(att, dict)
         assert att["name"] == "test.pdf"
-        assert att["content"].startswith(
-            "data:application/pdf;base64,"
-        )
+        assert att["content"].startswith("data:application/pdf;base64,")
         assert "Result" in result
 
 
@@ -164,11 +163,15 @@ class TestDrainProducedFiles:
         assert files == []
 
     def test_drain_clears(self):
-        from agentura_ui.mcp_tools import _produced_files
         from agentura_ui.file_registry import FileEntry
+        from agentura_ui.mcp_tools import _produced_files
 
         entry = FileEntry(
-            "x.pdf", b"data", "application/pdf", 4, "tool:t",
+            "x.pdf",
+            b"data",
+            "application/pdf",
+            4,
+            "tool:t",
         )
         _produced_files.append(entry)
 
@@ -185,7 +188,9 @@ class TestDrainProducedFiles:
 
 class TestCreateMcpTools:
     def test_creates_one_per_mcp_tool(
-        self, digest_tool, search_tool,
+        self,
+        digest_tool,
+        search_tool,
     ):
         hub = MagicMock()
         hub.all_tools.return_value = [digest_tool, search_tool]

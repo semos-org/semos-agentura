@@ -22,12 +22,7 @@ def sample_png(tmp_path: Path) -> Path:
     sig = b"\x89PNG\r\n\x1a\n"
 
     def _chunk(ctype: bytes, data: bytes) -> bytes:
-        return (
-            struct.pack(">I", len(data))
-            + ctype
-            + data
-            + struct.pack(">I", zlib.crc32(ctype + data) & 0xFFFFFFFF)
-        )
+        return struct.pack(">I", len(data)) + ctype + data + struct.pack(">I", zlib.crc32(ctype + data) & 0xFFFFFFFF)
 
     ihdr = struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)
     raw_row = b"\x00\xff\x00\x00"  # filter=None, R=255, G=0, B=0
@@ -128,21 +123,30 @@ def sample_docx(tmp_path: Path) -> Path:
 
     docx_path = tmp_path / "test_form.docx"
     with ZipFile(docx_path, "w") as z:
-        z.writestr("[Content_Types].xml", """\
+        z.writestr(
+            "[Content_Types].xml",
+            """\
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
   <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
   <Default Extension="xml" ContentType="application/xml"/>
   <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
-</Types>""")
-        z.writestr("_rels/.rels", """\
+</Types>""",
+        )
+        z.writestr(
+            "_rels/.rels",
+            """\
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
-</Relationships>""")
-        z.writestr("word/_rels/document.xml.rels", """\
+</Relationships>""",
+        )
+        z.writestr(
+            "word/_rels/document.xml.rels",
+            """\
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"/>""")
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"/>""",
+        )
         z.writestr("word/document.xml", doc_xml)
 
     return docx_path
@@ -153,12 +157,7 @@ def _make_png_bytes() -> bytes:
     sig = b"\x89PNG\r\n\x1a\n"
 
     def _chunk(ctype: bytes, data: bytes) -> bytes:
-        return (
-            struct.pack(">I", len(data))
-            + ctype
-            + data
-            + struct.pack(">I", zlib.crc32(ctype + data) & 0xFFFFFFFF)
-        )
+        return struct.pack(">I", len(data)) + ctype + data + struct.pack(">I", zlib.crc32(ctype + data) & 0xFFFFFFFF)
 
     ihdr = struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)
     raw_row = b"\x00\xff\x00\x00"

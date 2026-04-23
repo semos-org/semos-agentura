@@ -66,7 +66,7 @@ class TestFillDocxForm:
         out = tmp_dir / "filled.docx"
         fill_form(sample_docx, out, {"Name": "Test User", "City": "Berlin"})
         fields = inspect_form(out)
-        table_fields = {f["name"]: f for f in fields if f.get("format") == "table"}
+        _ = {f["name"]: f for f in fields if f.get("format") == "table"}
         # After filling, the cell is no longer empty so it won't appear as a fillable field
         # That's expected - we verify the output file was written
         assert out.exists()

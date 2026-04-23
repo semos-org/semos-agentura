@@ -19,12 +19,14 @@ from document_agent.models import OutputFormat
 
 # --- Tool availability markers ---
 
+
 def _has_tool(name: str) -> bool:
     return find_tool(name) is not None
 
 
 def _has_libre_office() -> bool:
     from document_agent.digestion._office import _find_libreoffice
+
     try:
         _find_libreoffice(None)
         return True
@@ -209,7 +211,9 @@ class TestCLI:
     def test_help(self):
         result = subprocess.run(
             ["uv", "run", "document-agent", "--help"],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True,
+            text=True,
+            timeout=30,
             cwd=str(_project_root()),
         )
         assert result.returncode == 0
@@ -222,7 +226,9 @@ class TestCLI:
     def test_digest_help(self):
         result = subprocess.run(
             ["uv", "run", "document-agent", "digest", "--help"],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True,
+            text=True,
+            timeout=30,
             cwd=str(_project_root()),
         )
         assert result.returncode == 0
@@ -231,7 +237,9 @@ class TestCLI:
     def test_inspect_docx(self, sample_docx):
         result = subprocess.run(
             ["uv", "run", "document-agent", "inspect", str(sample_docx)],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True,
+            text=True,
+            timeout=30,
             cwd=str(_project_root()),
         )
         assert result.returncode == 0
@@ -241,11 +249,18 @@ class TestCLI:
         out = tmp_dir / "cli_filled.docx"
         result = subprocess.run(
             [
-                "uv", "run", "document-agent", "fill",
-                str(sample_docx), str(out),
-                "--data", '{"StartDate": "01.01.2027"}',
+                "uv",
+                "run",
+                "document-agent",
+                "fill",
+                str(sample_docx),
+                str(out),
+                "--data",
+                '{"StartDate": "01.01.2027"}',
             ],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True,
+            text=True,
+            timeout=30,
             cwd=str(_project_root()),
         )
         assert result.returncode == 0

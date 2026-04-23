@@ -19,7 +19,7 @@ class TestDetectTypeFromString:
         assert _detect_type_from_string("sequenceDiagram\n  A->>B: msg") == "mermaid"
 
     def test_mermaid_pie(self):
-        assert _detect_type_from_string("pie\n  \"A\": 50") == "mermaid"
+        assert _detect_type_from_string('pie\n  "A": 50') == "mermaid"
 
     def test_drawio_mxfile(self):
         assert _detect_type_from_string("<mxfile><diagram/></mxfile>") == "drawio"

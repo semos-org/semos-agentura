@@ -6,12 +6,10 @@ import base64
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from mcp.types import CallToolResult, TextContent
-
 from agentura_ui.file_registry import FileRegistry
 from agentura_ui.mcp_hub import AgentConnection
 from agentura_ui.mcp_tools import _make_mcp_tool_class
-
+from mcp.types import CallToolResult, TextContent
 
 # _build_agents
 
@@ -31,10 +29,12 @@ class TestBuildAgents:
 
     def test_from_env(self, monkeypatch):
         monkeypatch.setenv(
-            "EMAIL_AGENT_URL", "http://custom:9001/mcp/sse",
+            "EMAIL_AGENT_URL",
+            "http://custom:9001/mcp/sse",
         )
         monkeypatch.setenv(
-            "DOCUMENT_AGENT_URL", "http://custom:9002/mcp/sse",
+            "DOCUMENT_AGENT_URL",
+            "http://custom:9002/mcp/sse",
         )
         from agentura_ui.__main__ import _build_agents
 
@@ -48,10 +48,10 @@ class TestBuildAgents:
 
 class TestRegisterLitellmProvider:
     def test_idempotent(self):
+        from agentura_ui.__main__ import _register_litellm_provider
         from panelini.panels.ai.utils.ai_interface import (
             PROVIDER_CLASS_REGISTRY,
         )
-        from agentura_ui.__main__ import _register_litellm_provider
 
         _register_litellm_provider()
         first = PROVIDER_CLASS_REGISTRY.get("litellm")
@@ -60,10 +60,10 @@ class TestRegisterLitellmProvider:
         assert first is second
 
     def test_registered(self):
+        from agentura_ui.__main__ import _register_litellm_provider
         from panelini.panels.ai.utils.ai_interface import (
             PROVIDER_CLASS_REGISTRY,
         )
-        from agentura_ui.__main__ import _register_litellm_provider
 
         _register_litellm_provider()
         assert "litellm" in PROVIDER_CLASS_REGISTRY
@@ -86,7 +86,10 @@ class TestWrapChatCallback:
             yield f"Echo: {contents}"
 
         wrapped = _wrap_chat_callback(
-            original, registry, pending_uploads, file_mgr,
+            original,
+            registry,
+            pending_uploads,
+            file_mgr,
         )
         instance = MagicMock()
         instance.send = MagicMock()
@@ -98,7 +101,9 @@ class TestWrapChatCallback:
 
         chunks = []
         async for chunk in wrapped(
-            "Hello world", "User", instance,
+            "Hello world",
+            "User",
+            instance,
         ):
             chunks.append(chunk)
 
@@ -113,7 +118,9 @@ class TestWrapChatCallback:
 
         chunks = []
         async for chunk in wrapped(
-            "describe it", "User", instance,
+            "describe it",
+            "User",
+            instance,
         ):
             chunks.append(chunk)
 
@@ -139,7 +146,9 @@ class TestWrapChatCallback:
 
         chunks = []
         async for chunk in wrapped(
-            b"some-bytes", "User", instance,
+            b"some-bytes",
+            "User",
+            instance,
         ):
             chunks.append(chunk)
 
@@ -155,7 +164,8 @@ class TestFileUploadThenDigest:
     verify digest_document is called with base64 content."""
 
     async def test_upload_then_digest_tool_call(
-        self, digest_tool,
+        self,
+        digest_tool,
     ):
         from agentura_ui.__main__ import _wrap_chat_callback
 
@@ -166,7 +176,9 @@ class TestFileUploadThenDigest:
         # 1. Mock hub that records what digest_document receives
         hub = MagicMock()
         hub.agent_for_tool.return_value = AgentConnection(
-            "doc", "http://x/mcp/sse", "http://x",
+            "doc",
+            "http://x/mcp/sse",
+            "http://x",
         )
         hub.call_tool = AsyncMock(
             return_value=CallToolResult(
@@ -181,15 +193,19 @@ class TestFileUploadThenDigest:
 
         # 2. Create tool wrapper using the SAME registry
         tool = _make_mcp_tool_class(
-            digest_tool, hub, registry,
+            digest_tool,
+            hub,
+            registry,
         )
 
         # 3. Simulate what the sidebar FileInput watcher does:
         #    register file + append to pending_uploads
         pdf_bytes = b"%PDF-1.4 Checklist content here"
         registry.register(
-            "Checklist.pdf", pdf_bytes,
-            "application/pdf", "upload",
+            "Checklist.pdf",
+            pdf_bytes,
+            "application/pdf",
+            "upload",
         )
         pending_uploads.append(
             "Checklist.pdf (35 B)",
@@ -201,7 +217,9 @@ class TestFileUploadThenDigest:
         # 4. Build the callback wrapper.
         #    Simulates panelini calling digest_document.
         async def fake_frontend_callback(
-            contents, user, instance,
+            contents,
+            user,
+            instance,
         ):
             result = await tool._arun(
                 source="Checklist.pdf",
@@ -212,8 +230,10 @@ class TestFileUploadThenDigest:
 
         file_mgr = FileManager(registry, pending_uploads)
         wrapped = _wrap_chat_callback(
-            fake_frontend_callback, registry,
-            pending_uploads, file_mgr,
+            fake_frontend_callback,
+            registry,
+            pending_uploads,
+            file_mgr,
         )
         instance = MagicMock()
         instance.send = MagicMock()
@@ -221,7 +241,9 @@ class TestFileUploadThenDigest:
         # 5. Send "describe the file"
         describe_chunks = []
         async for chunk in wrapped(
-            "describe the file", "User", instance,
+            "describe the file",
+            "User",
+            instance,
         ):
             describe_chunks.append(chunk)
 
@@ -235,9 +257,7 @@ class TestFileUploadThenDigest:
         att = tool_args["source"]
         assert isinstance(att, dict)
         assert att["name"] == "Checklist.pdf"
-        assert att["content"].startswith(
-            "data:application/pdf;base64,"
-        )
+        assert att["content"].startswith("data:application/pdf;base64,")
 
         # Base64 decodes back to original PDF bytes
         _, b64 = att["content"].split(",", 1)

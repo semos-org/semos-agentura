@@ -14,7 +14,8 @@ from pathlib import Path
 import panel as pn
 from dotenv import load_dotenv
 from panelini import Panelini
-from panelini.panels.ai.frontend import AVAILABLE_TOOLS, AiChat as Frontend
+from panelini.panels.ai.frontend import AVAILABLE_TOOLS
+from panelini.panels.ai.frontend import AiChat as Frontend
 from panelini.panels.ai.utils.ai_interface import (
     PROVIDER_CLASS_REGISTRY,
 )
@@ -99,7 +100,8 @@ def _build_agents() -> list[AgentConnection]:
                 "http://localhost:8001/mcp/sse",
             ),
             base_url=os.environ.get(
-                "EMAIL_AGENT_BASE", "http://localhost:8001",
+                "EMAIL_AGENT_BASE",
+                "http://localhost:8001",
             ),
         ),
         AgentConnection(
@@ -109,14 +111,14 @@ def _build_agents() -> list[AgentConnection]:
                 "http://localhost:8002/mcp/sse",
             ),
             base_url=os.environ.get(
-                "DOCUMENT_AGENT_BASE", "http://localhost:8002",
+                "DOCUMENT_AGENT_BASE",
+                "http://localhost:8002",
             ),
         ),
     ]
 
 
-def _wrap_chat_callback(original_callback, registry,
-                        pending_uploads, file_mgr):
+def _wrap_chat_callback(original_callback, registry, pending_uploads, file_mgr):
     """Wrap Frontend chat callback to prepend file context,
     resolve file references, and register tool outputs."""
 
@@ -130,10 +132,7 @@ def _wrap_chat_callback(original_callback, registry,
         # which files are available for tool calls.
         if pending_uploads:
             file_list = ", ".join(pending_uploads)
-            contents = (
-                f"[Uploaded files available: {file_list}]\n\n"
-                + contents
-            )
+            contents = f"[Uploaded files available: {file_list}]\n\n" + contents
             pending_uploads.clear()
 
         # Delegate to the original Frontend callback.
@@ -155,7 +154,8 @@ def _wrap_chat_callback(original_callback, registry,
         # inline data URIs so images render in chat.
         if last_chunk and isinstance(last_chunk, str):
             resolved = resolve_file_references(
-                last_chunk, registry,
+                last_chunk,
+                registry,
             )
             if resolved != last_chunk:
                 yield resolved
@@ -186,6 +186,7 @@ def create_app() -> Panelini:
     # A2A delegates with multi-step workflows need more.
     # Patch max tool iterations (panelini default is 10).
     import types
+
     from langchain_core.messages import AIMessage
 
     async def _handle_with_more_iterations(self, user_message):
@@ -195,19 +196,12 @@ def create_app() -> Panelini:
         iteration = 0
         while iteration < max_iterations:
             if iteration == 0:
-                response_data = (
-                    await self.ai_interface
-                    .get_response_with_tools(user_message)
-                )
+                response_data = await self.ai_interface.get_response_with_tools(user_message)
             else:
                 response = await self.ai_interface.model.ainvoke(
                     self.ai_interface.conversation_history,
                 )
-                response_text = (
-                    response.content
-                    if isinstance(response.content, str)
-                    else str(response.content)
-                )
+                response_text = response.content if isinstance(response.content, str) else str(response.content)
                 tool_calls = getattr(response, "tool_calls", [])
                 self.ai_interface.conversation_history.append(
                     AIMessage(
@@ -231,7 +225,8 @@ def create_app() -> Panelini:
         return "Maximum tool execution iterations reached."
 
     frontend.backend._handle_message_with_tools = types.MethodType(
-        _handle_with_more_iterations, frontend.backend,
+        _handle_with_more_iterations,
+        frontend.backend,
     )
 
     # Status updates: send as italicized System messages in chat.
@@ -251,7 +246,8 @@ def create_app() -> Panelini:
                     pass
             msg = frontend.chat_interface.send(
                 f"*{text}*",
-                user="System", respond=False,
+                user="System",
+                respond=False,
             )
             _last_status_msg[0] = msg
         else:
@@ -273,8 +269,7 @@ def create_app() -> Panelini:
     frontend.backend.update_tools(frontend._get_selected_tools())
     logger.info(
         "Default tools: %s",
-        [n for n, i in frontend.tool_checkboxes.items()
-         if i["checkbox"].value],
+        [n for n, i in frontend.tool_checkboxes.items() if i["checkbox"].value],
     )
     # Clear the "Tools updated" spam, keep only the welcome msg.
     if frontend.chat_interface.objects:
@@ -326,9 +321,7 @@ def create_app() -> Panelini:
         elif mime == "text/markdown" or entry.filename.endswith(
             ".md",
         ):
-            frontend.preview_content.object = (
-                entry.blob.decode("utf-8", errors="replace")
-            )
+            frontend.preview_content.object = entry.blob.decode("utf-8", errors="replace")
         else:
             # Unsupported format - show metadata.
             # TODO: add generate_preview tool that converts
@@ -344,7 +337,9 @@ def create_app() -> Panelini:
 
     def _chat_notify(msg):
         frontend.chat_interface.send(
-            msg, user="System", respond=False,
+            msg,
+            user="System",
+            respond=False,
         )
 
     file_mgr = FileManager(
@@ -359,7 +354,9 @@ def create_app() -> Panelini:
     def _on_file_produced(entry):
         widget = render_file_notification(entry, on_preview=_preview)
         frontend.chat_interface.send(
-            widget, user="System", respond=False,
+            widget,
+            user="System",
+            respond=False,
         )
         file_mgr.refresh()
 
@@ -409,6 +406,7 @@ def main() -> None:
 
     # 3. Create MCP tool wrappers (structured, schema-validated)
     from .mcp_tools import create_mcp_tools
+
     mcp_tools = create_mcp_tools(_hub, _registry)
 
     # 4. Discover A2A agents and create delegate tools
@@ -428,7 +426,9 @@ def main() -> None:
     AVAILABLE_TOOLS.extend(all_tools)
     logger.info(
         "Registered %d tools (%d MCP + %d delegates): %s",
-        len(all_tools), len(mcp_tools), len(delegates),
+        len(all_tools),
+        len(mcp_tools),
+        len(delegates),
         [t.name for t in all_tools],
     )
 

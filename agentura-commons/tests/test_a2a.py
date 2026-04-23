@@ -12,7 +12,6 @@ from a2a.types import (
     TaskState,
     TaskStatusUpdateEvent,
 )
-
 from agentura_commons.a2a_server import (
     _AgentExecutor,
     _extract_files,
@@ -61,8 +60,11 @@ class _MockService(BaseAgentService):
         return f"echo: {text}"
 
     async def execute_skill(
-        self, skill_id: str, message: str,
-        *, task_id: str | None = None,
+        self,
+        skill_id: str,
+        message: str,
+        *,
+        task_id: str | None = None,
     ) -> str:
         return f"skill={skill_id} msg={message}"
 
@@ -82,6 +84,7 @@ def executor(service):
 
 # -- Helper function tests --
 
+
 def test_extract_text_from_parts():
     msg = Message(
         role=Role.ROLE_USER,
@@ -98,11 +101,13 @@ def test_extract_text_empty():
 def test_extract_files_from_raw():
     msg = Message(
         role=Role.ROLE_USER,
-        parts=[Part(
-            raw=b"PDF content",
-            filename="doc.pdf",
-            media_type="application/pdf",
-        )],
+        parts=[
+            Part(
+                raw=b"PDF content",
+                filename="doc.pdf",
+                media_type="application/pdf",
+            )
+        ],
     )
     files = _extract_files(msg)
     assert len(files) == 1
@@ -113,10 +118,12 @@ def test_extract_files_from_raw():
 def test_extract_files_from_url():
     msg = Message(
         role=Role.ROLE_USER,
-        parts=[Part(
-            url="http://example.com/doc.pdf",
-            filename="doc.pdf",
-        )],
+        parts=[
+            Part(
+                url="http://example.com/doc.pdf",
+                filename="doc.pdf",
+            )
+        ],
     )
     files = _extract_files(msg)
     assert len(files) == 1
@@ -126,6 +133,7 @@ def test_extract_files_from_url():
 
 def test_extract_tool_call():
     from google.protobuf.struct_pb2 import Value
+
     data = Value()
     data.struct_value.fields["tool"].string_value = "echo"
     args = data.struct_value.fields["arguments"]
@@ -151,6 +159,7 @@ def test_extract_tool_call_none():
 
 # -- AgentCard tests --
 
+
 def test_create_agent_card(service):
     card = create_agent_card(service, "http://localhost:8001")
     assert card.name == "Test Agent"
@@ -158,10 +167,7 @@ def test_create_agent_card(service):
     assert len(card.skills) == 1
     assert card.skills[0].id == "test-skill"
     assert len(card.supported_interfaces) == 2
-    bindings = {
-        i.protocol_binding: i.url
-        for i in card.supported_interfaces
-    }
+    bindings = {i.protocol_binding: i.url for i in card.supported_interfaces}
     assert "HTTP+JSON" in bindings
     assert "JSONRPC" in bindings
     assert "8001/a2a" in bindings["HTTP+JSON"]
@@ -169,6 +175,7 @@ def test_create_agent_card(service):
 
 
 # -- Executor tests --
+
 
 @pytest.mark.asyncio
 async def test_executor_text_skill(executor):
@@ -187,6 +194,7 @@ async def test_executor_text_skill(executor):
 async def test_executor_explicit_tool_call(executor):
     """DataPart with tool name routes to explicit tool."""
     from google.protobuf.struct_pb2 import Value
+
     data = Value()
     data.struct_value.fields["tool"].string_value = "echo"
     args = data.struct_value.fields["arguments"]
@@ -209,11 +217,13 @@ async def test_executor_with_file_output(service):
     import json as _json
 
     async def _file_tool() -> str:
-        return _json.dumps({
-            "download_url": "http://test/f.pdf",
-            "filename": "f.pdf",
-            "mime_type": "application/pdf",
-        })
+        return _json.dumps(
+            {
+                "download_url": "http://test/f.pdf",
+                "filename": "f.pdf",
+                "mime_type": "application/pdf",
+            }
+        )
 
     service.get_tools = lambda: [
         ToolDef(name="file_tool", description="Returns a file", fn=_file_tool),
@@ -221,6 +231,7 @@ async def test_executor_with_file_output(service):
     executor = _AgentExecutor(service)
 
     from google.protobuf.struct_pb2 import Value
+
     data = Value()
     data.struct_value.fields["tool"].string_value = "file_tool"
     ctx = _make_context_with_data(data)
@@ -229,10 +240,7 @@ async def test_executor_with_file_output(service):
     await executor.execute(ctx, queue)
     events = await _drain_events(queue)
 
-    artifacts = [
-        e for e in events
-        if isinstance(e, TaskArtifactUpdateEvent)
-    ]
+    artifacts = [e for e in events if isinstance(e, TaskArtifactUpdateEvent)]
     assert len(artifacts) == 1
     assert artifacts[0].artifact.name == "f.pdf"
     assert "test/f.pdf" in artifacts[0].artifact.parts[0].url
@@ -251,6 +259,7 @@ async def test_executor_error_handling(service):
     executor = _AgentExecutor(service)
 
     from google.protobuf.struct_pb2 import Value
+
     data = Value()
     data.struct_value.fields["tool"].string_value = "fail"
     ctx = _make_context_with_data(data)
@@ -274,6 +283,7 @@ async def test_executor_cancel(executor):
 
 
 # -- Helpers --
+
 
 class _FakeContext:
     """Minimal RequestContext stand-in."""
@@ -325,6 +335,7 @@ def _state_of(event) -> int:
 
 # File injection in _call_tool
 
+
 @pytest.mark.asyncio
 async def test_call_tool_injects_file_into_param(service):
     """When files are provided, matching file_params get
@@ -347,7 +358,9 @@ async def test_call_tool_injects_file_into_param(service):
 
     files = [{"name": "doc.pdf", "content": "data:app/pdf;base64,abc"}]
     text, file_list = await executor._call_tool(
-        "digest", {"source": "doc.pdf"}, files=files,
+        "digest",
+        {"source": "doc.pdf"},
+        files=files,
     )
     assert text == "ok"
     # source should be replaced with FileAttachment dict
@@ -378,7 +391,9 @@ async def test_call_tool_no_match_passes_through(service):
 
     files = [{"name": "other.pdf", "content": "data:app/pdf;base64,xyz"}]
     await executor._call_tool(
-        "digest", {"source": "doc.pdf"}, files=files,
+        "digest",
+        {"source": "doc.pdf"},
+        files=files,
     )
     # No match - source stays as plain string
     assert received_args["source"] == "doc.pdf"
@@ -404,6 +419,8 @@ async def test_call_tool_no_files_no_change(service):
     executor = _AgentExecutor(service)
 
     await executor._call_tool(
-        "digest", {"source": "doc.pdf"}, files=None,
+        "digest",
+        {"source": "doc.pdf"},
+        files=None,
     )
     assert received_args["source"] == "doc.pdf"

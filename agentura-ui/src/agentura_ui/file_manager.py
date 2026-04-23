@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import io
 import logging
-from typing import Callable
+from collections.abc import Callable
 
 import panel as pn
 
@@ -17,8 +17,8 @@ from .file_registry import FileEntry, FileRegistry, human_size
 logger = logging.getLogger(__name__)
 
 # Icons for file sources
-_ICON_UPLOAD = "\U0001f4ce"   # paperclip
-_ICON_TOOL = "\U0001f4c4"     # page
+_ICON_UPLOAD = "\U0001f4ce"  # paperclip
+_ICON_TOOL = "\U0001f4c4"  # page
 
 
 class FileManager:
@@ -54,14 +54,12 @@ class FileManager:
         self._on_chat_notify = on_chat_notify
 
         self._file_input = pn.widgets.FileInput(
-            accept=(
-                ".pdf,.docx,.pptx,.png,.jpg,"
-                ".jpeg,.html,.svg,.csv,.xlsx"
-            ),
+            accept=(".pdf,.docx,.pptx,.png,.jpg,.jpeg,.html,.svg,.csv,.xlsx"),
             multiple=False,
         )
         self._file_input.param.watch(
-            self._on_file_selected, "value",
+            self._on_file_selected,
+            "value",
         )
 
         self._list_col = pn.Column(sizing_mode="stretch_width")
@@ -86,18 +84,21 @@ class FileManager:
                 ),
             ]
             return
-        self._list_col.objects = [
-            self._make_row(e)
-            for e in self._registry.files.values()
-        ]
+        self._list_col.objects = [self._make_row(e) for e in self._registry.files.values()]
 
     def register_and_refresh(
-        self, filename: str, blob: bytes, mime: str,
+        self,
+        filename: str,
+        blob: bytes,
+        mime: str,
         source: str,
     ) -> FileEntry:
         """Register a file and refresh the list."""
         entry = self._registry.register(
-            filename, blob, mime, source,
+            filename,
+            blob,
+            mime,
+            source,
         )
         self.refresh()
         return entry
@@ -105,10 +106,7 @@ class FileManager:
     # Row builder
 
     def _make_row(self, entry: FileEntry) -> pn.Column:
-        icon = (
-            _ICON_UPLOAD if entry.source == "upload"
-            else _ICON_TOOL
-        )
+        icon = _ICON_UPLOAD if entry.source == "upload" else _ICON_TOOL
         mime_short = entry.mime.split(";")[0].split("/")[-1]
         label = pn.pane.HTML(
             f"<div title='{entry.filename}' style='"
@@ -127,7 +125,8 @@ class FileManager:
         preview_btn = pn.widgets.Button(
             name="\U0001f441",  # eye
             button_type="light",
-            width=36, height=28,
+            width=36,
+            height=28,
             description="Preview",
         )
         preview_btn.on_click(
@@ -141,13 +140,15 @@ class FileManager:
             filename=entry.filename,
             label="\u2b07",  # down arrow
             button_type="light",
-            width=36, height=28,
+            width=36,
+            height=28,
         )
 
         reuse_btn = pn.widgets.Button(
             name="\u21ba",  # cycle arrow
             button_type="light",
-            width=36, height=28,
+            width=36,
+            height=28,
             description="Re-use in chat",
         )
         reuse_btn.on_click(
@@ -157,7 +158,8 @@ class FileManager:
         delete_btn = pn.widgets.Button(
             name="\u2715",  # cross
             button_type="danger",
-            width=36, height=28,
+            width=36,
+            height=28,
             description="Delete",
         )
         delete_btn.on_click(
@@ -165,7 +167,10 @@ class FileManager:
         )
 
         toolbar = pn.Row(
-            preview_btn, download_btn, reuse_btn, delete_btn,
+            preview_btn,
+            download_btn,
+            reuse_btn,
+            delete_btn,
             sizing_mode="stretch_width",
             margin=(2, 0),
         )
@@ -213,12 +218,12 @@ class FileManager:
             return
         blob = event.new
         filename = self._file_input.filename or "upload"
-        mime = (
-            self._file_input.mime_type
-            or "application/octet-stream"
-        )
+        mime = self._file_input.mime_type or "application/octet-stream"
         entry = self.register_and_refresh(
-            filename, bytes(blob), mime, "upload",
+            filename,
+            bytes(blob),
+            mime,
+            "upload",
         )
         note = f"{entry.filename} ({human_size(entry.size)})"
         self._pending.append(note)
@@ -226,6 +231,5 @@ class FileManager:
 
         if self._on_chat_notify:
             self._on_chat_notify(
-                f"File received: **{note}**. "
-                f"You can now ask me to process it.",
+                f"File received: **{note}**. You can now ask me to process it.",
             )

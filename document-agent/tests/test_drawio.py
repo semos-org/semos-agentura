@@ -1,7 +1,5 @@
 """Tests for composition/_drawio.py - PNG embedding, extraction, block finding."""
 
-
-
 from document_agent.composition._drawio import (
     _build_mxfile_for_png,
     _compress_diagram_content,

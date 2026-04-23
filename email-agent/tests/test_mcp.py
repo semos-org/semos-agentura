@@ -8,12 +8,10 @@ Uses a mocked backend to avoid requiring Outlook/IMAP.
 
 from __future__ import annotations
 
-import json
 from datetime import datetime
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
-
 from agentura_commons.testing import mcp_client_for, parse_tool_result
 from email_agent.models import EmailMessage
 from email_agent.service import EmailAgentService
@@ -140,9 +138,7 @@ async def test_search_has_query_param(service):
 @pytest.mark.asyncio
 async def test_search_emails(service):
     async with mcp_client_for(service) as client:
-        result = await client.call_tool(
-            "search_emails", {"query": "test"}
-        )
+        result = await client.call_tool("search_emails", {"query": "test"})
         data = parse_tool_result(result)
         assert isinstance(data, list)
         assert len(data) == 1
@@ -153,9 +149,7 @@ async def test_search_emails(service):
 @pytest.mark.asyncio
 async def test_search_emails_with_limit(service):
     async with mcp_client_for(service) as client:
-        result = await client.call_tool(
-            "search_emails", {"query": "test", "limit": 5}
-        )
+        result = await client.call_tool("search_emails", {"query": "test", "limit": 5})
         data = parse_tool_result(result)
         assert isinstance(data, list)
 
@@ -166,9 +160,7 @@ async def test_search_emails_with_limit(service):
 @pytest.mark.asyncio
 async def test_read_email(service):
     async with mcp_client_for(service) as client:
-        result = await client.call_tool(
-            "read_email", {"query": "test"}
-        )
+        result = await client.call_tool("read_email", {"query": "test"})
         data = parse_tool_result(result)
         assert data["subject"] == "Test email"
         assert "Full body" in data["body"]
@@ -241,9 +233,7 @@ async def test_send_reply(service):
 async def test_list_events_no_calendar(service):
     """Calendar tools should return an error when no calendar backend."""
     async with mcp_client_for(service) as client:
-        result = await client.call_tool(
-            "list_events", {"days": 7}
-        )
+        result = await client.call_tool("list_events", {"days": 7})
         data = parse_tool_result(result)
         assert "error" in data
 
@@ -251,8 +241,6 @@ async def test_list_events_no_calendar(service):
 @pytest.mark.asyncio
 async def test_free_slots_no_calendar(service):
     async with mcp_client_for(service) as client:
-        result = await client.call_tool(
-            "free_slots", {"days": 7}
-        )
+        result = await client.call_tool("free_slots", {"days": 7})
         data = parse_tool_result(result)
         assert "error" in data

@@ -12,8 +12,6 @@ from zipfile import ZipFile
 
 import httpx
 import pytest
-from google.protobuf.struct_pb2 import Struct, Value
-
 from a2a.client import Client, ClientConfig, ClientFactory
 from a2a.types import (
     Message,
@@ -21,8 +19,8 @@ from a2a.types import (
     Role,
     SendMessageRequest,
 )
-
 from conftest import free_port, start_agent
+from google.protobuf.struct_pb2 import Struct, Value
 
 
 async def _connect(base_url: str) -> Client:
@@ -32,7 +30,8 @@ async def _connect(base_url: str) -> Client:
         httpx_client=httpx.AsyncClient(timeout=60),
     )
     return await ClientFactory.connect(
-        base_url, client_config=config,
+        base_url,
+        client_config=config,
     )
 
 
@@ -42,8 +41,8 @@ def _make_sample_docx(path: Path) -> Path:
         '<w:document xmlns:w="http://schemas.openxmlformats.org'
         '/wordprocessingml/2006/main"><w:body><w:p><w:sdt>'
         '<w:sdtPr><w:alias w:val="FullName"/></w:sdtPr>'
-        '<w:sdtContent><w:p><w:r><w:t></w:t></w:r></w:p>'
-        '</w:sdtContent></w:sdt></w:p></w:body></w:document>'
+        "<w:sdtContent><w:p><w:r><w:t></w:t></w:r></w:p>"
+        "</w:sdtContent></w:sdt></w:p></w:body></w:document>"
     )
     rels = (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
@@ -72,17 +71,22 @@ def _make_sample_docx(path: Path) -> Path:
 
 
 def _tool_call_message(
-    tool: str, arguments: dict,
+    tool: str,
+    arguments: dict,
     files: list[tuple[str, bytes, str]] | None = None,
 ) -> Message:
     """Build an A2A Message for an explicit tool call."""
     data_struct = Struct()
     data_struct.update({"tool": tool, "arguments": arguments})
     parts = [Part(data=Value(struct_value=data_struct))]
-    for fname, blob, mime in (files or []):
-        parts.append(Part(
-            raw=blob, filename=fname, media_type=mime,
-        ))
+    for fname, blob, mime in files or []:
+        parts.append(
+            Part(
+                raw=blob,
+                filename=fname,
+                media_type=mime,
+            )
+        )
     return Message(
         message_id=str(uuid4()),
         role=Role.ROLE_USER,
@@ -91,7 +95,8 @@ def _tool_call_message(
 
 
 async def _send_and_collect(
-    client: Client, message: Message,
+    client: Client,
+    message: Message,
 ) -> tuple[str, list[dict]]:
     """Send message via A2A, collect final text and file artifacts."""
     request = SendMessageRequest(message=message)
@@ -99,7 +104,7 @@ async def _send_and_collect(
     file_artifacts = []
     final_task = None
 
-    async for (stream_resp, task) in client.send_message(request):
+    async for _stream_resp, task in client.send_message(request):
         if task:
             final_task = task
 
@@ -114,16 +119,19 @@ async def _send_and_collect(
         for art in final_task.artifacts:
             for p in art.parts:
                 if p.HasField("url"):
-                    file_artifacts.append({
-                        "url": p.url,
-                        "filename": p.filename,
-                        "mime_type": p.media_type,
-                    })
+                    file_artifacts.append(
+                        {
+                            "url": p.url,
+                            "filename": p.filename,
+                            "mime_type": p.media_type,
+                        }
+                    )
 
     return "\n".join(text_parts), file_artifacts
 
 
 # Agent Card
+
 
 class TestAgentCard:
     @pytest.fixture(autouse=True)
@@ -131,7 +139,8 @@ class TestAgentCard:
         self.port = free_port()
         self.base_url = f"http://127.0.0.1:{self.port}"
         self.server, self.thread = start_agent(
-            "document_agent", self.port,
+            "document_agent",
+            self.port,
         )
         yield
         self.server.should_exit = True
@@ -158,13 +167,15 @@ class TestAgentCard:
 
 # Tool calls via A2A
 
+
 class TestA2AToolCalls:
     @pytest.fixture(autouse=True)
     def _agent(self):
         self.port = free_port()
         self.base_url = f"http://127.0.0.1:{self.port}"
         self.server, self.thread = start_agent(
-            "document_agent", self.port,
+            "document_agent",
+            self.port,
         )
         yield
         self.server.should_exit = True
@@ -191,11 +202,13 @@ class TestA2AToolCalls:
         msg = _tool_call_message(
             "inspect_form",
             {"file_path": "form.docx"},
-            files=[(
-                "form.docx", docx_bytes,
-                "application/vnd.openxmlformats-officedocument"
-                ".wordprocessingml.document",
-            )],
+            files=[
+                (
+                    "form.docx",
+                    docx_bytes,
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                )
+            ],
         )
         text, files = await _send_and_collect(client, msg)
         assert "FullName" in text
@@ -203,6 +216,7 @@ class TestA2AToolCalls:
 
 
 # NL routing with mocked LLM
+
 
 class TestA2ANaturalLanguage:
     """Test NL -> tool routing with mocked LLM decisions."""
@@ -225,7 +239,9 @@ class TestA2ANaturalLanguage:
                 if _MockExecutor._mock_ref:
                     tool_name, args = _MockExecutor._mock_ref.pop(0)
                     t, f = await self_inner._call_tool(
-                        tool_name, args, files,
+                        tool_name,
+                        args,
+                        files,
                     )
                     return ExecutorResult(text=t, files=f)
                 return None
@@ -233,13 +249,16 @@ class TestA2ANaturalLanguage:
         monkeypatch.setattr(a2a_mod, "_AgentExecutor", _MockExecutor)
 
         from document_agent.service import _service
+
         monkeypatch.setattr(
-            type(_service), "router_llm_model",
+            type(_service),
+            "router_llm_model",
             property(lambda s: "mock-model"),
         )
 
         self.server, self.thread = start_agent(
-            "document_agent", self.port,
+            "document_agent",
+            self.port,
         )
         yield
         self.server.should_exit = True
@@ -248,10 +267,12 @@ class TestA2ANaturalLanguage:
     @pytest.mark.asyncio
     async def test_nl_compose_via_mocked_llm(self):
         """NL message routed to compose_document by mock LLM."""
-        self._mock_responses.append((
-            "compose_document",
-            {"source": "# NL Test\n\nGenerated.", "format": "html"},
-        ))
+        self._mock_responses.append(
+            (
+                "compose_document",
+                {"source": "# NL Test\n\nGenerated.", "format": "html"},
+            )
+        )
         client = await _connect(self.base_url)
         # Send natural language (no DataPart, just text)
         msg = Message(
@@ -269,10 +290,12 @@ class TestA2ANaturalLanguage:
         docx_path = _make_sample_docx(tmp_path / "form.docx")
         docx_bytes = docx_path.read_bytes()
 
-        self._mock_responses.append((
-            "inspect_form",
-            {"file_path": "form.docx"},
-        ))
+        self._mock_responses.append(
+            (
+                "inspect_form",
+                {"file_path": "form.docx"},
+            )
+        )
         client = await _connect(self.base_url)
         msg = Message(
             message_id=str(uuid4()),
@@ -282,10 +305,7 @@ class TestA2ANaturalLanguage:
                 Part(
                     raw=docx_bytes,
                     filename="form.docx",
-                    media_type=(
-                        "application/vnd.openxmlformats"
-                        "-officedocument.wordprocessingml.document"
-                    ),
+                    media_type=("application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
                 ),
             ],
         )
@@ -296,6 +316,7 @@ class TestA2ANaturalLanguage:
 
 # File round-trip via A2A (explicit tool calls)
 
+
 class TestA2AFileRoundTrip:
     """Compose a file via A2A, then digest it back."""
 
@@ -304,7 +325,8 @@ class TestA2AFileRoundTrip:
         self.port = free_port()
         self.base_url = f"http://127.0.0.1:{self.port}"
         self.server, self.thread = start_agent(
-            "document_agent", self.port,
+            "document_agent",
+            self.port,
         )
         yield
         self.server.should_exit = True
@@ -321,12 +343,14 @@ class TestA2AFileRoundTrip:
             {"source": "# Round Trip\n\nContent.", "format": "docx"},
         )
         compose_text, compose_files = await _send_and_collect(
-            client, compose_msg,
+            client,
+            compose_msg,
         )
         assert compose_text or compose_files
 
         # Extract download URL
         import json as _json
+
         download_url = ""
         try:
             data = _json.loads(compose_text)
@@ -341,7 +365,8 @@ class TestA2AFileRoundTrip:
         async with httpx.AsyncClient() as http:
             path = "/" + download_url.split("/", 3)[-1]
             resp = await http.get(
-                f"{self.base_url}{path}", timeout=30,
+                f"{self.base_url}{path}",
+                timeout=30,
             )
             resp.raise_for_status()
             file_bytes = resp.content
@@ -350,11 +375,13 @@ class TestA2AFileRoundTrip:
         digest_msg = _tool_call_message(
             "digest_document",
             {"source": "composed.docx"},
-            files=[(
-                "composed.docx", file_bytes,
-                "application/vnd.openxmlformats-officedocument"
-                ".wordprocessingml.document",
-            )],
+            files=[
+                (
+                    "composed.docx",
+                    file_bytes,
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                )
+            ],
         )
         digest_text, _ = await _send_and_collect(client, digest_msg)
         assert digest_text
@@ -365,13 +392,15 @@ class TestA2AFileRoundTrip:
 
 # Email agent
 
+
 class TestEmailA2A:
     @pytest.fixture(autouse=True)
     def _agent(self):
         self.port = free_port()
         self.base_url = f"http://127.0.0.1:{self.port}"
         self.server, self.thread = start_agent(
-            "email_agent", self.port,
+            "email_agent",
+            self.port,
         )
         yield
         self.server.should_exit = True
@@ -400,6 +429,7 @@ class TestEmailA2A:
 
 # JSON-RPC binding test
 
+
 class TestA2AJsonRpc:
     """Verify JSON-RPC binding works alongside REST."""
 
@@ -408,7 +438,8 @@ class TestA2AJsonRpc:
         self.port = free_port()
         self.base_url = f"http://127.0.0.1:{self.port}"
         self.server, self.thread = start_agent(
-            "document_agent", self.port,
+            "document_agent",
+            self.port,
         )
         yield
         self.server.should_exit = True
@@ -433,15 +464,13 @@ class TestA2AJsonRpc:
         async with httpx.AsyncClient() as http:
             resp = await http.get(url, timeout=5)
         data = resp.json()
-        bindings = {
-            i["protocolBinding"] for i in
-            data.get("supportedInterfaces", [])
-        }
+        bindings = {i["protocolBinding"] for i in data.get("supportedInterfaces", [])}
         assert "HTTP+JSON" in bindings
         assert "JSONRPC" in bindings
 
 
 # AgenturaClient.ask_agent tests
+
 
 class TestAskAgent:
     """Test AgenturaClient.ask_agent() A2A delegation."""
@@ -451,7 +480,8 @@ class TestAskAgent:
         self.port = free_port()
         self.base_url = f"http://127.0.0.1:{self.port}"
         self.server, self.thread = start_agent(
-            "document_agent", self.port,
+            "document_agent",
+            self.port,
         )
         yield
         self.server.should_exit = True
@@ -496,7 +526,8 @@ class TestAskAgent:
             # since NL routing may not be configured)
             assert result.text
             assert result.status in (
-                "completed", "input_required",
+                "completed",
+                "input_required",
             )
 
     @pytest.mark.asyncio
@@ -509,7 +540,8 @@ class TestAskAgent:
             download_dir=tmp_path,
         ) as client:
             result = await client.ask_agent(
-                "nonexistent", "hello",
+                "nonexistent",
+                "hello",
             )
             assert result.is_error
             assert "not found" in result.text.lower()

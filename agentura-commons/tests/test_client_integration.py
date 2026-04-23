@@ -13,9 +13,7 @@ from pathlib import Path
 from zipfile import ZipFile
 
 import pytest
-
 from agentura_commons.client import AgenturaClient
-
 from conftest import free_port, start_agent
 
 
@@ -67,6 +65,7 @@ officedocument.wordprocessingml.document.main+xml"/>
 
 # Document agent tests
 
+
 class TestDocumentAgent:
     """Tests against auto-started document-agent."""
 
@@ -76,7 +75,8 @@ class TestDocumentAgent:
         self.port = free_port()
         self.base_url = f"http://127.0.0.1:{self.port}"
         self.server, self.thread = start_agent(
-            "document_agent", self.port,
+            "document_agent",
+            self.port,
         )
         yield
         self.server.should_exit = True
@@ -106,7 +106,8 @@ class TestDocumentAgent:
             assert name == "form.docx"
 
             result = await client.call_tool(
-                "inspect_form", {"file_path": "form.docx"},
+                "inspect_form",
+                {"file_path": "form.docx"},
             )
             assert not result.is_error, result.text
             data = json.loads(result.text)
@@ -129,9 +130,12 @@ class TestDocumentAgent:
             assert len(result.files) == 1
             assert result.files[0].filename.endswith(".html")
             assert result.files[0].size > 0
-            assert client.registry.get(
-                result.files[0].filename,
-            ) is not None
+            assert (
+                client.registry.get(
+                    result.files[0].filename,
+                )
+                is not None
+            )
             assert "http://" not in result.text
 
     @pytest.mark.asyncio
@@ -192,12 +196,14 @@ class TestDocumentAgent:
             download_dir=tmp_path,
         ) as client:
             result = await client.call_tool(
-                "compose_document", {},
+                "compose_document",
+                {},
             )
             assert result.is_error
 
 
 # Email agent tests
+
 
 class TestEmailAgent:
     """Tests against auto-started email-agent."""
@@ -207,7 +213,8 @@ class TestEmailAgent:
         self.port = free_port()
         self.base_url = f"http://127.0.0.1:{self.port}"
         self.server, self.thread = start_agent(
-            "email_agent", self.port,
+            "email_agent",
+            self.port,
         )
         yield
         self.server.should_exit = True
@@ -239,6 +246,7 @@ class TestEmailAgent:
 
 # Multi-agent tests
 
+
 class TestMultiAgent:
     """Tests with both agents running."""
 
@@ -247,10 +255,12 @@ class TestMultiAgent:
         self.doc_port = free_port()
         self.email_port = free_port()
         self.doc_server, self.doc_thread = start_agent(
-            "document_agent", self.doc_port,
+            "document_agent",
+            self.doc_port,
         )
         self.email_server, self.email_thread = start_agent(
-            "email_agent", self.email_port,
+            "email_agent",
+            self.email_port,
         )
         yield
         self.doc_server.should_exit = True

@@ -42,10 +42,12 @@ class TestOCRPageResolveTables:
 
     def test_single_table_resolved(self):
         md = "Before\n\n[tbl-0.md](tbl-0.md)\n\nAfter"
-        page = OCRPage({
-            "markdown": md,
-            "tables": [{"id": "tbl-0.md", "content": "| A | B |\n|---|---|\n| 1 | 2 |"}],
-        })
+        page = OCRPage(
+            {
+                "markdown": md,
+                "tables": [{"id": "tbl-0.md", "content": "| A | B |\n|---|---|\n| 1 | 2 |"}],
+            }
+        )
         result = page.resolve_tables()
         assert "[tbl-0.md]" not in result
         assert "| A | B |" in result
@@ -54,13 +56,15 @@ class TestOCRPageResolveTables:
 
     def test_multiple_tables_resolved(self):
         md = "[tbl-0.md](tbl-0.md)\n\n[tbl-1.md](tbl-1.md)"
-        page = OCRPage({
-            "markdown": md,
-            "tables": [
-                {"id": "tbl-0.md", "content": "Table 0"},
-                {"id": "tbl-1.md", "content": "Table 1"},
-            ],
-        })
+        page = OCRPage(
+            {
+                "markdown": md,
+                "tables": [
+                    {"id": "tbl-0.md", "content": "Table 0"},
+                    {"id": "tbl-1.md", "content": "Table 1"},
+                ],
+            }
+        )
         result = page.resolve_tables()
         assert "Table 0" in result
         assert "Table 1" in result
@@ -73,19 +77,23 @@ class TestOCRPageResolveTables:
 
     def test_html_format_refs(self):
         md = "[tbl-0.html](tbl-0.html)"
-        page = OCRPage({
-            "markdown": md,
-            "tables": [{"id": "tbl-0.html", "content": "<table><tr><td>X</td></tr></table>"}],
-        })
+        page = OCRPage(
+            {
+                "markdown": md,
+                "tables": [{"id": "tbl-0.html", "content": "<table><tr><td>X</td></tr></table>"}],
+            }
+        )
         assert "<table>" in page.resolve_tables()
 
     def test_image_refs_not_affected(self):
         md = "![img-0](img-0)\n[tbl-0.md](tbl-0.md)"
-        page = OCRPage({
-            "markdown": md,
-            "tables": [{"id": "tbl-0.md", "content": "| A |"}],
-            "images": [{"id": "img-0", "image_base64": "abc"}],
-        })
+        page = OCRPage(
+            {
+                "markdown": md,
+                "tables": [{"id": "tbl-0.md", "content": "| A |"}],
+                "images": [{"id": "img-0", "image_base64": "abc"}],
+            }
+        )
         result = page.resolve_tables()
         assert "![img-0](img-0)" in result
         assert "| A |" in result
@@ -93,17 +101,19 @@ class TestOCRPageResolveTables:
 
 class TestOCRResponseFromDict:
     def test_basic_dict(self):
-        resp = OCRResponse({
-            "pages": [
-                {
-                    "index": 0,
-                    "markdown": "Hello",
-                    "images": [{"id": "i1", "image_base64": "x"}],
-                    "tables": [{"id": "t1", "content": "table"}],
-                }
-            ],
-            "document_annotation": {"key": "value"},
-        })
+        resp = OCRResponse(
+            {
+                "pages": [
+                    {
+                        "index": 0,
+                        "markdown": "Hello",
+                        "images": [{"id": "i1", "image_base64": "x"}],
+                        "tables": [{"id": "t1", "content": "table"}],
+                    }
+                ],
+                "document_annotation": {"key": "value"},
+            }
+        )
         assert len(resp.pages) == 1
         assert resp.pages[0].markdown == "Hello"
         assert len(resp.pages[0].images) == 1

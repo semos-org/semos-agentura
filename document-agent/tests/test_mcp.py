@@ -28,6 +28,7 @@ def _check_llm_available() -> bool:
         return True
     try:
         from dotenv import load_dotenv
+
         # Load from document-agent/.env (tests may run from workspace root)
         agent_dir = Path(__file__).resolve().parent.parent
         load_dotenv(agent_dir / ".env")
@@ -111,9 +112,7 @@ async def test_file_params_have_x_file_annotation(service):
 @pytest.mark.asyncio
 async def test_inspect_form(service, sample_docx):
     async with mcp_client_for(service) as client:
-        result = await client.call_tool(
-            "inspect_form", {"file_path": str(sample_docx)}
-        )
+        result = await client.call_tool("inspect_form", {"file_path": str(sample_docx)})
         data = parse_tool_result(result)
         assert isinstance(data, list)
         assert len(data) > 0
@@ -147,7 +146,8 @@ async def test_fill_form(service, sample_docx):
 # compose_document via MCP
 
 _needs_pandoc = pytest.mark.skipif(
-    not find_tool("pandoc"), reason="pandoc not installed",
+    not find_tool("pandoc"),
+    reason="pandoc not installed",
 )
 _integration = pytest.mark.integration
 
@@ -280,9 +280,7 @@ async def test_compose_html(service):
 async def test_inspect_form_nonexistent_file(service):
     """Tool should return an error, not crash the server."""
     async with mcp_client_for(service) as client:
-        result = await client.call_tool(
-            "inspect_form", {"file_path": "/nonexistent/file.docx"}
-        )
+        result = await client.call_tool("inspect_form", {"file_path": "/nonexistent/file.docx"})
         # Should return an error in the content, not raise
         assert result.content
         text = result.content[0].text

@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import base64
 
-
 # resolve_file_references (UI-specific: produces <img> tags)
 
 
@@ -21,14 +20,16 @@ class TestResolveFileReferences:
         from agentura_ui.renderers import resolve_file_references
 
         registry.register(
-            "diagram.png", b"\x89PNG-FAKE",
-            "image/png", "tool:generate_diagram",
+            "diagram.png",
+            b"\x89PNG-FAKE",
+            "image/png",
+            "tool:generate_diagram",
         )
         md = "## Diagram\n\n![A to B](diagram.png)"
         resolved = resolve_file_references(md, registry)
 
         assert '<img src="data:image/png;base64,' in resolved
-        assert 'max-width:100%' in resolved
+        assert "max-width:100%" in resolved
         # Verify round-trip: extract base64 from <img src="data:...">
         src = resolved.split('src="')[1].split('"')[0]
         _, b64 = src.split(",", 1)
@@ -38,8 +39,10 @@ class TestResolveFileReferences:
         from agentura_ui.renderers import resolve_file_references
 
         registry.register(
-            "report.pdf", b"%PDF-CONTENT",
-            "application/pdf", "tool:compose",
+            "report.pdf",
+            b"%PDF-CONTENT",
+            "application/pdf",
+            "tool:compose",
         )
         md = "Download [the report](report.pdf) here."
         resolved = resolve_file_references(md, registry)
@@ -67,10 +70,16 @@ class TestResolveFileReferences:
         from agentura_ui.renderers import resolve_file_references
 
         registry.register(
-            "a.png", b"A", "image/png", "tool:t",
+            "a.png",
+            b"A",
+            "image/png",
+            "tool:t",
         )
         registry.register(
-            "b.png", b"B", "image/png", "tool:t",
+            "b.png",
+            b"B",
+            "image/png",
+            "tool:t",
         )
         md = "![](a.png) and ![](b.png)"
         resolved = resolve_file_references(md, registry)

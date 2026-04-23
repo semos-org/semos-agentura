@@ -6,22 +6,22 @@ These tests use mocks and do NOT require Outlook, IMAP, or any credentials.
 from __future__ import annotations
 
 import sys
-from datetime import datetime, timedelta
-from unittest.mock import MagicMock, patch
+from datetime import datetime
+from unittest.mock import MagicMock
 
 import pytest
-
-from email_agent.config import Settings
-from email_agent.exceptions import BackendNotAvailable, CalendarNotSupported, COMError
-from email_agent.models import Attachment, EmailMessage, EventInfo
 from email_agent.backend import (
-    IMAPBackend, CalendarBackend, EmailBackend,
-    _com_dict_to_email, _com_dict_to_event, _parse_com_datetime,
+    IMAPBackend,
+    _com_dict_to_email,
+    _com_dict_to_event,
+    _parse_com_datetime,
     create_backend,
 )
-from email_agent.formatting import md_to_plain, md_to_html, html_to_annotated_text
-from email_agent.tools import ToolExecutor, _validate_email_list, TOOL_DEFINITIONS
-
+from email_agent.config import Settings
+from email_agent.exceptions import BackendNotAvailable
+from email_agent.formatting import html_to_annotated_text, md_to_html, md_to_plain
+from email_agent.models import EmailMessage, EventInfo
+from email_agent.tools import TOOL_DEFINITIONS, ToolExecutor, _validate_email_list
 
 # Model tests
 
@@ -228,9 +228,15 @@ class TestToolDefinitions:
     def test_expected_tool_names(self):
         names = {t["function"]["name"] for t in TOOL_DEFINITIONS}
         expected = {
-            "search_emails", "read_email", "list_events", "free_slots",
-            "create_draft", "draft_event", "send_event",
-            "draft_reply", "send_reply",
+            "search_emails",
+            "read_email",
+            "list_events",
+            "free_slots",
+            "create_draft",
+            "draft_event",
+            "send_event",
+            "draft_reply",
+            "send_reply",
         }
         assert names == expected
 
@@ -248,8 +254,11 @@ class TestToolExecutor:
     def test_search_emails(self):
         backend = self._mock_backend()
         msg = EmailMessage(
-            uid="1", subject="Hello", sender="alice@example.com",
-            sender_name="Alice", date=datetime(2026, 3, 21),
+            uid="1",
+            subject="Hello",
+            sender="alice@example.com",
+            sender_name="Alice",
+            date=datetime(2026, 3, 21),
         )
         backend.search_emails.return_value = [msg]
 
@@ -267,22 +276,28 @@ class TestToolExecutor:
     def test_create_draft_validates_email(self):
         backend = self._mock_backend()
         executor = ToolExecutor(backend)
-        result = executor.execute("create_draft", {
-            "to": "not-an-email",
-            "subject": "Test",
-            "body": "Body",
-        })
+        result = executor.execute(
+            "create_draft",
+            {
+                "to": "not-an-email",
+                "subject": "Test",
+                "body": "Body",
+            },
+        )
         assert "Invalid" in result
 
     def test_create_draft_success(self):
         backend = self._mock_backend()
         backend.create_draft.return_value = "ENTRY123"
         executor = ToolExecutor(backend)
-        result = executor.execute("create_draft", {
-            "to": "alice@example.com",
-            "subject": "Test",
-            "body": "Hello **world**",
-        })
+        result = executor.execute(
+            "create_draft",
+            {
+                "to": "alice@example.com",
+                "subject": "Test",
+                "body": "Hello **world**",
+            },
+        )
         assert "draft created" in result
         # Verify markdown was converted
         call_args = backend.create_draft.call_args
@@ -316,6 +331,7 @@ class TestFactory:
         s = Settings(backend="com")
         b = create_backend(s)
         from email_agent.backend import COMBackend
+
         assert isinstance(b, COMBackend)
         assert b.supports_com
         assert b.calendar is not None
@@ -337,8 +353,10 @@ class TestFactory:
 class TestIMAPBackend:
     def test_search_emails_delegates(self):
         s = Settings(
-            backend="imap", imap_host="imap.example.com",
-            azure_client_id="test-id", email_address="user@example.com",
+            backend="imap",
+            imap_host="imap.example.com",
+            azure_client_id="test-id",
+            email_address="user@example.com",
         )
         b = IMAPBackend(s)
         mock_client = MagicMock()

@@ -1,6 +1,5 @@
 """Tests for digestion/_images.py - annotation parsing and markdown assembly."""
 
-
 from document_agent.digestion._images import (
     _build_alt_text,
     _clean_json_alt_text,
@@ -78,13 +77,17 @@ class TestSaveImages:
         import base64
 
         b64 = base64.b64encode(b"\x89PNG\r\n\x1a\nfakedata").decode()
-        resp = OCRResponse({
-            "pages": [{
-                "index": 0,
-                "markdown": "![img-0](img-0)",
-                "images": [{"id": "img-0", "image_base64": b64, "image_annotation": '{"description":"test"}'}],
-            }],
-        })
+        resp = OCRResponse(
+            {
+                "pages": [
+                    {
+                        "index": 0,
+                        "markdown": "![img-0](img-0)",
+                        "images": [{"id": "img-0", "image_base64": b64, "image_annotation": '{"description":"test"}'}],
+                    }
+                ],
+            }
+        )
         image_map, ann_map = save_images(resp, tmp_dir, "doc")
         assert "img-0" in image_map
         assert (tmp_dir / image_map["img-0"]).exists()
@@ -93,24 +96,30 @@ class TestSaveImages:
 
 class TestCombineMarkdown:
     def test_combines_pages(self):
-        resp = OCRResponse({
-            "pages": [
-                {"index": 0, "markdown": "# Page 1"},
-                {"index": 1, "markdown": "# Page 2"},
-            ],
-        })
+        resp = OCRResponse(
+            {
+                "pages": [
+                    {"index": 0, "markdown": "# Page 1"},
+                    {"index": 1, "markdown": "# Page 2"},
+                ],
+            }
+        )
         result = combine_markdown(resp, {}, {})
         assert "Page 1" in result
         assert "Page 2" in result
 
     def test_resolves_tables_in_output(self):
-        resp = OCRResponse({
-            "pages": [{
-                "index": 0,
-                "markdown": "[tbl-0.md](tbl-0.md)",
-                "tables": [{"id": "tbl-0.md", "content": "| A | B |"}],
-            }],
-        })
+        resp = OCRResponse(
+            {
+                "pages": [
+                    {
+                        "index": 0,
+                        "markdown": "[tbl-0.md](tbl-0.md)",
+                        "tables": [{"id": "tbl-0.md", "content": "| A | B |"}],
+                    }
+                ],
+            }
+        )
         result = combine_markdown(resp, {}, {})
         assert "| A | B |" in result
         assert "[tbl-" not in result
@@ -118,13 +127,17 @@ class TestCombineMarkdown:
 
 class TestInlineImagesBase64:
     def test_inlines_tables(self):
-        resp = OCRResponse({
-            "pages": [{
-                "index": 0,
-                "markdown": "Text\n[tbl-0.md](tbl-0.md)",
-                "tables": [{"id": "tbl-0.md", "content": "| X |"}],
-            }],
-        })
+        resp = OCRResponse(
+            {
+                "pages": [
+                    {
+                        "index": 0,
+                        "markdown": "Text\n[tbl-0.md](tbl-0.md)",
+                        "tables": [{"id": "tbl-0.md", "content": "| X |"}],
+                    }
+                ],
+            }
+        )
         result = inline_images_as_base64(resp, {})
         assert "| X |" in result
         assert "[tbl-" not in result

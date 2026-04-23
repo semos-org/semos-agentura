@@ -25,11 +25,13 @@ class TestMCPHubRouting:
         hub = MCPHub(two_agents)
         # Simulate discovered tools
         t1 = MCPTool(
-            name="search_emails", description="",
+            name="search_emails",
+            description="",
             inputSchema={},
         )
         t2 = MCPTool(
-            name="digest_document", description="",
+            name="digest_document",
+            description="",
             inputSchema={},
         )
         hub._agents["email-agent"].tools = [t1]
@@ -37,12 +39,8 @@ class TestMCPHubRouting:
         hub._tool_to_agent["search_emails"] = "email-agent"
         hub._tool_to_agent["digest_document"] = "document-agent"
 
-        assert hub.agent_for_tool("search_emails").name == (
-            "email-agent"
-        )
-        assert hub.agent_for_tool("digest_document").name == (
-            "document-agent"
-        )
+        assert hub.agent_for_tool("search_emails").name == ("email-agent")
+        assert hub.agent_for_tool("digest_document").name == ("document-agent")
 
     def test_all_tools_merged(self, two_agents):
         from mcp.types import Tool as MCPTool

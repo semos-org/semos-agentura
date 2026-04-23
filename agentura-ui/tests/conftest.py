@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import panel as pn
 import pytest
-from mcp.types import Tool as MCPTool
-
 from agentura_ui.file_registry import FileRegistry
 from agentura_ui.mcp_hub import AgentConnection
+from mcp.types import Tool as MCPTool
 
 PORT = [6100]
 

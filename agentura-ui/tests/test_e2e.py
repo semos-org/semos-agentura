@@ -12,16 +12,13 @@ import importlib.util
 from pathlib import Path
 
 import pytest
-
 from agentura_ui.file_registry import FileRegistry
 
 # Import shared fixtures from agentura-commons/tests/conftest.py
-_commons_conftest = (
-    Path(__file__).resolve().parent.parent.parent
-    / "agentura-commons" / "tests" / "conftest.py"
-)
+_commons_conftest = Path(__file__).resolve().parent.parent.parent / "agentura-commons" / "tests" / "conftest.py"
 _spec = importlib.util.spec_from_file_location(
-    "commons_conftest", _commons_conftest,
+    "commons_conftest",
+    _commons_conftest,
 )
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
@@ -30,6 +27,7 @@ start_agent = _mod.start_agent
 
 
 # Fixtures: auto-start agents on random ports
+
 
 @pytest.fixture(scope="module")
 def email_agent():
@@ -53,17 +51,26 @@ def doc_agent():
 
 # Helpers
 
+
 async def _make_hub(agent_info):
     from agentura_ui.mcp_hub import AgentConnection, MCPHub
-    hub = MCPHub([AgentConnection(
-        "agent", agent_info["sse"], agent_info["base_url"],
-    )])
+
+    hub = MCPHub(
+        [
+            AgentConnection(
+                "agent",
+                agent_info["sse"],
+                agent_info["base_url"],
+            )
+        ]
+    )
     await hub.discover()
     return hub
 
 
 async def _discover_a2a(base_url):
     from agentura_ui.a2a_client import discover_agents
+
     agents = await discover_agents([base_url])
     assert len(agents) == 1
     return agents[0]
@@ -71,8 +78,8 @@ async def _discover_a2a(base_url):
 
 # MCP Tool tests
 
-class TestMCPTool:
 
+class TestMCPTool:
     @pytest.mark.asyncio
     async def test_search_emails(self, email_agent):
         from agentura_ui.mcp_tools import _make_mcp_tool_class
@@ -81,10 +88,7 @@ class TestMCPTool:
         hub = await _make_hub(email_agent)
         assert len(hub.all_tools()) >= 9
 
-        mcp_tool = next(
-            t for t in hub.all_tools()
-            if t.name == "search_emails"
-        )
+        mcp_tool = next(t for t in hub.all_tools() if t.name == "search_emails")
         wrapper = _make_mcp_tool_class(mcp_tool, hub, registry)
         result = await wrapper._arun(query="test", limit=5)
         assert isinstance(result, str)
@@ -93,19 +97,18 @@ class TestMCPTool:
     @pytest.mark.asyncio
     async def test_compose_document_produces_file(self, doc_agent):
         from agentura_ui.mcp_tools import (
-            _make_mcp_tool_class, drain_produced_files,
+            _make_mcp_tool_class,
+            drain_produced_files,
         )
 
         registry = FileRegistry()
         hub = await _make_hub(doc_agent)
 
-        mcp_tool = next(
-            t for t in hub.all_tools()
-            if t.name == "compose_document"
-        )
+        mcp_tool = next(t for t in hub.all_tools() if t.name == "compose_document")
         wrapper = _make_mcp_tool_class(mcp_tool, hub, registry)
         result = await wrapper._arun(
-            source="# Test\n\nHello.", format="html",
+            source="# Test\n\nHello.",
+            format="html",
         )
         assert isinstance(result, str)
 
@@ -123,14 +126,13 @@ class TestMCPTool:
 
         # Register a file as if user uploaded it
         registry.register(
-            "test.pdf", b"%PDF-1.4 test content",
-            "application/pdf", "upload",
+            "test.pdf",
+            b"%PDF-1.4 test content",
+            "application/pdf",
+            "upload",
         )
 
-        mcp_tool = next(
-            t for t in hub.all_tools()
-            if t.name == "digest_document"
-        )
+        mcp_tool = next(t for t in hub.all_tools() if t.name == "digest_document")
         wrapper = _make_mcp_tool_class(mcp_tool, hub, registry)
         result = await wrapper._arun(source="test.pdf")
         assert isinstance(result, str)
@@ -139,42 +141,40 @@ class TestMCPTool:
 
 # A2A Tool tests (explicit tool call via DataPart)
 
-class TestA2ATool:
 
+class TestA2ATool:
     @pytest.mark.asyncio
     async def test_search_emails_via_a2a(self, email_agent):
         from agentura_ui.a2a_client import send_tool_call
 
         agent = await _discover_a2a(email_agent["base_url"])
         result = await send_tool_call(
-            agent, "search_emails",
+            agent,
+            "search_emails",
             {"query": "test", "limit": 5},
         )
         assert isinstance(result.text, str)
-        assert len(result.text) > 10, (
-            f"Expected results, got: {result.text!r}"
-        )
+        assert len(result.text) > 10, f"Expected results, got: {result.text!r}"
 
     @pytest.mark.asyncio
     async def test_compose_via_a2a_returns_file(self, doc_agent):
-        from agentura_ui.a2a_client import send_tool_call
         import httpx
+        from agentura_ui.a2a_client import send_tool_call
 
         agent = await _discover_a2a(doc_agent["base_url"])
         result = await send_tool_call(
-            agent, "compose_document",
+            agent,
+            "compose_document",
             {"source": "# A2A Test\n\nContent.", "format": "html"},
         )
-        assert len(result.files) >= 1, (
-            f"Expected file artifact. text={result.text!r} "
-            f"files={result.files}"
-        )
+        assert len(result.files) >= 1, f"Expected file artifact. text={result.text!r} files={result.files}"
         assert result.files[0].url.startswith("http")
 
         # Verify file is downloadable
         async with httpx.AsyncClient() as client:
             resp = await client.get(
-                result.files[0].url, timeout=10,
+                result.files[0].url,
+                timeout=10,
             )
             resp.raise_for_status()
             assert len(resp.content) > 50
@@ -182,8 +182,8 @@ class TestA2ATool:
 
 # A2A Delegate tests (natural language via ask_* tools)
 
-class TestA2ADelegate:
 
+class TestA2ADelegate:
     @pytest.mark.asyncio
     async def test_delegate_email_search(self, email_agent):
         from agentura_ui.a2a_tools import _make_a2a_delegate_tool
@@ -202,7 +202,6 @@ class TestA2ADelegate:
     @pytest.mark.asyncio
     async def test_delegate_compose_produces_file(self, doc_agent):
         from agentura_ui.a2a_tools import _make_a2a_delegate_tool
-        from agentura_ui.mcp_tools import drain_produced_files
 
         registry = FileRegistry()
         agent = await _discover_a2a(doc_agent["base_url"])
@@ -222,7 +221,8 @@ class TestA2ADelegate:
         registry.register(
             "upload.pdf",
             b"%PDF-1.4 delegate transfer test",
-            "application/pdf", "upload",
+            "application/pdf",
+            "upload",
         )
 
         agent = await _discover_a2a(doc_agent["base_url"])
@@ -236,8 +236,8 @@ class TestA2ADelegate:
 
 # Discovery test (MCP + A2A from same auto-started agents)
 
-class TestDiscovery:
 
+class TestDiscovery:
     @pytest.mark.asyncio
     async def test_mcp_and_a2a_from_same_agent(self, email_agent):
         """Same agent serves both MCP and A2A."""
@@ -257,7 +257,9 @@ class TestDiscovery:
 
     @pytest.mark.asyncio
     async def test_full_tool_registration(
-        self, email_agent, doc_agent,
+        self,
+        email_agent,
+        doc_agent,
     ):
         """Mirrors main() startup: MCP tools + A2A delegates."""
         from agentura_ui.a2a_client import discover_agents
@@ -266,25 +268,31 @@ class TestDiscovery:
         from agentura_ui.mcp_tools import create_mcp_tools
 
         registry = FileRegistry()
-        hub = MCPHub([
-            AgentConnection(
-                "email", email_agent["sse"],
-                email_agent["base_url"],
-            ),
-            AgentConnection(
-                "doc", doc_agent["sse"],
-                doc_agent["base_url"],
-            ),
-        ])
+        hub = MCPHub(
+            [
+                AgentConnection(
+                    "email",
+                    email_agent["sse"],
+                    email_agent["base_url"],
+                ),
+                AgentConnection(
+                    "doc",
+                    doc_agent["sse"],
+                    doc_agent["base_url"],
+                ),
+            ]
+        )
         await hub.discover()
 
         mcp_tools = create_mcp_tools(hub, registry)
         assert len(mcp_tools) >= 14  # 9 email + 5 doc
 
-        a2a_agents = await discover_agents([
-            email_agent["base_url"],
-            doc_agent["base_url"],
-        ])
+        a2a_agents = await discover_agents(
+            [
+                email_agent["base_url"],
+                doc_agent["base_url"],
+            ]
+        )
         delegates = create_a2a_delegates(a2a_agents, registry)
         assert len(delegates) == 2
 
@@ -292,6 +300,4 @@ class TestDiscovery:
         names = {t.name for t in all_tools}
         assert "search_emails" in names
         assert "compose_document" in names
-        assert "ask_email_agent" in names or any(
-            n.startswith("ask_") for n in names
-        )
+        assert "ask_email_agent" in names or any(n.startswith("ask_") for n in names)

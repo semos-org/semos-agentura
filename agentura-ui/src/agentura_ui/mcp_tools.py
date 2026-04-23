@@ -146,7 +146,10 @@ def _make_mcp_tool_class(
 
             # Pre-middleware: resolve file references from registry
             processed = pre_process_tool_call(
-                mcp_tool.name, kwargs, mcp_tool, registry,
+                mcp_tool.name,
+                kwargs,
+                mcp_tool,
+                registry,
             )
 
             # Call MCP tool via hub (reconnects lazily if needed)
@@ -155,7 +158,10 @@ def _make_mcp_tool_class(
             # Post-middleware: fetch produced files, register, sanitize
             agent = hub.agent_for_tool(mcp_tool.name)
             text, new_files = await post_process_tool_result(
-                mcp_tool.name, result, agent, registry,
+                mcp_tool.name,
+                result,
+                agent,
+                registry,
             )
 
             for entry in new_files:

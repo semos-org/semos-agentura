@@ -6,9 +6,6 @@ import base64
 import json
 
 import pytest
-from mcp.types import CallToolResult, TextContent
-from mcp.types import Tool as MCPTool
-
 from agentura_commons.file_middleware import (
     FileRegistry,
     _identify_file_params,
@@ -17,6 +14,8 @@ from agentura_commons.file_middleware import (
     pre_process_tool_call,
 )
 from agentura_commons.mcp_client import AgentConnection
+from mcp.types import CallToolResult, TextContent
+from mcp.types import Tool as MCPTool
 
 # Shared schema definitions
 
@@ -33,6 +32,7 @@ _FILE_ATTACHMENT_DEF = {
 
 
 # Fixtures
+
 
 @pytest.fixture
 def registry():
@@ -139,6 +139,7 @@ def create_draft_tool():
 
 # human_size
 
+
 class TestHumanSize:
     def test_bytes(self):
         assert human_size(0) == "0 B"
@@ -157,10 +158,14 @@ class TestHumanSize:
 
 # FileRegistry
 
+
 class TestFileRegistry:
     def test_register_and_get(self, registry):
         entry = registry.register(
-            "test.pdf", b"content", "application/pdf", "upload",
+            "test.pdf",
+            b"content",
+            "application/pdf",
+            "upload",
         )
         assert entry.filename == "test.pdf"
         assert entry.blob == b"content"
@@ -185,8 +190,10 @@ class TestFileRegistry:
 
     def test_get_fuzzy_suffix_match(self, registry):
         registry.register(
-            "5e922231_iter_01.png", b"img",
-            "image/png", "tool:gen",
+            "5e922231_iter_01.png",
+            b"img",
+            "image/png",
+            "tool:gen",
         )
         entry = registry.get("iter_01.png")
         assert entry is not None
@@ -194,7 +201,10 @@ class TestFileRegistry:
 
     def test_get_fuzzy_reverse_suffix(self, registry):
         registry.register(
-            "report.pdf", b"pdf", "application/pdf", "upload",
+            "report.pdf",
+            b"pdf",
+            "application/pdf",
+            "upload",
         )
         entry = registry.get("abc_report.pdf")
         assert entry is not None
@@ -214,6 +224,7 @@ class TestFileRegistry:
 
 # _identify_file_params
 
+
 class TestIdentifyFileParams:
     def test_by_known_name(self, digest_tool):
         params = _identify_file_params(digest_tool)
@@ -226,16 +237,14 @@ class TestIdentifyFileParams:
 
     def test_by_description_heuristic(self):
         tool = MCPTool(
-            name="test", description="test",
+            name="test",
+            description="test",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "doc": {
                         "type": "string",
-                        "description": (
-                            "Accepts an absolute file path "
-                            "or base64-encoded content."
-                        ),
+                        "description": ("Accepts an absolute file path or base64-encoded content."),
                     },
                 },
             },
@@ -253,14 +262,21 @@ class TestIdentifyFileParams:
 
 # pre_process_tool_call
 
+
 class TestPreProcess:
     def test_resolves_to_file_attachment(self, registry, digest_tool):
         registry.register(
-            "report.pdf", b"PDF-CONTENT", "application/pdf", "upload",
+            "report.pdf",
+            b"PDF-CONTENT",
+            "application/pdf",
+            "upload",
         )
         args = {"source": "report.pdf", "output_mode": "text"}
         processed = pre_process_tool_call(
-            "digest_document", args, digest_tool, registry,
+            "digest_document",
+            args,
+            digest_tool,
+            registry,
         )
         att = processed["source"]
         assert isinstance(att, dict)
@@ -272,11 +288,17 @@ class TestPreProcess:
 
     def test_resolves_dict_value(self, registry, digest_tool):
         registry.register(
-            "report.pdf", b"PDF-CONTENT", "application/pdf", "upload",
+            "report.pdf",
+            b"PDF-CONTENT",
+            "application/pdf",
+            "upload",
         )
         args = {"source": {"name": "report.pdf", "content": "report.pdf"}}
         processed = pre_process_tool_call(
-            "digest_document", args, digest_tool, registry,
+            "digest_document",
+            args,
+            digest_tool,
+            registry,
         )
         att = processed["source"]
         assert att["content"].startswith("data:")
@@ -284,29 +306,38 @@ class TestPreProcess:
     def test_missing_file_passes_through(self, registry, digest_tool):
         args = {"source": "nonexistent.pdf"}
         processed = pre_process_tool_call(
-            "digest_document", args, digest_tool, registry,
+            "digest_document",
+            args,
+            digest_tool,
+            registry,
         )
         assert processed["source"] == "nonexistent.pdf"
 
     def test_non_file_params_unchanged(self, registry, search_tool):
         args = {"query": "meeting", "limit": 10}
         processed = pre_process_tool_call(
-            "search_emails", args, search_tool, registry,
+            "search_emails",
+            args,
+            search_tool,
+            registry,
         )
         assert processed == args
 
     def test_non_string_value_skipped(self, registry, digest_tool):
         args = {"source": 12345}
         processed = pre_process_tool_call(
-            "digest_document", args, digest_tool, registry,
+            "digest_document",
+            args,
+            digest_tool,
+            registry,
         )
         assert processed["source"] == 12345
 
     def test_list_of_attachments(self, registry, create_draft_tool):
         registry.register(
-            "doc.docx", b"DOCX-BYTES",
-            "application/vnd.openxmlformats-officedocument"
-            ".wordprocessingml.document",
+            "doc.docx",
+            b"DOCX-BYTES",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             "tool:compose_document",
         )
         args = {
@@ -318,7 +349,10 @@ class TestPreProcess:
             ],
         }
         processed = pre_process_tool_call(
-            "create_draft", args, create_draft_tool, registry,
+            "create_draft",
+            args,
+            create_draft_tool,
+            registry,
         )
         atts = processed["attachments"]
         assert len(atts) == 1
@@ -328,6 +362,7 @@ class TestPreProcess:
 
 
 # post_process_tool_result
+
 
 class TestPostProcess:
     @pytest.mark.asyncio
@@ -341,19 +376,25 @@ class TestPostProcess:
             content=[
                 TextContent(
                     type="text",
-                    text=json.dumps({
-                        "download_url": "http://localhost:8002/files/out.pdf",
-                        "filename": "out.pdf",
-                    }),
+                    text=json.dumps(
+                        {
+                            "download_url": "http://localhost:8002/files/out.pdf",
+                            "filename": "out.pdf",
+                        }
+                    ),
                 ),
             ],
         )
         agent = AgentConnection(
-            "doc", "http://localhost:8002/mcp/sse",
+            "doc",
+            "http://localhost:8002/mcp/sse",
             "http://localhost:8002",
         )
         text, files = await post_process_tool_result(
-            "compose_document", result, agent, registry,
+            "compose_document",
+            result,
+            agent,
+            registry,
         )
         assert len(files) == 1
         assert files[0].filename == "out.pdf"
@@ -370,7 +411,10 @@ class TestPostProcess:
         )
         agent = AgentConnection("x", "http://x/mcp/sse", "http://x")
         text, files = await post_process_tool_result(
-            "tool", result, agent, registry,
+            "tool",
+            result,
+            agent,
+            registry,
         )
         assert text == "plain text"
         assert files == []
@@ -380,13 +424,17 @@ class TestPostProcess:
         result = CallToolResult(
             content=[
                 TextContent(
-                    type="text", text='{"markdown": "# Hello"}',
+                    type="text",
+                    text='{"markdown": "# Hello"}',
                 ),
             ],
         )
         agent = AgentConnection("x", "http://x/mcp/sse", "http://x")
         text, files = await post_process_tool_result(
-            "digest", result, agent, registry,
+            "digest",
+            result,
+            agent,
+            registry,
         )
         assert files == []
         assert "Hello" in text
@@ -396,14 +444,19 @@ class TestPostProcess:
         agent = AgentConnection("x", "http://x/mcp/sse", "http://x")
         result = CallToolResult(content=[])
         text, files = await post_process_tool_result(
-            "tool", result, agent, registry,
+            "tool",
+            result,
+            agent,
+            registry,
         )
         assert text == ""
         assert files == []
 
     @pytest.mark.asyncio
     async def test_nested_attachment_download_urls(
-        self, registry, httpx_mock,
+        self,
+        registry,
+        httpx_mock,
     ):
         httpx_mock.add_response(
             url="http://localhost:8001/files/abc_report.pdf",
@@ -419,35 +472,35 @@ class TestPostProcess:
             content=[
                 TextContent(
                     type="text",
-                    text=json.dumps({
-                        "subject": "Meeting notes",
-                        "body": "See attached.",
-                        "attachments": [
-                            {
-                                "filename": "report.pdf",
-                                "download_url": (
-                                    "http://localhost:8001"
-                                    "/files/abc_report.pdf"
-                                ),
-                            },
-                            {
-                                "filename": "image.png",
-                                "download_url": (
-                                    "http://localhost:8001"
-                                    "/files/def_image.png"
-                                ),
-                            },
-                        ],
-                    }),
+                    text=json.dumps(
+                        {
+                            "subject": "Meeting notes",
+                            "body": "See attached.",
+                            "attachments": [
+                                {
+                                    "filename": "report.pdf",
+                                    "download_url": ("http://localhost:8001/files/abc_report.pdf"),
+                                },
+                                {
+                                    "filename": "image.png",
+                                    "download_url": ("http://localhost:8001/files/def_image.png"),
+                                },
+                            ],
+                        }
+                    ),
                 ),
             ],
         )
         agent = AgentConnection(
-            "email", "http://localhost:8001/mcp/sse",
+            "email",
+            "http://localhost:8001/mcp/sse",
             "http://localhost:8001",
         )
         text, files = await post_process_tool_result(
-            "read_email", result, agent, registry,
+            "read_email",
+            result,
+            agent,
+            registry,
         )
         assert len(files) == 2
         assert registry.get("report.pdf") is not None
@@ -459,7 +512,9 @@ class TestPostProcess:
 
     @pytest.mark.asyncio
     async def test_structuredcontent_preferred(
-        self, registry, httpx_mock,
+        self,
+        registry,
+        httpx_mock,
     ):
         """When structuredContent is present, use it instead of text."""
         httpx_mock.add_response(
@@ -479,11 +534,15 @@ class TestPostProcess:
             },
         )
         agent = AgentConnection(
-            "doc", "http://localhost:8002/mcp/sse",
+            "doc",
+            "http://localhost:8002/mcp/sse",
             "http://localhost:8002",
         )
         text, files = await post_process_tool_result(
-            "compose", result, agent, registry,
+            "compose",
+            result,
+            agent,
+            registry,
         )
         assert len(files) == 1
         assert files[0].filename == "report.docx"

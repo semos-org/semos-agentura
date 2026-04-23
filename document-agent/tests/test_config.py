@@ -20,10 +20,14 @@ class TestSettings:
             assert s.provider_type == "mistral"
 
     def test_provider_type_azure(self):
-        with patch.dict(os.environ, {
-            "DOCUMENT_AI_ENDPOINT": "https://example.com/models",
-            "DOCUMENT_AI_API_KEY": "test-key",
-        }, clear=True):
+        with patch.dict(
+            os.environ,
+            {
+                "DOCUMENT_AI_ENDPOINT": "https://example.com/models",
+                "DOCUMENT_AI_API_KEY": "test-key",
+            },
+            clear=True,
+        ):
             s = Settings(_env_file=None)
             assert s.provider_type == "azure"
 

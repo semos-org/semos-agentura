@@ -45,23 +45,23 @@ async def _fetch_a2a_files(
             async with httpx.AsyncClient() as client:
                 resp = await client.get(info.url, timeout=60.0)
                 resp.raise_for_status()
-            mime = (
-                resp.headers.get("content-type")
-                or info.mime_type
-                or "application/octet-stream"
-            )
+            mime = resp.headers.get("content-type") or info.mime_type or "application/octet-stream"
             entry = registry.register(
-                info.filename, resp.content, mime,
+                info.filename,
+                resp.content,
+                mime,
                 source=f"tool:{tool_name}",
             )
             new_files.append(entry)
             logger.info(
                 "A2A post: fetched %s from %s",
-                info.filename, info.url,
+                info.filename,
+                info.url,
             )
         except Exception:
             logger.exception(
-                "A2A post: failed to fetch %s", info.url,
+                "A2A post: failed to fetch %s",
+                info.url,
             )
     return new_files
 
@@ -79,13 +79,16 @@ def _resolve_files_for_send(
     for entry in registry.files.values():
         if entry.filename in message:
             b64 = base64.b64encode(entry.blob).decode()
-            matched.append({
-                "name": entry.filename,
-                "content": f"data:{entry.mime};base64,{b64}",
-            })
+            matched.append(
+                {
+                    "name": entry.filename,
+                    "content": f"data:{entry.mime};base64,{b64}",
+                }
+            )
             logger.info(
                 "A2A delegate: attaching %s (%d bytes)",
-                entry.filename, entry.size,
+                entry.filename,
+                entry.size,
             )
     return matched or None
 
@@ -101,18 +104,18 @@ def _make_a2a_tool_class(
     so the LLM sees identical tools regardless of protocol.
     """
     schema = mcp_tool.inputSchema or {
-        "type": "object", "properties": {},
+        "type": "object",
+        "properties": {},
     }
     safe_name = mcp_tool.name.replace("-", "_").replace(".", "_")
     input_model = _json_schema_to_pydantic(
-        schema, f"{safe_name}_A2AInput",
+        schema,
+        f"{safe_name}_A2AInput",
     )
 
     class _Tool(BaseTool):
         name: str = mcp_tool.name
-        description: str = (
-            mcp_tool.description or f"A2A tool: {mcp_tool.name}"
-        )
+        description: str = mcp_tool.description or f"A2A tool: {mcp_tool.name}"
         args_schema: type[BaseModel] = input_model
 
         class Config:
@@ -123,26 +126,32 @@ def _make_a2a_tool_class(
 
         async def _arun(self, **kwargs: Any) -> str:
             logger.info(
-                "A2A tool call: %s(%s)", self.name, kwargs,
+                "A2A tool call: %s(%s)",
+                self.name,
+                kwargs,
             )
             _update_status(
-                f"Calling {self.name} on "
-                f"{a2a_info.name} (A2A)...",
+                f"Calling {self.name} on {a2a_info.name} (A2A)...",
             )
 
             # Pre-middleware: same file resolution as MCP
             processed = pre_process_tool_call(
-                mcp_tool.name, kwargs, mcp_tool, registry,
+                mcp_tool.name,
+                kwargs,
+                mcp_tool,
+                registry,
             )
 
             # Call tool via A2A
             result = await send_tool_call(
-                a2a_info, mcp_tool.name, processed,
+                a2a_info,
+                mcp_tool.name,
+                processed,
             )
             logger.info(
-                "A2A tool %s response: status=%s "
-                "text=%s files=%d",
-                self.name, result.status,
+                "A2A tool %s response: status=%s text=%s files=%d",
+                self.name,
+                result.status,
                 result.text[:200] if result.text else "",
                 len(result.files),
             )
@@ -152,7 +161,9 @@ def _make_a2a_tool_class(
                 f"Fetching results from {a2a_info.name}...",
             )
             new_files = await _fetch_a2a_files(
-                result.files, mcp_tool.name, registry,
+                result.files,
+                mcp_tool.name,
+                registry,
             )
             for entry in new_files:
                 _produced_files.append(entry)
@@ -175,11 +186,7 @@ def _make_a2a_delegate_tool(
     The agent decides which tools to call based on the message.
     Returns format_for_llm() text with status/task_id hints.
     """
-    slug = (
-        a2a_info.name.lower()
-        .replace(" ", "_")
-        .replace("-", "_")
-    )
+    slug = a2a_info.name.lower().replace(" ", "_").replace("-", "_")
     tool_name = f"ask_{slug}"
     desc = (
         f"Send a natural-language task to {a2a_info.name}. "
@@ -196,10 +203,7 @@ def _make_a2a_delegate_tool(
             str | None,
             Field(
                 default=None,
-                description=(
-                    "Continue a conversation with the agent "
-                    "(context_id from a previous response)"
-                ),
+                description=("Continue a conversation with the agent (context_id from a previous response)"),
             ),
         ),
     )
@@ -220,38 +224,41 @@ def _make_a2a_delegate_tool(
             context_id = kwargs.get("context_id")
             logger.info(
                 "A2A delegate: %s(%s, context_id=%s)",
-                self.name, message, context_id,
+                self.name,
+                message,
+                context_id,
             )
             # Show agent name in status while working
-            short_msg = (
-                message[:60] + "..."
-                if len(message) > 60 else message
-            )
+            short_msg = message[:60] + "..." if len(message) > 60 else message
             _update_status(
                 f"{a2a_info.name}: {short_msg}",
             )
 
             # Resolve files mentioned in message text
             file_dicts = _resolve_files_for_send(
-                message, registry,
+                message,
+                registry,
             )
 
             result = await send_task(
-                a2a_info, message,
+                a2a_info,
+                message,
                 files=file_dicts,
                 context_id=context_id,
             )
             logger.info(
-                "A2A delegate %s response: "
-                "status=%s task_id=%s text=%s files=%d",
-                self.name, result.status,
+                "A2A delegate %s response: status=%s task_id=%s text=%s files=%d",
+                self.name,
+                result.status,
                 result.task_id,
                 result.text[:200] if result.text else "",
                 len(result.files),
             )
 
             new_files = await _fetch_a2a_files(
-                result.files, self.name, registry,
+                result.files,
+                self.name,
+                registry,
             )
             for entry in new_files:
                 _produced_files.append(entry)
@@ -261,6 +268,7 @@ def _make_a2a_delegate_tool(
 
             # Format for LLM with status/task_id hints
             from agentura_commons.client import ClientA2AResult
+
             llm_result = ClientA2AResult(
                 text=result.text,
                 agent_name=a2a_info.name,
@@ -285,7 +293,9 @@ def create_a2a_tools(
     wrappers: dict[str, BaseTool] = {}
     for mcp_tool in mcp_tools:
         tool = _make_a2a_tool_class(
-            mcp_tool, a2a_info, registry,
+            mcp_tool,
+            a2a_info,
+            registry,
         )
         wrappers[mcp_tool.name] = tool
         logger.info("Registered A2A tool: %s", mcp_tool.name)
@@ -306,6 +316,7 @@ def create_a2a_delegates(
         delegate = _make_a2a_delegate_tool(agent, registry)
         delegates.append(delegate)
         logger.info(
-            "Registered A2A delegate: %s", delegate.name,
+            "Registered A2A delegate: %s",
+            delegate.name,
         )
     return delegates

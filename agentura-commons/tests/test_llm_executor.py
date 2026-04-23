@@ -9,7 +9,6 @@ import json
 from unittest.mock import AsyncMock, patch
 
 import pytest
-
 from agentura_commons.base import ToolDef
 from agentura_commons.llm_executor import (
     TOOL_REJECT_TASK,
@@ -20,8 +19,8 @@ from agentura_commons.llm_executor import (
     LLMExecutor,
 )
 
-
 # Test tools
+
 
 async def _echo(text: str = "") -> str:
     return f"echo: {text}"
@@ -36,11 +35,13 @@ async def _failing_tool() -> str:
 
 
 async def _file_tool() -> str:
-    return json.dumps({
-        "download_url": "http://test/file.pdf",
-        "filename": "file.pdf",
-        "mime_type": "application/pdf",
-    })
+    return json.dumps(
+        {
+            "download_url": "http://test/file.pdf",
+            "filename": "file.pdf",
+            "mime_type": "application/pdf",
+        }
+    )
 
 
 TOOLS = [
@@ -78,16 +79,19 @@ def _anthropic_tool_use(
     content = []
     if text:
         content.append({"type": "text", "text": text})
-    content.append({
-        "type": "tool_use",
-        "id": tool_use_id,
-        "name": name,
-        "input": args,
-    })
+    content.append(
+        {
+            "type": "tool_use",
+            "id": tool_use_id,
+            "name": name,
+            "input": args,
+        }
+    )
     return {"content": content, "stop_reason": "tool_use"}
 
 
 # Single-step: LLM picks tool, executes, produces final answer
+
 
 class TestSingleStep:
     @pytest.mark.asyncio
@@ -99,7 +103,9 @@ class TestSingleStep:
         ]
         executor = _make_executor()
         with patch.object(
-            executor, "_call_llm", new=AsyncMock(side_effect=responses),
+            executor,
+            "_call_llm",
+            new=AsyncMock(side_effect=responses),
         ):
             result = await executor.run("say hello")
         assert result.status == "completed"
@@ -122,6 +128,7 @@ class TestSingleStep:
 
 # Multi-step: LLM uses multiple tools
 
+
 class TestMultiStep:
     @pytest.mark.asyncio
     async def test_two_tools_then_answer(self):
@@ -133,7 +140,9 @@ class TestMultiStep:
         ]
         executor = _make_executor()
         with patch.object(
-            executor, "_call_llm", new=AsyncMock(side_effect=responses),
+            executor,
+            "_call_llm",
+            new=AsyncMock(side_effect=responses),
         ):
             result = await executor.run("add 2+3 and echo it")
         assert result.status == "completed"
@@ -141,6 +150,7 @@ class TestMultiStep:
 
 
 # return_result: curate output
+
 
 class TestReturnResult:
     @pytest.mark.asyncio
@@ -155,7 +165,9 @@ class TestReturnResult:
         ]
         executor = _make_executor()
         with patch.object(
-            executor, "_call_llm", new=AsyncMock(side_effect=responses),
+            executor,
+            "_call_llm",
+            new=AsyncMock(side_effect=responses),
         ):
             result = await executor.run("make a file")
         assert result.status == "completed"
@@ -169,12 +181,15 @@ class TestReturnResult:
         responses = [
             _anthropic_tool_use("file_tool", {}),
             _anthropic_tool_use(
-                TOOL_RETURN_RESULT, {"message": "All files"},
+                TOOL_RETURN_RESULT,
+                {"message": "All files"},
             ),
         ]
         executor = _make_executor()
         with patch.object(
-            executor, "_call_llm", new=AsyncMock(side_effect=responses),
+            executor,
+            "_call_llm",
+            new=AsyncMock(side_effect=responses),
         ):
             result = await executor.run("make a file")
         assert result.status == "completed"
@@ -182,6 +197,7 @@ class TestReturnResult:
 
 
 # request_input: INPUT_REQUIRED
+
 
 class TestRequestInput:
     @pytest.mark.asyncio
@@ -198,7 +214,9 @@ class TestRequestInput:
         ]
         executor = _make_executor()
         with patch.object(
-            executor, "_call_llm", new=AsyncMock(side_effect=responses),
+            executor,
+            "_call_llm",
+            new=AsyncMock(side_effect=responses),
         ):
             result = await executor.run("compose a report")
         assert result.status == "input_required"
@@ -241,6 +259,7 @@ class TestRequestInput:
 
 # reject_task: REJECTED
 
+
 class TestRejectTask:
     @pytest.mark.asyncio
     async def test_reject(self):
@@ -253,7 +272,9 @@ class TestRejectTask:
         ]
         executor = _make_executor()
         with patch.object(
-            executor, "_call_llm", new=AsyncMock(side_effect=responses),
+            executor,
+            "_call_llm",
+            new=AsyncMock(side_effect=responses),
         ):
             result = await executor.run("book a flight")
         assert result.status == "rejected"
@@ -261,6 +282,7 @@ class TestRejectTask:
 
 
 # request_auth: AUTH_REQUIRED
+
 
 class TestRequestAuth:
     @pytest.mark.asyncio
@@ -277,7 +299,9 @@ class TestRequestAuth:
         ]
         executor = _make_executor()
         with patch.object(
-            executor, "_call_llm", new=AsyncMock(side_effect=responses),
+            executor,
+            "_call_llm",
+            new=AsyncMock(side_effect=responses),
         ):
             result = await executor.run("check SAP errors")
         assert result.status == "auth_required"
@@ -286,6 +310,7 @@ class TestRequestAuth:
 
 
 # report_progress: WORKING update
+
 
 class TestReportProgress:
     @pytest.mark.asyncio
@@ -301,7 +326,9 @@ class TestReportProgress:
         ]
         executor = _make_executor()
         with patch.object(
-            executor, "_call_llm", new=AsyncMock(side_effect=responses),
+            executor,
+            "_call_llm",
+            new=AsyncMock(side_effect=responses),
         ):
             result = await executor.run("analyze this")
         assert result.status == "completed"
@@ -314,13 +341,16 @@ class TestReportProgress:
         updates = []
         responses = [
             _anthropic_tool_use(
-                TOOL_REPORT_PROGRESS, {"message": "working..."},
+                TOOL_REPORT_PROGRESS,
+                {"message": "working..."},
             ),
             _anthropic_text("Done."),
         ]
         executor = _make_executor(on_progress=lambda m: updates.append(m))
         with patch.object(
-            executor, "_call_llm", new=AsyncMock(side_effect=responses),
+            executor,
+            "_call_llm",
+            new=AsyncMock(side_effect=responses),
         ):
             await executor.run("do something")
         assert "working..." in updates
@@ -328,18 +358,18 @@ class TestReportProgress:
 
 # Max steps
 
+
 class TestMaxSteps:
     @pytest.mark.asyncio
     async def test_max_steps_reached(self):
         """Loop terminates after max_steps."""
         # LLM always calls a tool, never produces text
-        responses = [
-            _anthropic_tool_use("echo", {"text": str(i)})
-            for i in range(20)
-        ]
+        responses = [_anthropic_tool_use("echo", {"text": str(i)}) for i in range(20)]
         executor = _make_executor(max_steps=3)
         with patch.object(
-            executor, "_call_llm", new=AsyncMock(side_effect=responses),
+            executor,
+            "_call_llm",
+            new=AsyncMock(side_effect=responses),
         ):
             result = await executor.run("loop forever")
         assert result.status == "completed"
@@ -348,13 +378,16 @@ class TestMaxSteps:
 
 # Error handling
 
+
 class TestErrorHandling:
     @pytest.mark.asyncio
     async def test_tool_error_reported_to_llm(self):
         """Failing tool error is fed back to LLM."""
         tools_with_fail = TOOLS + [
             ToolDef(
-                name="fail", description="Always fails", fn=_failing_tool,
+                name="fail",
+                description="Always fails",
+                fn=_failing_tool,
             ),
         ]
         responses = [
@@ -363,7 +396,9 @@ class TestErrorHandling:
         ]
         executor = _make_executor(tools=tools_with_fail)
         with patch.object(
-            executor, "_call_llm", new=AsyncMock(side_effect=responses),
+            executor,
+            "_call_llm",
+            new=AsyncMock(side_effect=responses),
         ):
             result = await executor.run("try the failing tool")
         assert result.status == "completed"
@@ -378,7 +413,9 @@ class TestErrorHandling:
         ]
         executor = _make_executor()
         with patch.object(
-            executor, "_call_llm", new=AsyncMock(side_effect=responses),
+            executor,
+            "_call_llm",
+            new=AsyncMock(side_effect=responses),
         ):
             result = await executor.run("call nonexistent")
         assert result.status == "completed"

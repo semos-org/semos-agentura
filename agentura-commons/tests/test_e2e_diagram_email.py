@@ -14,13 +14,9 @@ Flow:
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
-from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 import pytest
-
 from conftest import free_port, start_agent
 
 
@@ -57,10 +53,12 @@ class TestDiagramToEmailDraft:
         self.doc_url = f"http://127.0.0.1:{self.doc_port}"
         self.email_url = f"http://127.0.0.1:{self.email_port}"
         self.doc_server, self.doc_thread = start_agent(
-            "document_agent", self.doc_port,
+            "document_agent",
+            self.doc_port,
         )
         self.email_server, self.email_thread = start_agent(
-            "email_agent", self.email_port,
+            "email_agent",
+            self.email_port,
         )
         yield
         self.doc_server.should_exit = True
@@ -107,9 +105,7 @@ class TestDiagramToEmailDraft:
                         {
                             "name": produced_name,
                             "content": (
-                                client.registry.get(produced_name).blob
-                                if client.registry.get(produced_name)
-                                else b""
+                                client.registry.get(produced_name).blob if client.registry.get(produced_name) else b""
                             ),
                         }
                     ],

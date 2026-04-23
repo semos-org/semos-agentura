@@ -29,8 +29,8 @@ def _patch_email_service_mock_backend():
     Reuses the same pattern as email-agent/tests/test_mcp.py.
     Must be called before create_service_app.
     """
-    from email_agent.service import _service
     from email_agent.models import EmailMessage
+    from email_agent.service import _service
     from email_agent.tools import ToolExecutor
 
     backend = MagicMock()
@@ -71,8 +71,8 @@ def _make_minimal_docx(path: Path) -> Path:
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
         '<w:document xmlns:w="http://schemas.openxmlformats.org'
         '/wordprocessingml/2006/main"><w:body><w:p><w:r>'
-        '<w:t>Mock content</w:t></w:r></w:p></w:body>'
-        '</w:document>'
+        "<w:t>Mock content</w:t></w:r></w:p></w:body>"
+        "</w:document>"
     )
     rels = (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
@@ -170,7 +170,9 @@ def start_agent(agent_module: str, port: int):
     """Start agent in a background thread. Returns (server, thread)."""
     app = make_app(agent_module, port)
     config = uvicorn.Config(
-        app, host="127.0.0.1", port=port,
+        app,
+        host="127.0.0.1",
+        port=port,
         log_level="warning",
     )
     server = uvicorn.Server(config)

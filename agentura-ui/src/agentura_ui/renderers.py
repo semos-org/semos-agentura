@@ -58,8 +58,7 @@ def render_file_notification(
     it in the sidebar preview pane.
     """
     label = pn.pane.Markdown(
-        f"File created: **{entry.filename}** "
-        f"({human_size(entry.size)})",
+        f"File created: **{entry.filename}** ({human_size(entry.size)})",
         margin=(5, 5, 5, 0),
         sizing_mode="stretch_width",
     )
@@ -69,7 +68,8 @@ def render_file_notification(
         preview_btn = pn.widgets.Button(
             name="Preview",
             button_type="light",
-            width=70, height=28,
+            width=70,
+            height=28,
         )
         preview_btn.on_click(
             lambda e, ent=entry: on_preview(ent),
@@ -81,12 +81,14 @@ def render_file_notification(
         filename=entry.filename,
         label="Download",
         button_type="light",
-        width=80, height=28,
+        width=80,
+        height=28,
     )
     buttons.append(download_btn)
 
     return pn.Row(
-        label, *buttons,
+        label,
+        *buttons,
         sizing_mode="stretch_width",
     )
 
@@ -139,11 +141,7 @@ def resolve_file_references(
 
         # For images: constrain height for chat readability
         if bracket.startswith("!"):
-            return (
-                f'<img src="{data_uri}" alt="{alt}" '
-                f'style="max-height:500px;max-width:100%;'
-                f'width:auto;height:auto;">'
-            )
+            return f'<img src="{data_uri}" alt="{alt}" style="max-height:500px;max-width:100%;width:auto;height:auto;">'
         return f"{bracket}({data_uri})"
 
     return _MD_REF_RE.sub(_replacer, text)

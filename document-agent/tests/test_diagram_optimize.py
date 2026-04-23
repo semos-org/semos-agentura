@@ -1,6 +1,5 @@
 """Tests for composition/_diagram_optimize.py - code extraction and review parsing."""
 
-
 from document_agent.composition._diagram_optimize import (
     _build_initial_messages,
     _extract_code,
@@ -90,5 +89,6 @@ class TestBuildInitialMessages:
 
     def test_no_source_no_description_raises(self):
         import pytest
+
         with pytest.raises(ValueError, match="At least one"):
             _build_initial_messages("sys", None, None, "mermaid")

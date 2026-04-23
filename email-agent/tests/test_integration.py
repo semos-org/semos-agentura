@@ -13,8 +13,8 @@ import pytest
 
 pytestmark = pytest.mark.integration
 
+from email_agent.backend import EmailBackend, create_backend
 from email_agent.config import Settings
-from email_agent.backend import create_backend, EmailBackend
 from email_agent.models import EmailMessage, EventInfo
 from email_agent.tools import ToolExecutor
 
@@ -93,7 +93,7 @@ class TestEmailOps:
         # Clean up: delete the draft
         if found:
             try:
-                if hasattr(backend, '_ensure_client'):
+                if hasattr(backend, "_ensure_client"):
                     # IMAP: delete via client
                     backend._ensure_client().delete_draft(found[0].uid)
                 elif backend.supports_com:
@@ -134,7 +134,7 @@ class TestCalendarOps:
         slots = cal.free_slots(start, end)
         assert isinstance(slots, dict)
         # Should have entries for weekdays
-        for day, free in slots.items():
+        for _day, free in slots.items():
             assert isinstance(free, list)
             for slot_start, slot_end in free:
                 assert isinstance(slot_start, str)
@@ -184,11 +184,14 @@ class TestToolExecutorReal:
 
     def test_create_draft_tool_validates(self, backend):
         executor = ToolExecutor(backend)
-        result = executor.execute("create_draft", {
-            "to": "invalid-email",
-            "subject": "Test",
-            "body": "Body",
-        })
+        result = executor.execute(
+            "create_draft",
+            {
+                "to": "invalid-email",
+                "subject": "Test",
+                "body": "Body",
+            },
+        )
         assert "Invalid" in result
 
 

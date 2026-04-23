@@ -58,20 +58,28 @@ class TestMergeOCRResponses:
         assert merged.pages[1].index == 1
 
     def test_image_id_collision_avoided(self):
-        r1 = OCRResponse({
-            "pages": [{
-                "index": 0,
-                "markdown": "![img-0](img-0)",
-                "images": [{"id": "img-0", "image_base64": "a"}],
-            }],
-        })
-        r2 = OCRResponse({
-            "pages": [{
-                "index": 0,
-                "markdown": "![img-0](img-0)",
-                "images": [{"id": "img-0", "image_base64": "b"}],
-            }],
-        })
+        r1 = OCRResponse(
+            {
+                "pages": [
+                    {
+                        "index": 0,
+                        "markdown": "![img-0](img-0)",
+                        "images": [{"id": "img-0", "image_base64": "a"}],
+                    }
+                ],
+            }
+        )
+        r2 = OCRResponse(
+            {
+                "pages": [
+                    {
+                        "index": 0,
+                        "markdown": "![img-0](img-0)",
+                        "images": [{"id": "img-0", "image_base64": "b"}],
+                    }
+                ],
+            }
+        )
         merged = merge_ocr_responses([r1, r2])
         ids = [img.id for p in merged.pages for img in p.images]
         assert len(set(ids)) == 2  # no duplicates
