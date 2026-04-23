@@ -72,7 +72,8 @@ class OutlookCOM:
         folder = self._ns.GetDefaultFolder(folder_id)
         clauses = []
         if query:
-            clauses.append(f"\"urn:schemas:httpmail:subject\" LIKE '%{query}%'")
+            q = query.replace("'", "''")
+            clauses.append(f"\"urn:schemas:httpmail:subject\" LIKE '%{q}%'")
         if from_addr:
             clauses.append(f"\"urn:schemas:httpmail:fromemail\" LIKE '%{from_addr}%'")
         if to_addr:

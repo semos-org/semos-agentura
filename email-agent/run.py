@@ -19,7 +19,9 @@ def setup_logging():
 
 
 def _safe_print(text: str) -> None:
-    print(text.encode("utf-8", errors="replace").decode("utf-8"))
+    sys.stdout.buffer.write(text.encode("utf-8", errors="replace"))
+    sys.stdout.buffer.write(b"\n")
+    sys.stdout.buffer.flush()
 
 
 # Email commands
