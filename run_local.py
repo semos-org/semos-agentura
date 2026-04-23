@@ -22,6 +22,7 @@ import time
 AGENTS = [
     ("email-agent", "email_agent.service:app", 8001),
     ("document-agent", "document_agent.service:app", 8002),
+    ("filesystem-agent", "filesystem_agent.service:app", 8003),
 ]
 UI_PORT = 5006
 
