@@ -88,6 +88,9 @@ class VFSTreeBrowser:
         self.preload_depth = preload_depth
         self.archive_prompt_threshold = archive_prompt_threshold
 
+        # Auto-refresh tree when roots are added/removed
+        self.vfs._on_roots_changed = self._on_roots_changed
+
         self._remote_cache: dict[str, Any] = {}
         self._clipboard: dict[str, str | None] = {"uri": None}
         self._counter = {"value": 0}
@@ -745,6 +748,11 @@ class VFSTreeBrowser:
         self.status.object = "**Cancelled**"
 
     # Refresh
+
+    def _on_roots_changed(self):
+        """Called by VFS when roots are added or removed."""
+        self.tree.set_source(self.build_source())
+        self.status.object = "**Roots updated**"
 
     def _do_refresh(self, event):
         self.tree.set_source(self.build_source())

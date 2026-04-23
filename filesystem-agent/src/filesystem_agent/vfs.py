@@ -93,20 +93,51 @@ class VirtualFileSystem:
     Every file and directory is addressed by a symbolic URI: ``{root}://{path}``.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, on_roots_changed: Any | None = None) -> None:
         self._roots: dict[str, Root] = {}
+        self._on_roots_changed = on_roots_changed
 
     # -- root management --
 
     def add_root(self, name: str, fs: AbstractFileSystem, base_path: str = "") -> None:
         self._roots[name] = Root(name=name, fs=fs, base_path=base_path)
+        if self._on_roots_changed:
+            self._on_roots_changed()
+
+    def add_root_from_protocol(self, name: str, protocol: str, base_path: str = "", **kwargs: Any) -> None:
+        """Mount a new root using any fsspec-supported protocol.
+
+        Uses ``fsspec.filesystem(protocol, **kwargs)`` as the universal factory.
+
+        Note: some protocols (e.g. "memory") require a non-empty base_path
+        (use "/" as minimum) because DirFileSystem cannot scope to None.
+        """
+        fs = fsspec.filesystem(protocol, **kwargs)
+        self.add_root(name, fs, base_path=base_path)
 
     def remove_root(self, name: str) -> None:
         del self._roots[name]
+        if self._on_roots_changed:
+            self._on_roots_changed()
+
+    def get_root(self, name: str) -> Root:
+        if name not in self._roots:
+            raise FileNotFoundError(f"No root named {name!r}")
+        return self._roots[name]
 
     @property
     def roots(self) -> list[str]:
         return list(self._roots.keys())
+
+    def roots_info(self) -> list[dict[str, str]]:
+        """Return info about all mounted roots (name, protocol, base_path)."""
+        result = []
+        for name, root in self._roots.items():
+            protocol = root.fs.protocol
+            if isinstance(protocol, (list, tuple)):
+                protocol = protocol[0]
+            result.append({"name": name, "protocol": protocol, "base_path": root.base_path})
+        return result
 
     # -- URI helpers --
 

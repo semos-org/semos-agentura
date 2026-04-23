@@ -309,3 +309,54 @@ def test_rm_archive_folder(tmp_vfs: VirtualFileSystem):
     names = {e["name"] for e in entries}
     assert "data" not in names
     assert "readme.txt" in names
+
+
+# -- add_root_from_protocol --
+
+
+def test_add_root_from_protocol(tmp_path):
+    vfs = VirtualFileSystem()
+    (tmp_path / "hello.txt").write_text("world")
+    vfs.add_root_from_protocol("test", "local", base_path=str(tmp_path))
+    assert "test" in vfs.roots
+    entries = vfs.ls("test://")
+    names = [e["name"] for e in entries]
+    assert "hello.txt" in names
+
+
+def test_add_root_from_protocol_memory():
+    vfs = VirtualFileSystem()
+    vfs.add_root_from_protocol("mem", "memory", base_path="/")
+    assert "mem" in vfs.roots
+    vfs.put("mem://test.txt", b"hello")
+    assert vfs.cat("mem://test.txt") == b"hello"
+
+
+def test_roots_info(tmp_path):
+    vfs = VirtualFileSystem()
+    vfs.add_root_from_protocol("disk", "local", base_path=str(tmp_path))
+    vfs.add_root_from_protocol("mem", "memory")
+    info = vfs.roots_info()
+    names = {r["name"] for r in info}
+    assert names == {"disk", "mem"}
+    disk_info = next(r for r in info if r["name"] == "disk")
+    assert disk_info["protocol"] == "file"
+
+
+def test_on_roots_changed_callback(tmp_path):
+    calls = []
+    vfs = VirtualFileSystem(on_roots_changed=lambda: calls.append(1))
+    vfs.add_root_from_protocol("a", "local", base_path=str(tmp_path))
+    assert len(calls) == 1
+    vfs.remove_root("a")
+    assert len(calls) == 2
+
+
+def test_remove_root():
+    vfs = VirtualFileSystem()
+    vfs.add_root_from_protocol("temp", "memory")
+    assert "temp" in vfs.roots
+    vfs.remove_root("temp")
+    assert "temp" not in vfs.roots
+    with pytest.raises(FileNotFoundError):
+        vfs.ls("temp://")

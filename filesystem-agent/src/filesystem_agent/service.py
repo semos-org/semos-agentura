@@ -148,6 +148,28 @@ class FilesystemAgentService(BaseAgentService):
                 read_only=True,
                 idempotent=True,
             ),
+            ToolDef(
+                name="add_root",
+                description=(
+                    "Mount a new filesystem root. Supports any fsspec protocol: "
+                    "local/file, webdav, sftp, ssh, smb, s3, gcs, az, http, ftp, memory, etc. "
+                    "Pass protocol-specific options as JSON kwargs."
+                ),
+                fn=self._add_root,
+            ),
+            ToolDef(
+                name="remove_root",
+                description="Unmount a filesystem root by name.",
+                fn=self._remove_root,
+                destructive=True,
+            ),
+            ToolDef(
+                name="list_roots",
+                description="List all mounted filesystem roots with their protocols.",
+                fn=self._list_roots,
+                read_only=True,
+                idempotent=True,
+            ),
         ]
 
     def get_skills(self) -> list[SkillDef]:
@@ -378,6 +400,41 @@ class FilesystemAgentService(BaseAgentService):
                 }
             )
         return json.dumps(results, ensure_ascii=False, indent=2)
+
+    async def _add_root(
+        self,
+        name: str = "",
+        protocol: str = "local",
+        base_path: str = "",
+        kwargs: str = "{}",
+    ) -> str:
+        """Mount a new filesystem root.
+
+        Args:
+            name: Root name used in URIs (e.g. "myserver" for myserver://path).
+            protocol: fsspec protocol (local, webdav, sftp, smb, s3, gcs, az, http, ftp, memory, ...).
+            base_path: Subdirectory within the filesystem to scope to.
+            kwargs: JSON string of protocol-specific options (host, username, password, etc.).
+        """
+        if not name:
+            return json.dumps({"error": "name is required"})
+        vfs = self._ensure_vfs()
+        opts = json.loads(kwargs) if kwargs and kwargs != "{}" else {}
+        vfs.add_root_from_protocol(name, protocol, base_path=base_path, **opts)
+        return json.dumps({"mounted": name, "protocol": protocol, "base_path": base_path})
+
+    async def _remove_root(self, name: str = "") -> str:
+        """Unmount a filesystem root."""
+        if not name:
+            return json.dumps({"error": "name is required"})
+        vfs = self._ensure_vfs()
+        vfs.remove_root(name)
+        return json.dumps({"unmounted": name})
+
+    async def _list_roots(self) -> str:
+        """List all mounted filesystem roots."""
+        vfs = self._ensure_vfs()
+        return json.dumps(vfs.roots_info(), ensure_ascii=False, indent=2)
 
 
 # App factory
