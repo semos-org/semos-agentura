@@ -309,6 +309,7 @@ class _AgentExecutor(AgentExecutor):
                 model=self._service.router_llm_model,
                 api_key=self._service.router_llm_api_key,
                 api_base=self._service.router_llm_api_base,
+                system_prompt=self._service.agent_system_prompt,
             )
             return await executor.run(
                 text,

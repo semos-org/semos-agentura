@@ -134,6 +134,20 @@ class BaseAgentService(ABC):
     def agent_version(self) -> str:
         return "0.1.0"
 
+    @property
+    def agent_system_prompt(self) -> str:
+        """Agent-specific system prompt, appended to LLMExecutor's base prompt.
+
+        Default: current date/time. Override in subclasses:
+        - Extend: return super().agent_system_prompt + "\\n\\nExtra instructions.".
+        - Replace: return "Custom prompt." (omits date/time).
+        """
+        from datetime import datetime
+
+        now = datetime.now().astimezone()
+        tz = now.strftime("%Z") or str(now.tzinfo)
+        return now.strftime(f"Current date/time: %Y-%m-%d %H:%M (%A) {tz}.")
+
     # Optional LLM router for A2A natural language dispatch.
     # Set ROUTER_LLM_MODEL, ROUTER_LLM_API_KEY, ROUTER_LLM_API_BASE
     # in .env to enable. Override in subclass for custom logic.

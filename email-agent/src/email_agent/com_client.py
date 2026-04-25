@@ -233,24 +233,103 @@ class OutlookCOM:
     def free_slots(
         self, start: datetime, end: datetime, work_start: int = 8, work_end: int = 17
     ) -> dict[str, list[tuple[str, str]]]:
-        """Calculate free time slots per weekday from calendar events."""
+        """Calculate free time slots per weekday.
+
+        Uses event iteration (reads only Start/End per item). With scoped
+        date ranges this is fast and always matches the actual calendar.
+        """
+        return self._free_slots_events(start, end, work_start, work_end)
+
+    def _free_slots_freebusy(
+        self, start: datetime, end: datetime, work_start: int, work_end: int
+    ) -> dict[str, list[tuple[str, str]]]:
+        """Fast path: Outlook FreeBusy API (requires Exchange)."""
         from datetime import timedelta
 
-        events = self.list_events(start, end)
+        slot_minutes = 15
+        recip = self._ns.CreateRecipient(self._ns.CurrentUser.Address)
+        recip.Resolve()
+        if not recip.Resolved:
+            raise RuntimeError("Could not resolve current user for FreeBusy")
+
+        # FreeBusy(Start, MinPerChar, CompleteFormat)
+        # Returns string: 0=free, 1=tentative, 2=busy, 3=OOF
+        fb_start = start.replace(hour=0, minute=0, second=0, microsecond=0)
+        fb = recip.FreeBusy(fb_start, slot_minutes, True)
+        if not fb:
+            raise RuntimeError("FreeBusy returned empty result")
+
+        total_days = (end - fb_start).days + 1
+        slots_per_day = (24 * 60) // slot_minutes
+
+        result = {}
+        for day_offset in range(total_days):
+            current = fb_start + timedelta(days=day_offset)
+            if current > end:
+                break
+            if current.weekday() >= 5:
+                continue
+
+            label = current.strftime("%a %d.%m")
+            day_base = day_offset * slots_per_day
+            ws = (work_start * 60) // slot_minutes
+            we = (work_end * 60) // slot_minutes
+
+            free = []
+            free_start = None
+            for i in range(ws, we):
+                idx = day_base + i
+                is_free = idx < len(fb) and fb[idx] == "0"
+                if is_free and free_start is None:
+                    free_start = i
+                elif not is_free and free_start is not None:
+                    free.append(self._slot_range(free_start, i, slot_minutes))
+                    free_start = None
+            if free_start is not None:
+                free.append(self._slot_range(free_start, we, slot_minutes))
+
+            result[label] = free
+
+        logger.info("Free slots %s - %s (FreeBusy API)", start.strftime("%d.%m"), end.strftime("%d.%m.%Y"))
+        return result
+
+    def _free_slots_events(
+        self, start: datetime, end: datetime, work_start: int, work_end: int
+    ) -> dict[str, list[tuple[str, str]]]:
+        """Slow path: iterate calendar events, only reading Start/End."""
+        from datetime import timedelta
+
+        calendar = self._ns.GetDefaultFolder(OL_FOLDER_CALENDAR)
+        items = calendar.Items
+        items.IncludeRecurrences = True
+        items.Sort("[Start]")
+
+        filt = f"[Start] >= '{start.strftime('%d.%m.%Y %H:%M')}' AND [Start] <= '{end.strftime('%d.%m.%Y 23:59')}'"
+        restricted = items.Restrict(filt)
 
         by_date: dict[str, list[tuple[float, float]]] = {}
-        for ev in events:
-            ev_start = datetime.fromisoformat(ev["start"].replace("+00:00", ""))
-            ev_end = datetime.fromisoformat(ev["end"].replace("+00:00", ""))
-            date_key = ev_start.strftime("%Y-%m-%d")
-            if date_key not in by_date:
-                by_date[date_key] = []
-            by_date[date_key].append(
-                (
-                    ev_start.hour + ev_start.minute / 60,
-                    ev_end.hour + ev_end.minute / 60,
+        item = restricted.GetFirst()
+        count = 0
+        while item and count < 500:
+            try:
+                ev_start = item.Start
+                ev_end = item.End
+                date_key = ev_start.strftime("%Y-%m-%d")
+                if date_key not in by_date:
+                    by_date[date_key] = []
+                by_date[date_key].append(
+                    (
+                        ev_start.hour + ev_start.minute / 60,
+                        ev_end.hour + ev_end.minute / 60,
+                    )
                 )
-            )
+                count += 1
+            except Exception:
+                pass
+            try:
+                item = restricted.GetNext()
+            except Exception:
+                break
 
         result = {}
         current = start.replace(hour=0, minute=0, second=0)
@@ -280,7 +359,17 @@ class OutlookCOM:
                 result[label] = free
             current += timedelta(days=1)
 
+        logger.info(
+            "Free slots %s - %s: %d events (fallback)", start.strftime("%d.%m"), end.strftime("%d.%m.%Y"), count
+        )
         return result
+
+    @staticmethod
+    def _slot_range(start_slot: int, end_slot: int, minutes: int) -> tuple[str, str]:
+        """Convert slot indices to time strings."""
+        sm = start_slot * minutes
+        em = end_slot * minutes
+        return f"{sm // 60}:{sm % 60:02d}", f"{em // 60}:{em % 60:02d}"
 
     # Calendar: Create Event
 

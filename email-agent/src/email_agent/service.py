@@ -105,6 +105,20 @@ class EmailAgentService(BaseAgentService):
     def agent_version(self) -> str:
         return "0.2.0"
 
+    @property
+    def agent_system_prompt(self) -> str:
+        return (
+            super().agent_system_prompt + "\n\n"
+            "You are an email and calendar assistant. "
+            "Use the specialized tools - do NOT try to compute results manually. "
+            "For availability or free time queries, ALWAYS use the free_slots tool "
+            "(not list_events). Use list_events only when the user needs event details "
+            "(subjects, attendees, locations). "
+            "When a date range is specified, pass start and end as YYYY-MM-DD strings. "
+            "NEVER guess the current year, month, day, time, or day-of-week mappings. "
+            "Always use the current date/time provided above."
+        )
+
     def _resolve_file(self, source: str, default_ext: str = ".bin", filename: str = "") -> Path:
         """Resolve source as a file path, base64, or data URI.
 
@@ -166,14 +180,14 @@ class EmailAgentService(BaseAgentService):
             ),
             ToolDef(
                 name="list_events",
-                description="List calendar events for the next N days.",
+                description="List calendar events. Specify start/end dates (YYYY-MM-DD) for an exact range, or days for a relative range from today.",
                 fn=self._list_events,
                 read_only=True,
                 idempotent=True,
             ),
             ToolDef(
                 name="free_slots",
-                description="Calculate free meeting slots for the next N weekdays.",
+                description="Calculate free meeting slots during business hours. Specify start/end dates (YYYY-MM-DD) for an exact range, or days for a relative range from today. Preferred over list_events when looking for available time.",
                 fn=self._free_slots,
                 read_only=True,
                 idempotent=True,
@@ -327,13 +341,25 @@ class EmailAgentService(BaseAgentService):
 
         return raw
 
-    async def _list_events(self, days: int = 14) -> str:
-        """List calendar events for the next N days."""
-        return await self._exec("list_events", {"days": days})
+    async def _list_events(self, start: str = "", end: str = "", days: int = 14) -> str:
+        """List calendar events in a date range.
 
-    async def _free_slots(self, days: int = 14) -> str:
-        """Calculate free meeting slots for the next N weekdays."""
-        return await self._exec("free_slots", {"days": days})
+        Args:
+            start: Start date (YYYY-MM-DD). Defaults to today.
+            end: End date (YYYY-MM-DD). If set, days is ignored.
+            days: Number of days from start. Only used when end is not set.
+        """
+        return await self._exec("list_events", {"start": start, "end": end, "days": days})
+
+    async def _free_slots(self, start: str = "", end: str = "", days: int = 14) -> str:
+        """Calculate free meeting slots during business hours.
+
+        Args:
+            start: Start date (YYYY-MM-DD). Defaults to today.
+            end: End date (YYYY-MM-DD). If set, days is ignored.
+            days: Number of days from start. Only used when end is not set.
+        """
+        return await self._exec("free_slots", {"start": start, "end": end, "days": days})
 
     async def _create_draft(
         self,

@@ -259,16 +259,19 @@ class LLMExecutor:
         self.model = model
         self.api_key = api_key
         self.api_base = api_base
-        self.system_prompt = system_prompt or self._default_system()
+        base = self._synthetic_tools_prompt()
+        self.system_prompt = f"{base}\n\n{system_prompt}" if system_prompt else base
         self.max_steps = max_steps
         self.on_progress = on_progress  # async callback(message: str)
         self._provider = _detect_provider(api_base)
         self._tool_map = {t.name: t for t in tools}
         self._produced_files: list[dict] = []
 
-    def _default_system(self) -> str:
+    @staticmethod
+    def _synthetic_tools_prompt() -> str:
+        """Instructions for synthetic task-lifecycle tools. Always included."""
         return (
-            "You are an AI agent. You MUST use the provided tools to "
+            "You MUST use the provided tools to "
             "complete tasks. Do NOT describe what you would do - execute "
             "it by calling the appropriate tool. After getting a tool "
             "result, either call another tool or provide your final "

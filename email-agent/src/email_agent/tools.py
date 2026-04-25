@@ -15,6 +15,19 @@ logger = logging.getLogger(__name__)
 _EMAIL_RE = re.compile(r"^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$")
 
 
+def _parse_date_range(args: dict) -> tuple[datetime, datetime]:
+    """Parse start/end/days from tool args into a (start, end) datetime pair."""
+    start_str = args.get("start", "")
+    end_str = args.get("end", "")
+    start = datetime.strptime(start_str, "%Y-%m-%d") if start_str else datetime.now()
+    if end_str:
+        end = datetime.strptime(end_str, "%Y-%m-%d").replace(hour=23, minute=59)
+    else:
+        days = int(args.get("days", 14))
+        end = start + timedelta(days=days)
+    return start, end
+
+
 def _validate_email_list(raw: str) -> tuple[str, list[str]]:
     """Parse and validate a list of email addresses.
 
@@ -288,9 +301,7 @@ class ToolExecutor:
                 cal = self._backend.calendar
                 if cal is None:
                     return {"error": "Calendar not available with the current backend"}
-                days = args.get("days", 14)
-                start = datetime.now()
-                end = start + timedelta(days=days)
+                start, end = _parse_date_range(args)
                 events = cal.list_events(start, end)
                 return [
                     {
@@ -308,9 +319,7 @@ class ToolExecutor:
                 cal = self._backend.calendar
                 if cal is None:
                     return {"error": "Calendar not available with the current backend"}
-                days = args.get("days", 14)
-                start = datetime.now()
-                end = start + timedelta(days=days)
+                start, end = _parse_date_range(args)
                 return cal.free_slots(start, end)
 
             case "create_draft":
