@@ -131,16 +131,28 @@ def _make_mcp_tool_class(
 ) -> BaseTool:
     """Create a LangChain BaseTool instance for a single MCP tool.
 
-    We dynamically create a subclass with the correct args_schema set as
-    a class attribute (not a property) so LangChain's bind_tools can
-    introspect it for the LLM.
+    Tool name is prefixed with agent slug for uniqueness:
+    email_agent__search_emails, document_agent__compose_document.
     """
-    schema = mcp_tool.inputSchema or {"type": "object", "properties": {}}
-    safe_name = mcp_tool.name.replace("-", "_").replace(".", "_")
-    input_model = _json_schema_to_pydantic(schema, f"{safe_name}_Input")
+    schema = mcp_tool.inputSchema or {
+        "type": "object",
+        "properties": {},
+    }
+    # Derive agent-prefixed tool name
+    try:
+        agent = hub.agent_for_tool(mcp_tool.name)
+        slug = agent.name.replace("-", "_")
+    except KeyError:
+        slug = "unknown"
+    prefixed = f"{slug}__{mcp_tool.name}"
+    safe_name = prefixed.replace("-", "_").replace(".", "_")
+    input_model = _json_schema_to_pydantic(
+        schema,
+        f"{safe_name}_Input",
+    )
 
     class _Tool(BaseTool):
-        name: str = mcp_tool.name
+        name: str = prefixed
         description: str = mcp_tool.description or f"MCP tool: {mcp_tool.name}"
         args_schema: type[BaseModel] = input_model
 
@@ -175,8 +187,7 @@ def _make_mcp_tool_class(
                 # Return raw text, no file fetching
                 text = (
                     result.content[0].text
-                    if result.content
-                    and hasattr(result.content[0], "text")
+                    if result.content and hasattr(result.content[0], "text")
                     else str(result.content)
                 )
                 new_files = []
@@ -195,6 +206,12 @@ def _make_mcp_tool_class(
                 _produced_files.append(entry)
                 _notify_file(entry)
 
+            logger.info(
+                "MCP tool result: %s -> %d files, text=%s",
+                self.name,
+                len(new_files),
+                text[:200] if text else "",
+            )
             _update_status("")
             return text
 
@@ -214,5 +231,5 @@ def create_mcp_tools(
     for mcp_tool in hub.all_tools():
         wrapper = _make_mcp_tool_class(mcp_tool, hub, registry)
         tools.append(wrapper)
-        logger.info("Registered MCP tool: %s", mcp_tool.name)
+        logger.info("Registered MCP tool: %s", wrapper.name)
     return tools

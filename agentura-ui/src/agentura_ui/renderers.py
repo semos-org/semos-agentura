@@ -135,11 +135,17 @@ def resolve_file_references(
         if entry is None:
             return match.group(0)
 
+        mime = entry.mime.split(";")[0].strip().lower()
+
+        # Only inline images (base64 encoding large files
+        # like PPTX/DOCX would freeze the websocket).
+        if not mime.startswith("image/"):
+            return match.group(0)
+
         b64 = base64.b64encode(entry.blob).decode()
         data_uri = f"data:{entry.mime};base64,{b64}"
         alt = match.group("alt") or entry.filename
 
-        # For images: constrain height for chat readability
         if bracket.startswith("!"):
             return f'<img src="{data_uri}" alt="{alt}" style="max-height:500px;max-width:100%;width:auto;height:auto;">'
         return f"{bracket}({data_uri})"

@@ -13,15 +13,14 @@ from pathlib import Path
 
 import panel as pn
 from dotenv import load_dotenv
+from filesystem_agent.panel_tree import VFSTreeBrowser
+from filesystem_agent.vfs import VirtualFileSystem
 from panelini import Panelini
 from panelini.panels.ai.frontend import AVAILABLE_TOOLS
 from panelini.panels.ai.frontend import AiChat as Frontend
 from panelini.panels.ai.utils.ai_interface import (
     PROVIDER_CLASS_REGISTRY,
 )
-
-from filesystem_agent.panel_tree import VFSTreeBrowser
-from filesystem_agent.vfs import VirtualFileSystem
 
 from .a2a_client import discover_agents
 from .a2a_tools import create_a2a_delegates
@@ -62,6 +61,10 @@ paths or base64 - just use the filename.
 - Tool outputs appear as "File created: output.pdf (1.2 MB)".
 - Pass exact filenames between tool calls to chain them.
 
+DATES:
+- If no year, month, or week is given, assume the current one \
+by using the get_current_time tool first.
+
 TOOL SELECTION:
 - Use specific tools when you know which operation is needed.
 - Use ask_* delegate tools for open-ended requests where the \
@@ -94,46 +97,55 @@ def _register_litellm_provider() -> None:
     PROVIDER_CLASS_REGISTRY["litellm"] = _create
 
 
+# Default agents. Additional agents can be added via
+# EXTRA_AGENTS env var: "name:port,name:port,..."
+_DEFAULT_AGENTS = [
+    ("email-agent", 8001),
+    ("document-agent", 8002),
+    ("filesystem-agent", 8003),
+]
+
+
 def _build_agents() -> list[AgentConnection]:
-    return [
-        AgentConnection(
-            name="email-agent",
-            url=os.environ.get(
-                "EMAIL_AGENT_URL",
-                "http://localhost:8001/mcp/sse",
-            ),
-            base_url=os.environ.get(
-                "EMAIL_AGENT_BASE",
-                "http://localhost:8001",
-            ),
-        ),
-        AgentConnection(
-            name="document-agent",
-            url=os.environ.get(
-                "DOCUMENT_AGENT_URL",
-                "http://localhost:8002/mcp/sse",
-            ),
-            base_url=os.environ.get(
-                "DOCUMENT_AGENT_BASE",
-                "http://localhost:8002",
-            ),
-        ),
-        AgentConnection(
-            name="filesystem-agent",
-            url=os.environ.get(
-                "FILESYSTEM_AGENT_URL",
-                "http://localhost:8003/mcp/sse",
-            ),
-            base_url=os.environ.get(
-                "FILESYSTEM_AGENT_BASE",
-                "http://localhost:8003",
-            ),
-        ),
-    ]
+    agents = []
+    for name, port in _DEFAULT_AGENTS:
+        env_key = name.upper().replace("-", "_")
+        base = os.environ.get(
+            f"{env_key}_BASE",
+            f"http://localhost:{port}",
+        )
+        url = os.environ.get(
+            f"{env_key}_URL",
+            f"{base}/mcp/sse",
+        )
+        agents.append(
+            AgentConnection(name=name, url=url, base_url=base),
+        )
+
+    # Extra agents from env: "survey-agent:8004,other:8005"
+    extra = os.environ.get("EXTRA_AGENTS", "")
+    for entry in extra.split(","):
+        entry = entry.strip()
+        if not entry:
+            continue
+        if ":" in entry:
+            name, port_str = entry.rsplit(":", 1)
+            base = f"http://localhost:{port_str}"
+        else:
+            name = entry
+            base = "http://localhost:8080"
+        agents.append(
+            AgentConnection(
+                name=name,
+                url=f"{base}/mcp/sse",
+                base_url=base,
+            )
+        )
+
+    return agents
 
 
-def _wrap_chat_callback(original_callback, registry, pending_uploads,
-                        _unused=None):
+def _wrap_chat_callback(original_callback, registry, pending_uploads, _unused=None):
     """Wrap Frontend chat callback to prepend file context,
     resolve file references, and register tool outputs."""
 
@@ -153,8 +165,13 @@ def _wrap_chat_callback(original_callback, registry, pending_uploads,
         # Delegate to the original Frontend callback.
         last_chunk = None
         result = original_callback(contents, user, instance)
+        logger.info("Callback returned type=%s", type(result).__name__)
         if hasattr(result, "__aiter__"):
             async for chunk in result:
+                logger.info(
+                    "Callback chunk: %d chars",
+                    len(str(chunk)),
+                )
                 last_chunk = chunk
                 yield chunk
         elif asyncio.iscoroutine(result):
@@ -182,8 +199,149 @@ def _wrap_chat_callback(original_callback, registry, pending_uploads,
     return wrapped
 
 
+def _build_tool_tree(frontend, hub):
+    """Build a Wunderbaum tree with checkboxes for tool selection.
+
+    Tools are grouped by agent. Delegate tools (ask_*) are
+    checked by default. Checking/unchecking updates the backend.
+    """
+    from panelini.panels.wunderbaum import Wunderbaum
+
+    # Group tools by agent. Tool names are prefixed
+    # (email_agent__search_emails) but the hub knows
+    # original MCP names (search_emails).
+    groups: dict[str, list[str]] = {}
+    for tool_name in frontend.tool_checkboxes:
+        agent_label = "Built-in"
+        # Strip agent prefix to look up in hub
+        mcp_name = tool_name.split("__", 1)[1] if "__" in tool_name else tool_name
+        if hub is not None:
+            try:
+                agent = hub.agent_for_tool(mcp_name)
+                agent_label = agent.name
+            except KeyError:
+                pass
+        if agent_label == "Built-in" and tool_name.startswith(
+            "ask_",
+        ):
+            agent_label = "Agents"
+        groups.setdefault(agent_label, []).append(tool_name)
+
+    # Get tool descriptions for the grid column
+    descs: dict[str, str] = {}
+    for name, info in frontend.tool_checkboxes.items():
+        descs[name] = getattr(
+            info["tool"],
+            "description",
+            "",
+        )[:80]
+
+    # Ordered groups: Built-in first, then Agents, then MCP agents
+    ordered = []
+    for label in ["Built-in", "Agents"]:
+        if label in groups:
+            ordered.append((label, groups.pop(label)))
+    for label in sorted(groups):
+        ordered.append((label, groups[label]))
+
+    # Build tree source. Column data at node root level
+    # (not nested in "data" dict) per Wunderbaum convention.
+    source = []
+    default_selected = set()
+    for agent_label, tool_names in ordered:
+        children = []
+        for tn in sorted(tool_names):
+            is_default = tn.startswith("ask_") or tn == "get_current_time"
+            icon = "bi bi-chat-dots" if tn.startswith("ask_") else "bi bi-wrench"
+            # Display name: strip agent prefix, title-case
+            display = (tn.split("__", 1)[1] if "__" in tn else tn).replace("_", " ").title()
+            children.append(
+                {
+                    "key": tn,
+                    "title": display,
+                    "icon": icon,
+                    "selected": is_default,
+                    "desc": descs.get(tn, ""),
+                }
+            )
+            if is_default:
+                default_selected.add(tn)
+        all_sel = all(tn in default_selected for tn in tool_names)
+        folder_icon = "bi bi-robot" if agent_label == "Agents" else "bi bi-server"
+        folder_title = agent_label.replace("-", " ").title()
+        source.append(
+            {
+                "key": f"agent:{agent_label}",
+                "title": folder_title,
+                "icon": folder_icon,
+                "expanded": True,
+                "selected": all_sel,
+                "children": children,
+            }
+        )
+
+    # Read checked state from source. When an agent folder
+    # is checked, all its children are considered checked
+    # (Wunderbaum JS may not propagate to children in source).
+    def _get_checked_keys():
+        keys = []
+
+        def walk(nodes, parent_selected=False):
+            for n in nodes:
+                sel = n.get("selected") or parent_selected
+                if sel:
+                    keys.append(n["key"])
+                walk(
+                    n.get("children", []),
+                    parent_selected=sel,
+                )
+
+        walk(tree.source)
+        return keys
+
+    def _sync_tools_from_source(*_args):
+        """Sync panelini backend from tree source state."""
+        checked = set(_get_checked_keys())
+        for name, info in frontend.tool_checkboxes.items():
+            info["checkbox"].value = name in checked
+        frontend.backend.update_tools(
+            frontend._get_selected_tools(),
+        )
+        logger.info("Tools updated: %s", sorted(checked))
+
+    tree = Wunderbaum(
+        source=source,
+        columns=[
+            {"id": "*", "title": "Tool", "width": "200px"},
+            {
+                "id": "desc",
+                "title": "Description",
+                "width": "*",
+            },
+        ],
+        options={
+            "checkbox": True,
+        },
+        sizing_mode="stretch_width",
+        height=400,
+    )
+
+    # Set default tools on backend
+    for name, info in frontend.tool_checkboxes.items():
+        info["checkbox"].value = name in default_selected
+    frontend.backend.update_tools(
+        [info["tool"] for name, info in frontend.tool_checkboxes.items() if name in default_selected]
+    )
+    logger.info("Default tools: %s", sorted(default_selected))
+
+    # Watch source changes (checkbox toggles sync source)
+    tree.param.watch(_sync_tools_from_source, ["source"])
+    return tree
+
+
 def _start_filesystem_agent_inprocess(
-    vfs: VirtualFileSystem, port: int,
+    vfs: VirtualFileSystem,
+    port: int,
 ) -> None:
     """Start the filesystem-agent as a uvicorn thread sharing our VFS.
 
@@ -196,15 +354,13 @@ def _start_filesystem_agent_inprocess(
     import threading
 
     import uvicorn
-
     from filesystem_agent.service import FilesystemAgentService
 
     # Check if port is already in use (external agent running)
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         if s.connect_ex(("127.0.0.1", port)) == 0:
             logger.info(
-                "Filesystem-agent port %d in use, "
-                "skipping in-process start",
+                "Filesystem-agent port %d in use, skipping in-process start",
                 port,
             )
             return
@@ -213,7 +369,8 @@ def _start_filesystem_agent_inprocess(
 
     service = FilesystemAgentService(vfs=vfs)
     agent_app = create_agent_app(
-        service, base_url=f"http://127.0.0.1:{port}",
+        service,
+        base_url=f"http://127.0.0.1:{port}",
     )
 
     config = uvicorn.Config(
@@ -235,9 +392,9 @@ def _start_filesystem_agent_inprocess(
             break
 
     logger.info(
-        "Filesystem-agent started in-process on port %d "
-        "(shared VFS with %d roots)",
-        port, len(vfs.roots),
+        "Filesystem-agent started in-process on port %d (shared VFS with %d roots)",
+        port,
+        len(vfs.roots),
     )
 
 
@@ -287,10 +444,30 @@ def create_app() -> Panelini:
                     "text": response_text,
                     "tool_calls": tool_calls,
                 }
-            if not response_data.get("tool_calls"):
-                return str(response_data.get("text", ""))
-            tool_results = await self._execute_tool_calls(
-                response_data["tool_calls"],
+            tc = response_data.get("tool_calls", [])
+            logger.info(
+                "Iteration %d: %d tool calls, text=%s",
+                iteration,
+                len(tc),
+                str(response_data.get("text", ""))[:100],
+            )
+            if not tc:
+                final = str(response_data.get("text", ""))
+                logger.info(
+                    "Tool loop done, returning %d chars",
+                    len(final),
+                )
+                return final
+            for t in tc:
+                logger.info(
+                    "  -> tool_call: %s(%s)",
+                    t.get("name", "?"),
+                    str(t.get("args", {}))[:100],
+                )
+            tool_results = await self._execute_tool_calls(tc)
+            logger.info(
+                "  <- tool results: %d messages",
+                len(tool_results),
             )
             self.ai_interface.conversation_history.extend(
                 tool_results,
@@ -337,14 +514,10 @@ def create_app() -> Panelini:
 
     set_status_callback(_on_status)
 
-    # Enable only delegate tools (ask_*) by default.
-    for name, info in frontend.tool_checkboxes.items():
-        info["checkbox"].value = name.startswith("ask_")
-    frontend.backend.update_tools(frontend._get_selected_tools())
-    logger.info(
-        "Default tools: %s",
-        [n for n, i in frontend.tool_checkboxes.items() if i["checkbox"].value],
-    )
+    # Build tool tree with Wunderbaum (grouped by agent).
+    # Replaces panelini's flat checkbox list in the sidebar.
+    tool_tree_widget = _build_tool_tree(frontend, _hub)
+
     # Clear the "Tools updated" spam, keep only the welcome msg.
     if frontend.chat_interface.objects:
         welcome = frontend.chat_interface.objects[0]
@@ -390,9 +563,7 @@ def create_app() -> Panelini:
         elif mime == "text/markdown" or entry.filename.endswith(
             ".md",
         ):
-            frontend.preview_content.object = (
-                entry.blob.decode("utf-8", errors="replace")
-            )
+            frontend.preview_content.object = entry.blob.decode("utf-8", errors="replace")
         else:
             frontend.preview_content.object = (
                 f"# {entry.filename}\n\n"
@@ -401,22 +572,29 @@ def create_app() -> Panelini:
                 f"\n\n*Preview not available. Use download.*"
             )
 
-    # Wire tree activation to preview pane by wrapping
-    # the tree browser's on_tree_event method.
-    _orig_on_tree_event = tree_browser.on_tree_event
+    # Wire tree activation to preview pane. Override the
+    # Wunderbaum widget's callback directly (the VFSTreeBrowser
+    # method reference was captured at construction time).
+    _orig_tree_cb = tree_browser.tree._tree_event_callback
 
-    def _on_tree_event(event_name, event_params):
-        _orig_on_tree_event(event_name, event_params)
+    def _on_file_tree_event(event_name, event_params):
+        # Call original VFSTreeBrowser handler first
+        if _orig_tree_cb:
+            _orig_tree_cb(event_name, event_params)
         if event_name == "activate":
             uri = event_params.get("key", "")
-            if uri and not _vfs.isdir(uri):
-                _, rel = _vfs.parse_uri(uri)
-                fn = rel.rsplit("/", 1)[-1] if "/" in rel else rel
-                entry = _registry.get(fn)
-                if entry:
-                    _preview_entry(entry)
+            if uri and "://" in uri:
+                try:
+                    if not _vfs.isdir(uri):
+                        _, rel = _vfs.parse_uri(uri)
+                        fn = rel.rsplit("/", 1)[-1] if "/" in rel else rel
+                        entry = _registry.get(fn)
+                        if entry:
+                            _preview_entry(entry)
+                except Exception:
+                    pass
 
-    tree_browser.on_tree_event = _on_tree_event
+    tree_browser.tree._tree_event_callback = _on_file_tree_event
 
     # File upload from tree browser adds to registry
     orig_upload = tree_browser._on_file_upload
@@ -426,18 +604,14 @@ def create_app() -> Panelini:
         if event.new is not None:
             blob = event.new
             fn = tree_browser.file_input.filename or "upload"
-            mime = (
-                tree_browser.file_input.mime_type
-                or "application/octet-stream"
-            )
+            mime = tree_browser.file_input.mime_type or "application/octet-stream"
             # Register in middleware (also writes to VFS)
             entry = _registry.register(fn, bytes(blob), mime, "upload")
             note = f"{entry.filename} ({human_size(entry.size)})"
             pending_uploads.append(note)
             logger.info("File registered via tree: %s", note)
             frontend.chat_interface.send(
-                f"File received: **{note}**. "
-                f"You can now ask me to process it.",
+                f"File received: **{note}**. You can now ask me to process it.",
                 user="System",
                 respond=False,
             )
@@ -450,13 +624,15 @@ def create_app() -> Panelini:
     # handler also fires but our early return prevents
     # double-writing to VFS.
     tree_browser.file_input.param.watch(
-        _upload_and_register, "value",
+        _upload_and_register,
+        "value",
     )
 
     # Real-time file notifications from tools
     def _on_file_produced(entry):
         widget = render_file_notification(
-            entry, on_preview=_preview_entry,
+            entry,
+            on_preview=_preview_entry,
         )
         frontend.chat_interface.send(
             widget,
@@ -482,10 +658,42 @@ def create_app() -> Panelini:
         None,  # no FileManager - tree refreshes via callbacks
     )
 
-    # Compose Panelini layout
-    app = Panelini(title="Semos Agentura", sidebar_enabled=True)
+    # Compose Panelini layout.
+    # Replace panelini's flat tool checkboxes with our tree.
+    sidebar_objects = []
+    for obj in frontend.sidebar_objects:
+        # Find the "Basic Tools" card and replace its content
+        if hasattr(obj, "objects"):
+            replaced = False
+            for i, child in enumerate(obj.objects):
+                title = getattr(child, "title", "")
+                if "tool" in title.lower():
+                    obj.objects[i] = pn.Card(
+                        tool_tree_widget,
+                        title="Tools",
+                        collapsed=False,
+                        styles={
+                            "margin-bottom": "12px",
+                            "padding": "12px",
+                        },
+                    )
+                    replaced = True
+                    break
+            if not replaced:
+                sidebar_objects.append(obj)
+            else:
+                sidebar_objects.append(obj)
+        else:
+            sidebar_objects.append(obj)
+
+    app = Panelini(
+        title="Semos Agentura",
+        sidebar_enabled=True,
+        sidebars_max_width=450,
+    )
     app.sidebar_set(
-        objects=frontend.sidebar_objects + [
+        objects=sidebar_objects
+        + [
             pn.Card(
                 tree_browser.tree,
                 tree_browser.file_input,
