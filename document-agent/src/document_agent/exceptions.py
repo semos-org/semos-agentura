@@ -31,3 +31,11 @@ class MermaidRenderError(CompositionError):
 
 class DrawioRenderError(CompositionError):
     """draw.io diagram rendering failed."""
+
+
+class SlideMergeError(CompositionError):
+    """PPTX slide merge failed."""
+
+
+class TemplateError(CompositionError):
+    """Template application to PPTX failed."""

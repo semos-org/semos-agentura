@@ -64,6 +64,8 @@ async def test_list_tools(service):
             "generate_diagram",
             "inspect_form",
             "fill_form",
+            "merge_slides",
+            "get_examples",
         }
 
 
@@ -76,8 +78,9 @@ async def test_tools_have_parameters(service):
             schema = tool.inputSchema
             assert schema.get("type") == "object", f"{tool.name} has no object schema"
             props = schema.get("properties", {})
-            # All tools should have at least one parameter
-            assert len(props) > 0, f"{tool.name} has no parameters"
+            # All tools should have at least one parameter (except get_examples)
+            if tool.name != "get_examples":
+                assert len(props) > 0, f"{tool.name} has no parameters"
             # No parameter should be 'kwargs' (regression: untyped signatures)
             assert "kwargs" not in props, f"{tool.name} has **kwargs leak"
 

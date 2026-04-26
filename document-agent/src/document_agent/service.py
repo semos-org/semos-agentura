@@ -29,7 +29,15 @@ from agentura_commons import (
     create_app,
 )
 
-from . import compose, digest, fill_form, generate_diagram, inspect_form
+from . import (
+    MergeConfig,
+    compose,
+    digest,
+    fill_form,
+    generate_diagram,
+    inspect_form,
+    merge_slides,
+)
 from .config import Settings
 from .models import OutputFormat, OutputMode
 
@@ -113,6 +121,38 @@ class DocumentAgentService(BaseAgentService):
                 fn=self._fill_form,
                 file_params=["file_path"],
                 task_support="optional",
+            ),
+            ToolDef(
+                name="merge_slides",
+                description=(
+                    "Merge slides from multiple PPTX files into one. "
+                    "Pass each PPTX as a separate file parameter "
+                    "(file1, file2, ... up to file5). "
+                    "Use slides1, slides2, etc. to specify which slides "
+                    "to include (0-based indices as comma-separated "
+                    "string, e.g. '0,1,2'). Omit for all slides. "
+                    "The first file's theme is used."
+                ),
+                fn=self._merge_slides,
+                file_params=[
+                    "file1",
+                    "file2",
+                    "file3",
+                    "file4",
+                    "file5",
+                ],
+                task_support="optional",
+            ),
+            ToolDef(
+                name="get_examples",
+                description=(
+                    "Get reference Markdown examples for all document-agent composition tools. "
+                    "Returns examples for: general documents (with inline diagrams/images), "
+                    "Marp slides, and pandoc slides. Use these as templates when composing."
+                ),
+                fn=self._get_examples,
+                read_only=True,
+                idempotent=True,
             ),
         ]
 
@@ -246,46 +286,42 @@ class DocumentAgentService(BaseAgentService):
         source: str,
         format: str,
         is_slides: bool = False,
+        draft: bool = False,
+        template: str = "",
+        template_backend: str = "auto",
         filename: str = "",
         reference_doc: FileAttachment | str = "",
         header_footer_doc: FileAttachment | str = "",
     ) -> str:
         """Render Markdown into a document. Source is a file path or raw Markdown text.
 
-        Footnotes ([^1]: text), comments ({.comment-start/end} spans),
-        and tracked changes ({.insertion}/{.deletion} spans) from
-        digest_document output are reproduced in the output DOCX.
+        For slides (is_slides=True), two modes are available:
+        - draft=False (default): Marp renders polished slides with limited
+          editability via --pptx-editable. Best visual quality.
+        - draft=True: pandoc renders fully editable PPTX. Rougher layout
+          but every element is editable in PowerPoint. Auto-detects Marp
+          vs plain pandoc markdown (Marp has 'marp: true' in frontmatter).
 
-        Styles can be defined in three ways (in priority order):
-        1. YAML front matter in the Markdown source (auto-generates a
-           reference doc):
-             ---
-             styles:
-               page: {size: "A4", margin-top: "1.5cm", ...}
-               body: {font: "Calibri", size: 11, line-spacing: 1.1,
-                      spacing-before: "0.0cm", spacing-after: "0.1cm"}
-               heading1: {font: "Calibri", size: 13, bold: true,
-                          color: "000080", spacing-before: "0.3cm"}
-               heading2: {font: "Calibri", size: 11, bold: true, ...}
-               heading3: {font: "Calibri", size: 11, bold: true, italic: true}
-               table: {size: 9, border-color: "999999", border-size: 4}
-             ---
-           Table size also controls footnote and caption font size.
-           Combine with header_footer_doc to also get headers/footers.
-        2. reference_doc parameter: a DOCX/ODT file whose styles, headers,
-           footers, and page layout are all applied (overrides YAML styles).
-        3. Neither: pandoc default styles.
+        For draft slides, an optional template PPTX can be applied to add
+        corporate branding (requires PowerPoint COM on Windows).
+
+        Use get_examples tool to see reference Markdown for each format.
+
+        For documents (is_slides=False), styles can be defined via:
+        1. YAML front matter (auto-generates reference doc)
+        2. reference_doc parameter (DOCX/ODT template)
+        3. Pandoc defaults
 
         Args:
             source: Path to a .md file, or raw Markdown content.
             format: Output format - 'pdf', 'pptx', 'docx', or 'html'.
             is_slides: Set to true for slide/presentation output.
+            draft: For slides: fully editable PPTX via pandoc (rough layout).
+            template: For draft slides: PPTX template for corporate branding.
+            template_backend: Template backend: auto, com, uno, docker.
             filename: Optional output filename. Auto-generated if omitted.
-            reference_doc: Optional DOCX/ODT file whose styles, headers,
-                footers, and page layout are all applied.
-            header_footer_doc: Optional DOCX to copy only headers and footers
-                from. Use with YAML styles to get custom fonts/spacing plus
-                template headers/footers.
+            reference_doc: DOCX/ODT/PPTX for style inheritance.
+            header_footer_doc: DOCX to copy only headers/footers from.
         """
         fmt = OutputFormat(format)
         if not filename:
@@ -311,12 +347,17 @@ class DocumentAgentService(BaseAgentService):
         if header_footer_doc:
             hf_path = self._resolve_file_attachment(header_footer_doc, ".docx")
 
+        tpl_path = Path(template) if template else None
+
         def _run():
             return compose(
                 source=source_path,
                 output_path=out_path,
                 format=fmt,
                 is_slides=is_slides,
+                draft=draft,
+                template=tpl_path,
+                template_backend=template_backend,
                 reference_doc=ref_path,
                 header_footer_doc=hf_path,
                 settings=self._settings,
@@ -386,6 +427,334 @@ class DocumentAgentService(BaseAgentService):
 
         result_path = await asyncio.to_thread(_run)
         return self.file_response(Path(result_path), display_name=filename)
+
+    async def _merge_slides(
+        self,
+        file1: FileAttachment | str,
+        file2: FileAttachment | str = "",
+        file3: FileAttachment | str = "",
+        file4: FileAttachment | str = "",
+        file5: FileAttachment | str = "",
+        slides1: str = "",
+        slides2: str = "",
+        slides3: str = "",
+        slides4: str = "",
+        slides5: str = "",
+        output_filename: str = "merged.pptx",
+        backend: str = "auto",
+    ) -> str:
+        """Merge slides from multiple PPTX files.
+
+        Each file parameter accepts a file path or attachment.
+        The matching slides parameter is a comma-separated list
+        of 0-based slide indices (e.g. "0,1,2"). Omit or leave
+        empty to include all slides from that file.
+        The first file's theme/master is used for the output.
+
+        Args:
+            file1: First PPTX file (required).
+            file2..file5: Additional PPTX files (optional).
+            slides1..slides5: Slide indices for each file.
+            output_filename: Name for the output file.
+            backend: 'auto', 'com', or 'pptx'.
+        """
+        from .composition._slide_merge import SlideRef
+
+        files = [file1, file2, file3, file4, file5]
+        slide_specs = [slides1, slides2, slides3, slides4, slides5]
+
+        src_map: dict[str, str] = {}
+        slide_refs: list[SlideRef] = []
+
+        for raw_file, spec in zip(files, slide_specs, strict=True):
+            if not raw_file:
+                continue
+            resolved = self._resolve_file_attachment(raw_file, ".pptx")
+            if not resolved.exists():
+                continue
+            name = resolved.stem
+            if name in src_map:
+                i = 2
+                while f"{name}_{i}" in src_map:
+                    i += 1
+                name = f"{name}_{i}"
+            src_map[name] = str(resolved.resolve())
+
+            if spec and spec.strip():
+                for idx in spec.split(","):
+                    idx = idx.strip()
+                    if idx.isdigit():
+                        slide_refs.append(SlideRef(source=name, index=int(idx)))
+            else:
+                slide_refs.append(SlideRef(source=name, index=-1))
+
+        base_path = next(iter(src_map.values()))
+        config = MergeConfig(
+            base=str(Path(base_path).resolve()),
+            sources=src_map,
+            slides=slide_refs,
+        )
+
+        safe = f"{uuid.uuid4().hex[:8]}_{output_filename}"
+        out = self.output_dir / safe
+
+        def _run():
+            return merge_slides(config, out, backend=backend)
+
+        result = await asyncio.to_thread(_run)
+        return self.file_response(result.output_path, display_name=output_filename)
+
+    async def _get_examples(self) -> str:
+        """Return reference Markdown examples for all composition tools."""
+        return json.dumps(
+            {
+                "document": _EXAMPLE_DOCUMENT,
+                "marp_slides": _EXAMPLE_MARP_SLIDES,
+                "pandoc_slides": _EXAMPLE_PANDOC_SLIDES,
+                "description": (
+                    "Three Markdown formats supported by compose_document:\n"
+                    "1. 'document': General documents (PDF, DOCX) with inline "
+                    "mermaid/drawio diagrams, YAML styles, footnotes.\n"
+                    "2. 'marp_slides': Marp presentations (is_slides=true). "
+                    "Polished output. Use draft=true for editable PPTX.\n"
+                    "3. 'pandoc_slides': Native pandoc slide markdown "
+                    "(is_slides=true, draft=true). Always fully editable."
+                ),
+            },
+            ensure_ascii=False,
+        )
+
+
+# ------------------------------------------------------------------
+# Reference examples for get_examples tool
+# ------------------------------------------------------------------
+
+_EXAMPLE_DOCUMENT = """\
+---
+title: "Document Title"
+subtitle: "Optional Subtitle"
+styles:
+  page:
+    size: "A4"
+    margin-top: "1.5cm"
+    margin-bottom: "1.5cm"
+    margin-left: "2cm"
+    margin-right: "2cm"
+  body:
+    font: "Calibri"
+    size: 11
+    line-spacing: 1.15
+  heading1:
+    font: "Calibri"
+    size: 14
+    bold: true
+    color: "003366"
+  heading2:
+    size: 12
+    bold: true
+  table:
+    size: 9
+    border-color: "999999"
+---
+
+# Introduction
+
+This is a general document with **rich formatting** support.
+
+## Inline Diagrams
+
+Mermaid code blocks are auto-rendered to images:
+
+```mermaid
+graph LR
+    A[Input] --> B[Process]
+    B --> C[Output]
+```
+
+## Tables
+
+| Feature    | Status    |
+|------------|-----------|
+| Footnotes  | Supported |
+| Comments   | Supported |
+| Styles     | YAML      |
+
+## Footnotes
+
+This text has a footnote[^1].
+
+[^1]: Footnote content here.
+
+## Images
+
+![Description](path/to/image.png)
+
+Inline base64 images are also supported and auto-extracted to files.
+"""
+
+_EXAMPLE_MARP_SLIDES = """\
+---
+marp: true
+theme: default
+paginate: true
+style: |
+  section { font-size: 22px; }
+  h1 { color: #2c3e50; }
+---
+
+<!-- _class: title -->
+# Presentation Title
+## Author Name
+
+Conference | Date
+
+<!-- Speaker notes go here.
+They appear in presenter view. -->
+
+---
+
+# Content Slide
+
+- Bullet point one
+- Bullet point two
+- **Bold** and *italic* supported
+
+---
+
+# Split Layout
+
+![bg right:48% fit](image.jpg)
+
+Text appears on the left side.
+
+- Works with any image
+- Percentage controls split
+
+---
+
+# Image Slide
+
+![w:800](diagram.png)
+
+Caption text below the image.
+
+---
+
+# Table Slide
+
+| Column 1 | Column 2 | Column 3 |
+|----------|----------|----------|
+| Data     | More     | Info     |
+
+Key finding described below the table.
+
+---
+
+# Two Columns (HTML)
+
+<div class="columns">
+<div>
+
+### Left Column
+- Point A
+- Point B
+
+</div>
+<div>
+
+### Right Column
+- Point X
+- Point Y
+
+</div>
+</div>
+"""
+
+_EXAMPLE_PANDOC_SLIDES = """\
+---
+title: Presentation Title
+author: Author Name
+date: 2026-01-01
+---
+
+# Section Title
+
+## Slide with Bullets
+
+- This is a basic slide with bullet points
+- It uses the "Title and Content" layout
+- Perfect for simple content
+
+::: notes
+Speaker notes for this slide.
+Remember to emphasize point 2.
+:::
+
+## Two Column Layout
+
+::::: columns
+::: column
+Left column content:
+
+- Point 1
+- Point 2
+:::
+::: column
+Right column content:
+
+- Point A
+- Point B
+:::
+:::::
+
+## Comparison with Image
+
+::::: columns
+::: column
+Explanatory text about the image.
+
+Key observations:
+
+- Finding one
+- Finding two
+:::
+::: column
+![Caption](image.jpg)
+:::
+:::::
+
+## Table Example
+
+| Column 1 | Column 2 | Column 3 |
+|----------|----------|----------|
+| Row 1    | Data     | More     |
+| Row 2    | Info     | Stuff    |
+
+## Code Block
+
+```python
+def greet(name):
+    return f"Hello, {name}!"
+```
+
+## Incremental List
+
+::: incremental
+- This point appears first
+- Then this one
+- And finally this one
+:::
+
+# Conclusion
+
+## Thank You
+
+Thank you for viewing this presentation!
+
+::: notes
+Invite questions from the audience.
+:::
+"""
 
 
 # --- App factory ---

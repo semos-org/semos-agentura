@@ -75,6 +75,9 @@ def compose(
     format: OutputFormat,
     *,
     is_slides: bool = False,
+    draft: bool = False,
+    template: Path | str | None = None,
+    template_backend: str = "auto",
     render_mermaid: bool = True,
     render_drawio: bool = True,
     reference_doc: Path | str | None = None,
@@ -84,13 +87,18 @@ def compose(
     """Compose a document from Markdown.
 
     Args:
-        source: Path to .md file, or markdown string (with optional base64 images).
+        source: Path to .md file, or markdown string.
         output_path: Where to write the output file.
         format: Target format (PDF, DOCX, ODT, PPTX, HTML).
-        is_slides: If True, use Marp for slide generation. If False, use Pandoc.
-        render_mermaid: Pre-render mermaid code blocks to images before conversion.
-        reference_doc: Optional DOCX/ODT whose styles are applied to the output.
-        settings: Settings instance (auto-created from env if None).
+        is_slides: Use Marp for slide generation.
+        draft: Use pandoc pipeline for fully editable PPTX
+            (rough layout, human edit usually needed).
+            Default (False) uses Marp with --pptx-editable.
+        template: Design template PPTX to apply (COM).
+        template_backend: auto, com, uno, or docker.
+        render_mermaid: Pre-render mermaid code blocks.
+        reference_doc: DOCX/ODT/PPTX for styling.
+        settings: Settings (auto-created from env if None).
 
     Returns:
         ComposeResult with output path.
@@ -142,9 +150,45 @@ def compose(
                 logger.warning("drawio not found, skipping drawio rendering")
 
         # Route to the right composer
-        if is_slides:
+        if is_slides and draft:
+            from ._editable_slides import compose_editable_slides
+
+            pandoc = require_tool("pandoc", settings.pandoc_path)
+            ref = Path(reference_doc) if reference_doc else None
+            tpl = Path(template) if template else None
+
+            # If reference_doc is a corporate PPTX (not our bundled
+            # one), use it as a COM template instead - pandoc can't
+            # handle complex corporate templates as --reference-doc.
+            if ref and ref.suffix.lower() == ".pptx" and not tpl:
+                from ._editable_slides import default_reference
+
+                bundled = default_reference()
+                if ref.resolve() != bundled.resolve():
+                    logger.info(
+                        "Redirecting corporate PPTX to --template (pandoc can't use it as --reference-doc): %s",
+                        ref,
+                    )
+                    tpl = ref
+                    ref = None
+
+            compose_editable_slides(
+                md_path,
+                output_path,
+                pandoc_path=pandoc,
+                reference_doc=ref,
+                template=tpl,
+                template_backend=template_backend,
+            )
+        elif is_slides:
             marp = require_tool("marp", settings.marp_path)
-            compose_slides(md_path, output_path, format, marp_path=marp, libre_office_path=settings.libre_office_path)
+            compose_slides(
+                md_path,
+                output_path,
+                format,
+                marp_path=marp,
+                libre_office_path=settings.libre_office_path,
+            )
         else:
             pandoc = require_tool("pandoc", settings.pandoc_path)
             ref = Path(reference_doc) if reference_doc else None

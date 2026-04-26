@@ -54,6 +54,9 @@ class Settings(BaseSettings):
     # paths, or set DRAWIO_DESKTOP_PATH explicitly.
     drawio_desktop_path: str | None = Field(default=None)
 
+    # Template application backend: auto, com, uno, docker
+    template_backend: str = Field(default="auto")
+
     @property
     def provider_type(self) -> str:
         if self.document_ai_endpoint and self.document_ai_api_key:

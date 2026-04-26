@@ -67,3 +67,12 @@ class DiagramResult:
     image_path: Path | None
     iterations: int
     review_log: list[dict] = field(default_factory=list)
+
+
+@dataclass
+class MergeResult:
+    """Result of PPTX slide merge operation."""
+
+    output_path: Path
+    slide_count: int
+    backend: str

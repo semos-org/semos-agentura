@@ -53,8 +53,15 @@ document-agent compose input.md output.docx --format docx \
 document-agent compose input.md output.docx --format docx \
   --header-footer-doc template.docx
 
-# Slides (via Marp)
-document-agent compose input.md output.pptx --format pptx --slides
+# Slides - polished (Marp, limited editability)
+document-agent compose slides.md out.pptx --format pptx --slides
+
+# Slides - draft editable (pandoc, fully editable, rough layout)
+document-agent compose slides.md out.pptx --format pptx --slides --draft
+
+# Slides - draft + corporate template (requires PowerPoint)
+document-agent compose slides.md out.pptx --format pptx --slides --draft \
+  --template corporate.pptx
 ```
 
 ### YAML front matter styles
@@ -143,6 +150,26 @@ document-agent fill form.pdf filled.pdf --data '{"name": "John", "date": "2026-0
 document-agent fill form.docx filled.docx --data fields.json
 ```
 
+## Slide Merge
+
+Cherry-pick and merge slides from multiple PPTX sources.
+
+```bash
+# Merge specific slides by index
+document-agent merge-slides deck1.pptx:0-5 deck2.pptx:3,7,12 -o merged.pptx
+
+# Use a different base template for theme/master
+document-agent merge-slides deck1.pptx:0-5 deck2.pptx:3,7 \
+  --base template.pptx -o merged.pptx
+
+# Force python-pptx backend (portable, no PowerPoint needed)
+document-agent merge-slides deck.pptx:0-10 -o subset.pptx --backend pptx
+```
+
+Backends: COM (PowerPoint, preserves animations/transitions/media) is preferred.
+Falls back to python-pptx (portable, pure Python) when PowerPoint is unavailable.
+Install optional dependencies: `pip install document-agent[slides]`
+
 ## Setup
 
 ```bash
@@ -170,16 +197,40 @@ The agent automatically discovers them in `tools/node_modules/.bin/`.
 ## Python API
 
 ```python
-from document_agent import digest, compose, OutputFormat, OutputMode
+from document_agent import (
+    digest, compose, compose_editable_slides,
+    merge_slides, parse_source_args,
+    OutputFormat, OutputMode,
+)
 
 # Digest a DOCX with tracked changes
 result = digest("document.docx", track_changes="all")
-print(result.markdown)  # includes footnotes, comments, styles
+print(result.markdown)
 
-# Compose with YAML styles (auto-read from front matter)
+# Compose with YAML styles
 result = compose("styled.md", "output.docx", OutputFormat.PDF)
 
 # Compose with reference doc
 result = compose("input.md", "output.docx", OutputFormat.DOCX,
                  reference_doc="template.docx")
+
+# Slides - polished (Marp)
+result = compose("slides.md", "out.pptx", OutputFormat.PPTX,
+                 is_slides=True)
+
+# Slides - draft editable (pandoc)
+result = compose("slides.md", "out.pptx", OutputFormat.PPTX,
+                 is_slides=True, draft=True)
+
+# Slides - draft + corporate template
+result = compose("slides.md", "out.pptx", OutputFormat.PPTX,
+                 is_slides=True, draft=True,
+                 template="corporate.pptx")
+
+# Merge slides from CLI-style args
+config = parse_source_args(
+    ["deck1.pptx:0-5", "deck2.pptx:3,7"],
+    output="merged.pptx",
+)
+result = merge_slides(config, "merged.pptx")
 ```

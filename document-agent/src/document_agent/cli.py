@@ -82,7 +82,21 @@ def main() -> None:
     )
     comp.add_argument(
         "--header-footer-doc",
-        help="DOCX to copy only headers and footers from (use with YAML styles in the markdown)",
+        help="DOCX to copy headers/footers from",
+    )
+    comp.add_argument(
+        "--draft",
+        action="store_true",
+        help="Fully editable PPTX via pandoc (rough layout)",
+    )
+    comp.add_argument(
+        "--template",
+        help="Design template PPTX to apply (needs PowerPoint)",
+    )
+    comp.add_argument(
+        "--template-backend",
+        default="auto",
+        choices=["auto", "com", "uno", "docker"],
     )
 
     # --- inspect subcommand ---
@@ -136,6 +150,32 @@ def main() -> None:
         help="Save final diagram source code to this path",
     )
 
+    # --- merge-slides subcommand ---
+    mslid = subparsers.add_parser(
+        "merge-slides",
+        help="Merge slides from multiple PPTX sources",
+    )
+    mslid.add_argument(
+        "sources",
+        nargs="+",
+        help="path:range, e.g. deck.pptx:0-5 other.pptx:3,7",
+    )
+    mslid.add_argument(
+        "-o",
+        "--output",
+        required=True,
+        help="Output PPTX",
+    )
+    mslid.add_argument(
+        "--base",
+        help="Base PPTX for theme (default: first source)",
+    )
+    mslid.add_argument(
+        "--backend",
+        default="auto",
+        choices=["auto", "com", "pptx"],
+    )
+
     args = parser.parse_args()
 
     if not args.command:
@@ -159,6 +199,8 @@ def main() -> None:
         _run_fill(args)
     elif args.command == "diagram":
         _run_diagram(args, settings)
+    elif args.command == "merge-slides":
+        _run_merge_slides(args, settings)
 
 
 def _run_digest(args: argparse.Namespace, settings: Settings) -> None:
@@ -239,11 +281,16 @@ def _run_compose(args: argparse.Namespace, settings: Settings) -> None:
     ref = Path(args.reference_doc) if args.reference_doc else None
     hf = Path(args.header_footer_doc) if args.header_footer_doc else None
 
+    tpl = getattr(args, "template", None)
+    tpl_be = getattr(args, "template_backend", "auto")
     result = compose(
         input_path,
         output_path,
         fmt,
         is_slides=args.slides,
+        draft=getattr(args, "draft", False),
+        template=tpl,
+        template_backend=tpl_be,
         render_mermaid=not args.no_mermaid,
         render_drawio=not args.no_drawio,
         reference_doc=ref,
@@ -354,6 +401,30 @@ def _run_diagram(
 
     finally:
         shutil.rmtree(output_dir, ignore_errors=True)
+
+
+def _run_merge_slides(
+    args: argparse.Namespace,
+    settings: Settings,
+) -> None:
+    from .composition import merge_slides, parse_source_args
+
+    output_path = Path(args.output)
+    try:
+        config = parse_source_args(
+            args.sources,
+            base=args.base,
+            output=str(output_path),
+        )
+        result = merge_slides(
+            config,
+            output_path,
+            backend=args.backend,
+        )
+        print(f"Written: {result.output_path} ({result.slide_count} slides, backend: {result.backend})")
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

@@ -61,7 +61,15 @@ def compose_document(
         cmd.extend(["--pdf-engine=xelatex"])
 
     logger.info("Running: %s", " ".join(cmd))
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=120, cwd=md_path.parent)
+    result = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        cwd=md_path.parent,
+        encoding="utf-8",
+        errors="replace",
+    )
     if result.returncode != 0:
         raise CompositionError(f"Pandoc failed: {result.stderr}")
 
