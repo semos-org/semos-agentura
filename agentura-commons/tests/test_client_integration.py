@@ -14,7 +14,7 @@ from zipfile import ZipFile
 
 import pytest
 from agentura_commons.client import AgenturaClient
-from conftest import free_port, start_agent
+from agentura_commons.testing import free_port, start_agent
 
 
 def _make_sample_docx(path: Path) -> Path:

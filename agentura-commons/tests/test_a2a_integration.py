@@ -19,7 +19,7 @@ from a2a.types import (
     Role,
     SendMessageRequest,
 )
-from conftest import free_port, start_agent
+from agentura_commons.testing import free_port, start_agent
 from google.protobuf.struct_pb2 import Struct, Value
 
 

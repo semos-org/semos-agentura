@@ -17,7 +17,7 @@ from __future__ import annotations
 from uuid import uuid4
 
 import pytest
-from conftest import free_port, start_agent
+from agentura_commons.testing import free_port, start_agent
 
 
 def _anthropic_tool_use(name, args, tool_id=None):
@@ -129,10 +129,10 @@ class TestDiagramToEmailDraft:
                 "compose_document",
                 {
                     "source": "# Hello\n\nWorld.",
-                    "format": "html",
+                    "format": "docx",
                 },
             )
-            assert not r1.is_error
+            assert not r1.is_error, r1.text
             assert len(r1.files) >= 1
             name = r1.files[0].filename
 
@@ -142,12 +142,12 @@ class TestDiagramToEmailDraft:
             assert entry.blob is not None
             assert len(entry.blob) > 0
 
-            # Digest the produced file back
+            # Digest the produced file back (DOCX is supported)
             r2 = await client.call_tool(
                 "digest_document",
                 {"source": name},
             )
-            assert not r2.is_error
+            assert not r2.is_error, r2.text
 
     @pytest.mark.asyncio
     async def test_a2a_delegate_produces_file(self, tmp_path):

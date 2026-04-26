@@ -126,6 +126,16 @@ def _tool_result_to_call_tool_result(
     content: list = []
     structured: dict | None = None
 
+    # Detect error results: {"error": ...} dicts -> isError=True
+    if isinstance(result.data, dict) and "error" in result.data:
+        err = result.data["error"]
+        if isinstance(err, list):
+            text = "\n".join(str(e) for e in err)
+        else:
+            text = str(err)
+        content.append(TextContent(type="text", text=text))
+        return CallToolResult(content=content, isError=True)
+
     # Text block
     if result.text:
         content.append(TextContent(type="text", text=result.text))

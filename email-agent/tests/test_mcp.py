@@ -197,8 +197,9 @@ async def test_create_draft_validates_email(service):
                 "body": "Test body",
             },
         )
+        assert result.isError
         data = parse_tool_result(result)
-        assert "error" in data
+        assert "invalid" in data.lower() or "error" in data.lower()
 
 
 # draft_reply / send_reply via MCP
@@ -234,13 +235,11 @@ async def test_list_events_no_calendar(service):
     """Calendar tools should return an error when no calendar backend."""
     async with mcp_client_for(service) as client:
         result = await client.call_tool("list_events", {"days": 7})
-        data = parse_tool_result(result)
-        assert "error" in data
+        assert result.isError
 
 
 @pytest.mark.asyncio
 async def test_free_slots_no_calendar(service):
     async with mcp_client_for(service) as client:
         result = await client.call_tool("free_slots", {"days": 7})
-        data = parse_tool_result(result)
-        assert "error" in data
+        assert result.isError

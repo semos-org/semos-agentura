@@ -328,13 +328,19 @@ class TestFactory:
 
     @pytest.mark.skipif(sys.platform != "win32", reason="COM only on Windows")
     def test_create_com_backend(self):
-        s = Settings(backend="com")
-        b = create_backend(s)
-        from email_agent.backend import COMBackend
+        import pythoncom
 
-        assert isinstance(b, COMBackend)
-        assert b.supports_com
-        assert b.calendar is not None
+        pythoncom.CoInitialize()
+        try:
+            s = Settings(backend="com")
+            b = create_backend(s)
+            from email_agent.backend import COMBackend
+
+            assert isinstance(b, COMBackend)
+            assert b.supports_com
+            assert b.calendar is not None
+        finally:
+            pythoncom.CoUninitialize()
 
     def test_graph_not_implemented(self):
         s = Settings(backend="graph")
