@@ -77,16 +77,24 @@ class TestJsonSchemaToPydantic:
 
 
 class TestMakeMcpToolClass:
-    def test_has_correct_name(self, digest_tool):
+    @staticmethod
+    def _hub():
         hub = MagicMock()
+        agent = MagicMock()
+        agent.name = "document-agent"
+        hub.agent_for_tool.return_value = agent
+        return hub
+
+    def test_has_correct_name(self, digest_tool):
+        hub = self._hub()
         registry = FileRegistry()
         tool = _make_mcp_tool_class(digest_tool, hub, registry)
-        assert tool.name == "digest_document"
+        assert tool.name == "document_agent__digest_document"
 
     def test_has_class_attr_args_schema(self, digest_tool):
         """args_schema must be a class attr, not a property,
         so LangChain's bind_tools can introspect it."""
-        hub = MagicMock()
+        hub = self._hub()
         registry = FileRegistry()
         tool = _make_mcp_tool_class(digest_tool, hub, registry)
         # Must be a class (type), not an instance
@@ -95,13 +103,13 @@ class TestMakeMcpToolClass:
 
     def test_convert_to_openai_tool_works(self, digest_tool):
         """bind_tools uses convert_to_openai_tool internally."""
-        hub = MagicMock()
+        hub = self._hub()
         registry = FileRegistry()
         tool = _make_mcp_tool_class(digest_tool, hub, registry)
         openai_tool = convert_to_openai_tool(tool)
         assert openai_tool["type"] == "function"
         fn = openai_tool["function"]
-        assert fn["name"] == "digest_document"
+        assert fn["name"] == "document_agent__digest_document"
         assert "source" in fn["parameters"]["properties"]
 
     @pytest.mark.asyncio
@@ -193,10 +201,20 @@ class TestCreateMcpTools:
         search_tool,
     ):
         hub = MagicMock()
-        hub.all_tools.return_value = [digest_tool, search_tool]
+        hub.all_tools.return_value = [
+            digest_tool,
+            search_tool,
+        ]
+        # Each tool needs agent_for_tool to return an agent
+        agent = MagicMock()
+        agent.name = "test-agent"
+        hub.agent_for_tool.return_value = agent
         registry = FileRegistry()
 
         tools = create_mcp_tools(hub, registry)
         assert len(tools) == 2
         names = {t.name for t in tools}
-        assert names == {"digest_document", "search_emails"}
+        assert names == {
+            "test_agent__digest_document",
+            "test_agent__search_emails",
+        }

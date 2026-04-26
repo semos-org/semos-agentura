@@ -298,6 +298,8 @@ class TestDiscovery:
 
         all_tools = mcp_tools + delegates
         names = {t.name for t in all_tools}
-        assert "search_emails" in names
-        assert "compose_document" in names
-        assert "ask_email_agent" in names or any(n.startswith("ask_") for n in names)
+        # MCP tools are prefixed: agent_slug__tool_name
+        assert any("search_emails" in n for n in names)
+        assert any("compose_document" in n for n in names)
+        # Delegates keep their ask_* names
+        assert any(n.startswith("ask_") for n in names)
