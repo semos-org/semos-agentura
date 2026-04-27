@@ -1,18 +1,18 @@
 # Semos Agentura
 
-A modular multi-agent system for professional and scientific workflows, built on open protocols -[MCP](https://modelcontextprotocol.io/) (Model Context Protocol) and [A2A](https://a2a-protocol.org/) (Agent-to-Agent Protocol).
+A modular multi-agent system for professional and scientific workflows, built on open protocols - [MCP](https://modelcontextprotocol.io/) (Model Context Protocol) and [A2A](https://a2a-protocol.org/) (Agent-to-Agent Protocol).
 
 ## Principles
 
-**Sovereign architecture.** Every agent is an independent service with its own deployment, lifecycle, and data. No central runtime owns agent state. Agents communicate exclusively through standardized protocols - neverthrough shared memory, databases, or framework internals. An organization can host its own agents on its own infrastructure, choose its own LLM providers, and retain full control over data flow.
+**Sovereign architecture.** Every agent is an independent service with its own deployment, lifecycle, and data. No central runtime owns agent state. Agents communicate exclusively through standardized protocols - never through shared memory, databases, or framework internals. An organization can host its own agents on its own infrastructure, choose its own LLM providers, and retain full control over data flow.
 
-**Federated by design.** Agents are discovered via A2A Agent Cards and connected via protocol, not configuration. A new agent joins the system by publishing its capabilities - nocentral registry to update, no monolith to redeploy. This extends across organizational boundaries: a partner institution can expose its own agents over A2A without granting access to its internal systems.
+**Federated by design.** Agents are discovered via A2A Agent Cards and connected via protocol, not configuration. A new agent joins the system by publishing its capabilities - no central registry to update, no monolith to redeploy. This extends across organizational boundaries: a partner institution can expose its own agents over A2A without granting access to its internal systems.
 
-**Modular composition.** Each agent encapsulates a single domain (email, documents, etc.) and exposes it as MCP tools (for LLM-driven use) and A2A skills (for programmatic workflows). The shared `agentura-commons` library provides only protocol wiring - nobusiness logic, no framework lock-in. Agents are plain Python packages that work standalone, with or without the multi-agent layer.
+**Modular composition.** Each agent encapsulates a single domain (email, documents, etc.) and exposes it as MCP tools (for LLM-driven use) and A2A skills (for programmatic workflows). The shared `agentura-commons` library provides only protocol wiring - no business logic, no framework lock-in. Agents are plain Python packages that work standalone, with or without the multi-agent layer.
 
-**Open standards, no vendor lock-in.** MCP and A2A are both Linux Foundation standards (under [AAIF](https://aaif.dev/)) with multi-vendor support. LLM providers are interchangeable via `litellm`. Agents run as standard HTTP services - deployablewith uvicorn, Docker, Kubernetes, or any infrastructure.
+**Open standards, no vendor lock-in.** MCP and A2A are both Linux Foundation standards (under [AAIF](https://aaif.dev/)) with multi-vendor support. LLM providers are interchangeable via `litellm`. Agents run as standard HTTP services - deployable with uvicorn, Docker, Kubernetes, or any infrastructure.
 
-**Research-grade extensibility.** The system is designed for scientific and engineering environments where workflows evolve rapidly. Adding a new capability means adding a new agent - notmodifying existing ones. Domain experts can build agents in isolation and integrate them without understanding the orchestration layer.
+**Research-grade extensibility.** The system is designed for scientific and engineering environments where workflows evolve rapidly. Adding a new capability means adding a new agent - not modifying existing ones. Domain experts can build agents in isolation and integrate them without understanding the orchestration layer.
 
 ## How It Compares
 
@@ -22,16 +22,16 @@ A modular multi-agent system for professional and scientific workflows, built on
 | **Agent independence** | Each agent is its own service, deployment, repo | Plugins run inside a single process | N/A (not an agent system) | Agents are nodes in a framework runtime |
 | **Protocol** | MCP + A2A (open standards) | Proprietary skill API; MCP/A2A via community plugins | MCP client only | Framework-internal; MCP via integration |
 | **LLM control** | Bring your own (any provider via litellm) | Configurable per agent | Configurable per chat | Configurable but framework-coupled |
-| **Data sovereignty** | Full - agentsrun on your infra, no shared state | Partial - pluginsshare the agent's process/memory | Full (self-hosted) | Depends on deployment |
-| **Federation** | Native - agentsdiscover each other via A2A Agent Cards | No - single-instance | No - single-instance | No |
+| **Data sovereignty** | Full - agents run on your infra, no shared state | Partial - plugins share the agent's process/memory | Full (self-hosted) | Depends on deployment |
+| **Federation** | Native - agents discover each other via A2A Agent Cards | No - single-instance | No - single-instance | No |
 | **File handling** | Download URLs + base64 input; middleware spec for future clients | Via plugin | [Not solved](https://github.com/danny-avila/LibreChat/issues/8060) for MCP tools | Framework-dependent |
 | **Best for** | Multi-domain professional/scientific automation | Personal AI assistant | Multi-provider chat UI | Prototyping complex agent workflows |
 
-**Why not just use OpenClaw?** OpenClaw is a personal assistant - oneagent with plugins. Agentura is a distributed system - independentagents that can run on different machines, be developed by different teams, and communicate over standard protocols. OpenClaw could serve as a future chat frontend (via A2A) to the Agentura backend.
+**Why not just use OpenClaw?** OpenClaw is a personal assistant - one agent with plugins. Agentura is a distributed system - independent agents that can run on different machines, be developed by different teams, and communicate over standard protocols. OpenClaw could serve as a future chat frontend (via A2A) to the Agentura backend.
 
 **Why not just use LibreChat?** LibreChat is a chat UI, not an agent system. We use it for MCP testing today. It connects to our agents as an MCP client, but it doesn't orchestrate multi-agent workflows, handle agent-to-agent communication, or manage file transfer between tools.
 
-**Why not LangGraph/CrewAI?** These frameworks are designed for building new agents from scratch. Our agents already exist with clean APIs. Wrapping them with standard protocols (MCP + A2A) is simpler and preserves their independence - noframework runtime to adopt, no vendor lock-in.
+**Why not LangGraph/CrewAI?** These frameworks are designed for building new agents from scratch. Our agents already exist with clean APIs. Wrapping them with standard protocols (MCP + A2A) is simpler and preserves their independence - no framework runtime to adopt, no vendor lock-in.
 
 ## Architecture
 
@@ -42,8 +42,8 @@ graph TD
 
     UI -->|MCP SSE| EA[Email Agent]
     UI -->|MCP SSE| DA[Document Agent]
-    UI -.->|A2A planned| EA
-    UI -.->|A2A planned| DA
+    UI -->|A2A REST| EA
+    UI -->|A2A REST| DA
 
     subgraph Orchestrator[Orchestrator - planned]
         Monitor[Email Monitor] --> Router[LLM Router]
@@ -63,9 +63,10 @@ Each agent is a FastAPI app exposing both protocols:
 
 | Component | Port | Description |
 |-----------|------|-------------|
-| **agentura-ui** | 5006 | Reference chat client (Panel/panelini) - MCP tools, file middleware, LLM orchestration |
+| **agentura-ui** | 5006 | Reference chat client (Panel/panelini) - MCP + A2A, file middleware, LLM orchestration |
 | **email-agent** | 8001 | Email + calendar - search, read, send, draft, reply (IMAP/COM/Graph) |
 | **document-agent** | 8002 | Document processing - OCR digest, compose, diagrams, form fill |
+| **filesystem-agent** | 8003 | Virtual filesystem - read, write, copy, move, archive browsing (in-process with UI) |
 | **orchestrator** | 8000 | Email UI + LLM routing + workflow engine (planned) |
 
 ### Agentura UI
@@ -74,15 +75,18 @@ Each agent is a FastAPI app exposing both protocols:
 
 - **Discover tools** from multiple MCP agents via SSE and present them to an LLM
 - **Handle files** per the [file handling spec](docs/file-handling-spec.md) - the LLM never sees binary data; client middleware resolves filenames to base64 on input and fetches download URLs on output
-- **Manage a file registry** - uploads and tool-produced files in one place, with preview, download, re-use, and delete
-- **Resolve inline references** - markdown image/link references to registered files become inline data URIs so they render in the chat
+- **Manage files via VFS** - uploads and tool-produced files stored in a shared Virtual Filesystem (`session://` memory root), browsable via a Wunderbaum tree widget with context menus, drag-drop, and archive support
+- **Delegate to agents via A2A** - `ask_email_agent` / `ask_document_agent` tools send natural language tasks to agents, with file transfer via A2A `FilePart`
+- **Resolve inline references** - markdown image references to registered files become inline data URIs so they render in the chat
+- **Filesystem-agent in-process** - shares the VFS instance with the UI; MCP tools (list_files, copy_file, etc.) work via SSE as usual
 
-Currently connects via **MCP SSE**. **A2A support** (task-based interaction, streaming progress, agent-to-agent file transfer via `FilePart`) is planned as a second protocol path, allowing the UI to use whichever protocol fits the interaction pattern.
-
-Built on [panelini](https://github.com/opensemanticworld/panelini) which provides the chat interface, LLM provider management, and tool execution loop via LangChain.
+Built on [panelini](https://github.com/opensemanticworld/panelini) which provides the chat interface, LLM provider management, tool execution loop via LangChain, and the Wunderbaum tree widget.
 
 ```bash
-# Start agents, then:
+# Start all agents + UI:
+uv run python run_local.py
+
+# Or start UI alone (agents must be running):
 uv run python -m agentura_ui
 ```
 
@@ -108,7 +112,8 @@ uv run uvicorn document_agent.service:app --port 8002
 | `GET /mcp/sse` | MCP | SSE stream for MCP clients (Claude Desktop, etc.) |
 | `POST /mcp/messages/` | MCP | Tool call messages |
 | `GET /.well-known/agent-card.json` | A2A | Agent Card (capabilities, skills) |
-| `POST /a2a` | A2A | JSON-RPC task endpoint |
+| `POST /a2a` | A2A | REST endpoint (HTTP+JSON) |
+| `POST /a2a/rpc` | A2A | JSON-RPC endpoint |
 
 ### Connect from Claude Desktop
 
@@ -153,20 +158,28 @@ semos-agentura/
   agentura-commons/           # Shared MCP + A2A base classes
     src/agentura_commons/
       base.py                 # BaseAgentService ABC, ToolDef, SkillDef
-      mcp_server.py           # FastMCP server factory
-      a2a_server.py           # A2A Agent Card + handler factory
+      mcp_server.py           # FastMCP server factory + ToolResult normalization
+      a2a_server.py           # A2A Agent Card + handler (REST + JSON-RPC)
+      llm_executor.py         # Universal agentic loop (multi-step tool calling)
       transport.py            # Unified FastAPI app (MCP SSE + A2A + /health)
+      client.py               # AgenturaClient (headless MCP + A2A client)
+      file_middleware.py       # FileRegistry, pre/post_process_tool_call
+      testing.py              # Test helpers (mcp_client_for, start_agent, etc.)
       settings.py             # CommonSettings base
-  agentura-ui/                # Reference chat client (MCP + A2A planned)
+  agentura-ui/                # Reference chat client (MCP + A2A)
     config.yml                # LLM provider config (panelini format)
     src/agentura_ui/
-      __main__.py             # Entry point - MCP discovery, Panel serve
-      mcp_hub.py              # Multi-agent SSE connection manager
+      __main__.py             # Entry point - MCP/A2A discovery, Panel serve
       mcp_tools.py            # LangChain tool wrappers with file middleware
-      file_registry.py        # File registry + pre/post middleware
-      file_manager.py         # Sidebar file manager widget
+      a2a_tools.py            # A2A delegate tools (ask_*_agent)
+      file_registry.py        # VFS-backed file registry + middleware re-exports
       renderers.py            # File preview/download + markdown ref resolution
     tests/                    # Unit, integration, and Playwright browser tests
+  filesystem-agent/           # Virtual filesystem agent (in-process with UI)
+    src/filesystem_agent/
+      vfs.py                  # VirtualFileSystem (multi-root, fsspec)
+      panel_tree.py           # VFSTreeBrowser (Wunderbaum sidebar widget)
+      service.py              # MCP+A2A wrapper (15 tools, 1 skill)
   email-agent/                # Email + calendar agent
     src/email_agent/
       service.py              # MCP+A2A wrapper (9 tools, 1 skill)
@@ -175,7 +188,7 @@ semos-agentura/
       mailgent.py             # LLM email agent
   document-agent/             # Document processing agent
     src/document_agent/
-      service.py              # MCP+A2A wrapper (5 tools, 1 skill)
+      service.py              # MCP+A2A wrapper (7 tools, 1 skill)
       digestion/              # OCR to Markdown
       composition/            # Markdown to PDF/PPTX/DOCX/HTML
       forms/                  # PDF/DOCX form inspection and filling
@@ -234,13 +247,32 @@ semos-agentura/
 
 ### MCP (Model Context Protocol)
 
-Used when an **LLM decides** which tool to call. The orchestrator's LLM sees all agent tools and selects the right one based on the user's request.
+Used when an **LLM decides** which tool to call. The orchestrator's LLM sees all agent tools and selects the right one based on the user's request. Tools return normalized results (str, dict, Path, file-like objects are all auto-converted to `CallToolResult` with `ResourceLink` and `structuredContent`).
 
 ### A2A (Agent-to-Agent Protocol)
 
-Used when **code/workflows decide** - cronjobs, deterministic pipelines, or when you need streaming progress updates for long-running tasks.
+Used for **high-level delegation** - the requesting LLM sends a natural language task to an agent's LLM, which plans and executes it using its own tools. Also used for deterministic pipelines and cron workflows (no LLM needed).
+
+Each agent exposes dual A2A bindings: REST (`/a2a`) and JSON-RPC (`/a2a/rpc`). The `LLMExecutor` in agentura-commons provides the universal agentic loop with 5 synthetic tools (`request_input`, `return_result`, `report_progress`, `reject_task`, `request_auth`) that map to A2A task states.
 
 Both protocols are served by every agent. The caller picks which one to use.
+
+## Testing
+
+```bash
+# CI tests (no external deps - mocked backends, no LLM/COM/pandoc)
+uv run pytest -m "not integration"
+
+# Integration tests (needs real backends - Outlook, IMAP, LLM API keys)
+uv run pytest -m integration
+
+# Single agent
+uv run pytest document-agent/tests/ -m "not integration"
+
+# Pre-commit hook runs: ruff check + ruff format + pytest (CI tier)
+```
+
+417 CI-safe tests across all packages. Pre-commit hook enforces lint + format + tests before every commit.
 
 ## License
 
@@ -252,6 +284,7 @@ Both protocols are served by every agent. The caller picks which one to use.
 | `agentura-ui` | Apache 2.0 |
 | `email-agent` | Apache 2.0 |
 | `document-agent` | Apache 2.0 |
+| `filesystem-agent` | Apache 2.0 |
 | Future specialized agents | May be commercial (per-agent license) |
 
 See [LICENSE](LICENSE) for the full Apache 2.0 text. Individual agents may override with their own license file.

@@ -3,6 +3,7 @@ __pycache__/
 *.pyc
 .env
 *.egg-info/
+run_local_dev.py
 dist/
 build/
 .ruff_cache/

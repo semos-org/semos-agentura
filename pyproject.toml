@@ -14,7 +14,7 @@ members = [
 ]
 
 [tool.uv.sources]
-panelini = { path = "C:/Users/Stier/ownCloud/Git/OpenSemanticWorld/ui-libs/panelini", editable = true }
+panelini = { git = "https://github.com/opensemanticworld/panelini.git", branch = "dev-agentura" }
 
 [tool.pytest.ini_options]
 asyncio_mode = "strict"
