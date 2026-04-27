@@ -22,6 +22,8 @@ jobs:
           agentura-commons/src/
           email-agent/src/
           document-agent/src/
+          agentura-ui/src/
+          filesystem-agent/src/
 
       - name: Ruff format check
         run: >
@@ -29,6 +31,8 @@ jobs:
           agentura-commons/src/
           email-agent/src/
           document-agent/src/
+          agentura-ui/src/
+          filesystem-agent/src/
 
   test:
     runs-on: ubuntu-latest
@@ -49,6 +53,5 @@ jobs:
           agentura-commons/tests/
           email-agent/tests/
           document-agent/tests/
-          --override-ini="addopts="
           -m "not integration"
           --tb=short -q
