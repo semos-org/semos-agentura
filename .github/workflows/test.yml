@@ -37,6 +37,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     needs: lint
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v4
@@ -48,10 +49,12 @@ jobs:
         run: uv sync --all-packages
 
       - name: Run tests (CI tier - no external deps)
+        timeout-minutes: 5
         run: >
           uv run pytest
           agentura-commons/tests/
           email-agent/tests/
           document-agent/tests/
           -m "not integration"
+          --timeout=60
           --tb=short -q
