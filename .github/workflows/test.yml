@@ -45,10 +45,13 @@ jobs:
           enable-cache: true
       - run: uv python install 3.13
 
-      - name: Install dependencies
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y pandoc
+
+      - name: Install Python dependencies
         run: uv sync --all-packages
 
-      - name: Run tests (CI tier - no external deps)
+      - name: Run tests (CI tier)
         timeout-minutes: 5
         run: >
           uv run pytest
