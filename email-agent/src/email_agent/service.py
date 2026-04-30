@@ -7,12 +7,10 @@ Usage:
 from __future__ import annotations
 
 import asyncio
-import base64
 import logging
 import os
 import queue
 import threading
-import uuid
 from pathlib import Path
 from typing import Any
 
@@ -33,11 +31,13 @@ logger = logging.getLogger(__name__)
 
 
 class _COMWorker:
-    """Dedicated single thread for all Outlook COM operations.
+    """Dedicated single thread for Outlook COM operations.
 
     COM objects are apartment-threaded on Windows - they can only be used
     from the thread that created them. This worker creates the backend once
     and processes all tool calls sequentially on that thread.
+
+    Only used when the backend is COM. IMAP backends use asyncio.to_thread.
     """
 
     def __init__(self, settings: Settings) -> None:
@@ -48,8 +48,21 @@ class _COMWorker:
 
     def _run(self) -> None:
         """Worker loop - runs on the dedicated COM thread."""
-        backend = create_backend(self._settings)
-        backend.connect()
+        try:
+            backend = create_backend(self._settings)
+            backend.connect()
+        except Exception as e:
+            logger.error("COM backend init failed: %s", e)
+            # Drain queue with errors
+            while True:
+                tool_name, args, future = self._queue.get()
+                loop = future.get_loop()
+                loop.call_soon_threadsafe(
+                    self._safe_set_exception,
+                    future,
+                    RuntimeError(f"Backend not available: {e}"),
+                )
+            return
         executor = ToolExecutor(backend)
         logger.info("COM worker thread started")
 
@@ -80,18 +93,47 @@ class _COMWorker:
         return await future
 
 
+class _AsyncExecutor:
+    """Non-COM tool executor using asyncio.to_thread.
+
+    For IMAP and other thread-safe backends. No dedicated thread needed.
+    """
+
+    def __init__(self, settings: Settings) -> None:
+        self._executor: ToolExecutor | None = None
+        self._settings = settings
+
+    def _ensure(self) -> ToolExecutor:
+        if self._executor is None:
+            backend = create_backend(self._settings)
+            backend.connect()
+            self._executor = ToolExecutor(backend)
+            logger.info("Async executor ready (backend: %s)", self._settings.detected_backend)
+        return self._executor
+
+    async def execute(self, tool_name: str, args: dict) -> str:
+        executor = self._ensure()
+        return await asyncio.to_thread(executor.execute, tool_name, args)
+
+
 class EmailAgentService(BaseAgentService):
     """Exposes email-agent's tools via MCP and skills via A2A."""
 
     def __init__(self) -> None:
         self._settings = Settings()
-        self._worker: _COMWorker | None = None
+        self._executor_impl: _COMWorker | _AsyncExecutor | None = None
+        self._backend = None
 
-    def _ensure_worker(self) -> _COMWorker:
-        """Lazily start the COM worker thread on first use."""
-        if self._worker is None:
-            self._worker = _COMWorker(self._settings)
-        return self._worker
+    def _ensure_executor(self) -> _COMWorker | _AsyncExecutor:
+        """Lazily create the right executor based on backend type."""
+        if self._executor_impl is None:
+            if self._settings.detected_backend == "com":
+                self._executor_impl = _COMWorker(self._settings)
+                logger.info("Using COM worker thread")
+            else:
+                self._executor_impl = _AsyncExecutor(self._settings)
+                logger.info("Using async executor (backend: %s)", self._settings.detected_backend)
+        return self._executor_impl
 
     @property
     def agent_name(self) -> str:
@@ -119,47 +161,7 @@ class EmailAgentService(BaseAgentService):
             "Always use the current date/time provided above."
         )
 
-    def _resolve_file(self, source: str, default_ext: str = ".bin", filename: str = "") -> Path:
-        """Resolve source as a file path, base64, or data URI.
-
-        If filename is provided, the temp file preserves that name
-        (important for email attachments where the recipient sees it).
-        """
-        p = Path(source)
-        if p.exists():
-            return p
-        raw = source
-        if raw.startswith("data:"):
-            _, encoded = raw.split(",", 1)
-            raw = encoded
-        try:
-            data = base64.b64decode(raw, validate=True)
-            if len(data) > 4:
-                if filename:
-                    # Preserve original filename in a UUID-prefixed subdir
-                    subdir = self.output_dir / f"_att_{uuid.uuid4().hex[:8]}"
-                    subdir.mkdir(exist_ok=True)
-                    tmp = subdir / filename
-                else:
-                    tmp = self.output_dir / f"_upload_{uuid.uuid4().hex[:8]}{default_ext}"
-                tmp.write_bytes(data)
-                return tmp
-        except Exception:
-            pass
-
-        # URL fallback: fetch the file content
-        if source.startswith(("http://", "https://")):
-            import httpx as _httpx
-
-            resp = _httpx.get(source, timeout=30)
-            resp.raise_for_status()
-            ext = Path(source.rsplit("/", 1)[-1]).suffix or default_ext
-            fn = filename or f"_fetch_{uuid.uuid4().hex[:8]}{ext}"
-            tmp = self.output_dir / fn
-            tmp.write_bytes(resp.content)
-            return tmp
-
-        return p
+    # _resolve_file and _resolve_file_attachment inherited from BaseAgentService
 
     def get_tools(self) -> list[ToolDef]:
         _fh = "Accepts absolute file paths or base64-encoded content."
@@ -385,7 +387,7 @@ class EmailAgentService(BaseAgentService):
             name = item.get("name", "")
             content = item.get("content", name)  # fallback: name is the path
             ext = Path(name).suffix if name else ".bin"
-            resolved = self._resolve_file(content, default_ext=ext, filename=name)
+            resolved = self.resolve_file(content, default_ext=ext, filename=name)
             logger.info("Resolved attachment: %s -> %s", name, resolved)
             att_paths.append(str(resolved))
 
@@ -435,9 +437,9 @@ class EmailAgentService(BaseAgentService):
         return await self._exec("send_reply", {"query": query, "body": body})
 
     async def _exec(self, tool_name: str, args: dict) -> str:
-        """Submit tool call to the dedicated COM worker thread."""
-        worker = self._ensure_worker()
-        return await worker.execute(tool_name, args)
+        """Execute tool via the appropriate backend executor."""
+        executor = self._ensure_executor()
+        return await executor.execute(tool_name, args)
 
 
 # --- App factory ---

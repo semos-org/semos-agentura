@@ -7,7 +7,6 @@ Usage:
 from __future__ import annotations
 
 import asyncio
-import base64
 import json
 import os
 import shutil
@@ -184,52 +183,7 @@ class DocumentAgentService(BaseAgentService):
             "generate_diagram, inspect_form, fill_form."
         )
 
-    def _resolve_file(
-        self,
-        source: str,
-        default_ext: str = ".bin",
-        filename: str = "",
-    ) -> Path:
-        """Resolve source as a file path, base64, or data URI.
-
-        If filename is provided, the temp file preserves that name
-        (important for downstream tools that infer type from name).
-        """
-        p = Path(source)
-        if p.exists():
-            return p
-
-        raw = source
-        if raw.startswith("data:"):
-            _, encoded = raw.split(",", 1)
-            raw = encoded
-        try:
-            data = base64.b64decode(raw, validate=True)
-            if len(data) > 4:
-                if filename:
-                    subdir = self.output_dir / f"_att_{uuid.uuid4().hex[:8]}"
-                    subdir.mkdir(exist_ok=True)
-                    tmp = subdir / filename
-                else:
-                    tmp = self.output_dir / f"_upload_{uuid.uuid4().hex[:8]}{default_ext}"
-                tmp.write_bytes(data)
-                return tmp
-        except Exception:
-            pass
-        return p
-
-    def _resolve_file_attachment(
-        self,
-        source: FileAttachment | str,
-        default_ext: str = ".bin",
-    ) -> Path:
-        """Resolve a FileAttachment or plain string to a local Path."""
-        if isinstance(source, dict):
-            name = source.get("name", "")
-            content = source.get("content", name)
-            ext = Path(name).suffix if name else default_ext
-            return self._resolve_file(content, default_ext=ext, filename=name)
-        return self._resolve_file(source, default_ext=default_ext)
+    # _resolve_file and _resolve_file_attachment inherited from BaseAgentService
 
     async def _digest(
         self,
@@ -264,7 +218,7 @@ class DocumentAgentService(BaseAgentService):
             describe_images: Send extracted images to VLM for alt-text annotation.
         """
         mode = OutputMode.INLINE if output_mode == "text" else OutputMode.FILE
-        src = self._resolve_file_attachment(source, ".pdf")
+        src = self.resolve_file_attachment(source, ".pdf")
         settings = self._settings
 
         def _run():
@@ -340,12 +294,12 @@ class DocumentAgentService(BaseAgentService):
         # Resolve reference document if provided
         ref_path = None
         if reference_doc:
-            ref_path = self._resolve_file_attachment(reference_doc, ".docx")
+            ref_path = self.resolve_file_attachment(reference_doc, ".docx")
 
         # Resolve header/footer source if provided
         hf_path = None
         if header_footer_doc:
-            hf_path = self._resolve_file_attachment(header_footer_doc, ".docx")
+            hf_path = self.resolve_file_attachment(header_footer_doc, ".docx")
 
         tpl_path = Path(template) if template else None
 
@@ -393,7 +347,7 @@ class DocumentAgentService(BaseAgentService):
         Args:
             file_path: File as {name, content} object, file path, or base64.
         """
-        fp = self._resolve_file_attachment(file_path, ".pdf")
+        fp = self.resolve_file_attachment(file_path, ".pdf")
 
         def _run():
             return inspect_form(file_path=fp)
@@ -415,7 +369,7 @@ class DocumentAgentService(BaseAgentService):
             filename: Optional output filename. Auto-generated if omitted.
         """
         field_data = json.loads(data)
-        fp = self._resolve_file_attachment(file_path, ".pdf")
+        fp = self.resolve_file_attachment(file_path, ".pdf")
         if not filename:
             ext = fp.suffix or ".pdf"
             filename = f"filled{ext}"
@@ -469,7 +423,7 @@ class DocumentAgentService(BaseAgentService):
         for raw_file, spec in zip(files, slide_specs, strict=True):
             if not raw_file:
                 continue
-            resolved = self._resolve_file_attachment(raw_file, ".pptx")
+            resolved = self.resolve_file_attachment(raw_file, ".pptx")
             if not resolved.exists():
                 continue
             name = resolved.stem

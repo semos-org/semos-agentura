@@ -57,12 +57,11 @@ def _patch_email_service_mock_backend():
 
     executor = ToolExecutor(backend)
 
-    class _FakeWorker:
+    class _FakeExecutor:
         async def execute(self, tool_name, args):
             return executor.execute(tool_name, args)
 
-    _service._worker = _FakeWorker()
-    _service._ensure_worker = lambda: _service._worker
+    _service._executor_impl = _FakeExecutor()
 
 
 def _make_minimal_docx(path: Path) -> Path:

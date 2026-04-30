@@ -10,7 +10,7 @@ import threading
 import time
 from datetime import datetime
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 from zipfile import ZipFile
 
 import uvicorn
@@ -48,24 +48,25 @@ def _patch_email_service_mock_backend():
     backend.create_draft.return_value = "DRAFT-001"
     backend.calendar = None
 
-    # Patch create_backend to return our mock.
-    # This must happen before _COMWorker._run() calls create_backend().
+    # Patch create_backend to return our mock before any import
+    # of email_agent.service (which creates _service at module level).
     import email_agent.backend as backend_mod
 
     backend_mod.create_backend = lambda *a, **k: backend
-
-    # Also patch connect() to be a no-op
     backend.connect = MagicMock()
 
-    # Now import/access the service. If _service was already created
-    # (e.g., imported elsewhere), also inject the mock executor.
+    # Import service - on first import _service is created, but
+    # _ensure_executor() is lazy so it hasn't called create_backend yet.
     import email_agent.service as svc_mod
 
     service = svc_mod._service
 
-    mock_exec = ToolExecutor.__new__(ToolExecutor)
-    mock_exec._backend = backend
-    service._executor = mock_exec
+    # Inject a mock _AsyncExecutor that uses our mock backend directly.
+    mock_exec = MagicMock()
+    mock_exec.execute = AsyncMock(
+        side_effect=lambda name, args: ToolExecutor(backend).execute(name, args),
+    )
+    service._executor_impl = mock_exec
     service._backend = backend
 
 

@@ -6,13 +6,18 @@ The transport module then wires everything into a single FastAPI app.
 
 from __future__ import annotations
 
+import base64
 import json
+import logging
 import mimetypes
 import os
+import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, TypedDict
+
+logger = logging.getLogger(__name__)
 
 
 class FileAttachment(TypedDict):
@@ -119,6 +124,102 @@ class BaseAgentService(ABC):
             },
             ensure_ascii=False,
         )
+
+    def resolve_file(
+        self,
+        source: str,
+        default_ext: str = ".bin",
+        filename: str = "",
+    ) -> Path:
+        """Resolve a source string to a local file Path.
+
+        Detects the format first, then resolves:
+        1. data URI (data:mime;base64,...) -> decode and write to temp file
+        2. raw base64 -> decode and write to temp file
+        3. HTTP(S) URL -> fetch and write to temp file
+        4. file path -> return as-is if it exists
+
+        If filename is provided, the temp file preserves that name
+        (important for downstream tools that infer type from name).
+        """
+        assert self.output_dir, "output_dir must be set before resolving files"
+
+        # 1. data URI
+        if source.startswith("data:"):
+            _, _, encoded = source.partition(",")
+            return self._write_decoded(encoded, default_ext, filename)
+
+        # 2. HTTP(S) URL
+        if source.startswith(("http://", "https://")):
+            import httpx as _httpx
+
+            resp = _httpx.get(source, timeout=30)
+            resp.raise_for_status()
+            ext = Path(source.rsplit("/", 1)[-1]).suffix or default_ext
+            fn = filename or f"_fetch_{uuid.uuid4().hex[:8]}{ext}"
+            tmp = self.output_dir / fn
+            tmp.write_bytes(resp.content)
+            return tmp
+
+        # 3. Existing file path (only try for short strings that look like paths)
+        if len(source) < 1024:
+            p = Path(source)
+            if p.exists():
+                return p
+            # Try relative to output_dir
+            p2 = self.output_dir / source
+            if p2.exists():
+                return p2
+
+        # 4. Raw base64 (no data: prefix)
+        try:
+            data = base64.b64decode(source, validate=True)
+            if len(data) > 4:
+                return self._write_bytes(data, default_ext, filename)
+        except Exception:
+            pass
+
+        # Fallback: return as path (may not exist - tool will error)
+        return Path(source)
+
+    def _write_decoded(
+        self,
+        encoded: str,
+        default_ext: str,
+        filename: str,
+    ) -> Path:
+        """Decode base64 and write to a temp file."""
+        data = base64.b64decode(encoded)
+        return self._write_bytes(data, default_ext, filename)
+
+    def _write_bytes(
+        self,
+        data: bytes,
+        default_ext: str,
+        filename: str,
+    ) -> Path:
+        """Write bytes to a temp file, preserving filename if given."""
+        if filename:
+            subdir = self.output_dir / f"_att_{uuid.uuid4().hex[:8]}"
+            subdir.mkdir(exist_ok=True)
+            tmp = subdir / filename
+        else:
+            tmp = self.output_dir / f"_upload_{uuid.uuid4().hex[:8]}{default_ext}"
+        tmp.write_bytes(data)
+        return tmp
+
+    def resolve_file_attachment(
+        self,
+        source: FileAttachment | str,
+        default_ext: str = ".bin",
+    ) -> Path:
+        """Resolve a FileAttachment dict or plain string to a local Path."""
+        if isinstance(source, dict):
+            name = source.get("name", "")
+            content = source.get("content", name)
+            ext = Path(name).suffix if name else default_ext
+            return self.resolve_file(content, default_ext=ext, filename=name)
+        return self.resolve_file(source, default_ext=default_ext)
 
     @property
     @abstractmethod

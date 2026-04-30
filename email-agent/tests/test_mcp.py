@@ -71,19 +71,16 @@ def service():
     # Patch the _create_executor to inject our mock
     mock_backend = _mock_backend()
 
-    # Override the COM worker to use a direct executor instead
+    # Inject mock executor directly (bypass COM worker / async executor)
     from email_agent.tools import ToolExecutor
 
     executor = ToolExecutor(mock_backend)
 
-    # Replace _ensure_worker with a simple sync call
-    class _FakeWorker:
+    class _FakeExecutor:
         async def execute(self, tool_name, args):
             return executor.execute(tool_name, args)
 
-    svc._worker = _FakeWorker()
-    # Bypass lazy init
-    svc._ensure_worker = lambda: svc._worker
+    svc._executor_impl = _FakeExecutor()
 
     return svc
 
