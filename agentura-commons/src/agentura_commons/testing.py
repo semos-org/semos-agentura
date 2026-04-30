@@ -23,9 +23,13 @@ def free_port() -> int:
 
 
 def _patch_email_service_mock_backend():
-    """Inject a mock backend into the email-agent service."""
+    """Inject a mock backend into the email-agent service.
+
+    Patches create_backend BEFORE the service module is imported,
+    so the COM worker thread uses the mock from the start.
+    Works on both Windows (has COM) and Linux (no COM).
+    """
     from email_agent.models import EmailMessage
-    from email_agent.service import _service
     from email_agent.tools import ToolExecutor
 
     backend = MagicMock()
@@ -44,10 +48,25 @@ def _patch_email_service_mock_backend():
     backend.create_draft.return_value = "DRAFT-001"
     backend.calendar = None
 
+    # Patch create_backend to return our mock.
+    # This must happen before _COMWorker._run() calls create_backend().
+    import email_agent.backend as backend_mod
+
+    backend_mod.create_backend = lambda *a, **k: backend
+
+    # Also patch connect() to be a no-op
+    backend.connect = MagicMock()
+
+    # Now import/access the service. If _service was already created
+    # (e.g., imported elsewhere), also inject the mock executor.
+    import email_agent.service as svc_mod
+
+    service = svc_mod._service
+
     mock_exec = ToolExecutor.__new__(ToolExecutor)
     mock_exec._backend = backend
-    _service._executor = mock_exec
-    _service._backend = backend
+    service._executor = mock_exec
+    service._backend = backend
 
 
 def start_agent(agent_module: str, port: int):
