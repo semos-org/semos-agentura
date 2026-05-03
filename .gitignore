@@ -9,6 +9,7 @@ build/
 .ruff_cache/
 .pytest_cache/
 output/
+.tokens/
 
 # Agent-local lockfiles (workspace root uv.lock is the canonical one)
 email-agent/uv.lock

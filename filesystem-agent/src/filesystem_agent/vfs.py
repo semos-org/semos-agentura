@@ -191,8 +191,8 @@ class VirtualFileSystem:
                     {
                         "uri": entry_uri,
                         "name": basename,
-                        "type": info.get("type", "file"),
-                        "size": info.get("size", 0),
+                        "type": info.get("type") or "file",
+                        "size": info.get("size") or 0,
                     }
                 )
             else:
@@ -422,8 +422,8 @@ class VirtualFileSystem:
         """List entries inside an archive.
 
         *uri* can be:
-        - ``local://docs/a.zip`` — list root of archive
-        - ``local://docs/a.zip!/data`` — list ``data/`` folder inside archive
+        - ``local://docs/a.zip``  - list root of archive
+        - ``local://docs/a.zip!/data``  - list ``data/`` folder inside archive
         """
         archive_uri, inner = self.split_archive_uri(uri)
         afs = self._open_archive_fs(archive_uri)
@@ -441,8 +441,8 @@ class VirtualFileSystem:
                     {
                         "uri": entry_uri,
                         "name": basename,
-                        "type": info.get("type", "file"),
-                        "size": info.get("size", 0),
+                        "type": info.get("type") or "file",
+                        "size": info.get("size") or 0,
                     }
                 )
             else:
@@ -484,7 +484,7 @@ class VirtualFileSystem:
         ):
             for item in zin.infolist():
                 if item.filename.rstrip("/") == inner.rstrip("/"):
-                    continue  # skip — will be replaced
+                    continue  # skip  - will be replaced
                 zout.writestr(item, zin.read(item.filename))
             zout.writestr(inner, data)
 

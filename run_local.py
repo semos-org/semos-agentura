@@ -19,6 +19,7 @@ import signal
 import socket
 import subprocess
 import sys
+import threading
 import time
 
 AGENTS = [
@@ -28,6 +29,43 @@ AGENTS = [
     # (shares the same VFS instance for session:// files)
 ]
 UI_PORT = 5006
+
+# ANSI color codes for agent log prefixes
+_COLORS = [
+    "\033[36m",  # cyan
+    "\033[33m",  # yellow
+    "\033[35m",  # magenta
+    "\033[32m",  # green
+    "\033[34m",  # blue
+    "\033[91m",  # bright red
+]
+_RESET = "\033[0m"
+
+
+def _log_prefix(name: str, idx: int) -> str:
+    color = _COLORS[idx % len(_COLORS)]
+    return f"{color}[{name}]{_RESET}"
+
+
+def _pipe_output(stream, prefix: str) -> None:
+    """Read lines from a subprocess stream and print with a colored prefix."""
+    try:
+        for line in iter(stream.readline, ""):
+            if line:
+                print(f"{prefix} {line}", end="", flush=True)
+    except (ValueError, OSError):
+        pass  # stream closed
+
+
+def _start_log_threads(proc: subprocess.Popen, prefix: str) -> list[threading.Thread]:
+    """Start daemon threads to pipe stdout and stderr with a prefix."""
+    threads = []
+    for stream in (proc.stdout, proc.stderr):
+        if stream:
+            t = threading.Thread(target=_pipe_output, args=(stream, prefix), daemon=True)
+            t.start()
+            threads.append(t)
+    return threads
 
 
 def _port_in_use(port: int) -> bool:
@@ -40,14 +78,12 @@ def _kill_port(port: int) -> bool:
     if not _port_in_use(port):
         return False
     if sys.platform == "win32":
-        # netstat -ano | findstr :PORT
         out = subprocess.run(
             ["netstat", "-ano"],
             capture_output=True,
             text=True,
         )
         for line in out.stdout.splitlines():
-            # "LISTENING" (en) or "ABHREN" (de)
             upper = line.upper()
             if f":{port}" in line and ("LISTEN" in upper or "ABH" in upper):
                 pid = line.strip().split()[-1]
@@ -59,7 +95,6 @@ def _kill_port(port: int) -> bool:
                 time.sleep(0.5)
                 return True
     else:
-        # lsof -ti :PORT | xargs kill
         out = subprocess.run(
             ["lsof", "-ti", f":{port}"],
             capture_output=True,
@@ -78,17 +113,17 @@ def main():
     procs: list[subprocess.Popen] = []
 
     # Kill existing processes on our ports
-    # Include 8003 (filesystem-agent, hosted in-process by UI)
     fs_port = int(os.environ.get("FILESYSTEM_AGENT_PORT", "8003"))
     all_ports = [p for _, _, p in AGENTS] + [UI_PORT, fs_port]
     for port in all_ports:
         _kill_port(port)
 
     # Start agents
-    for name, module, port in AGENTS:
+    for i, (name, module, port) in enumerate(AGENTS):
         if _port_in_use(port):
             print(f"  {name}: port {port} still in use, skipping")
             continue
+        prefix = _log_prefix(name, i)
         print(f"  Starting {name} on port {port}...")
         agent_dir = __import__("pathlib").Path(__file__).parent / name
         p = subprocess.Popen(
@@ -105,7 +140,13 @@ def main():
                 "info",
             ],
             cwd=str(agent_dir),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
         )
+        _start_log_threads(p, prefix)
         procs.append(p)
 
     # Wait for agents to be ready
@@ -120,11 +161,18 @@ def main():
     if _port_in_use(UI_PORT):
         print(f"  UI: port {UI_PORT} already in use, skipping")
     else:
+        ui_prefix = _log_prefix("ui", len(AGENTS))
         print(f"  Starting agentura-ui on port {UI_PORT}...")
         p = subprocess.Popen(
             [sys.executable, "-m", "agentura_ui"],
             cwd=str(__import__("pathlib").Path(__file__).parent),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
         )
+        _start_log_threads(p, ui_prefix)
         procs.append(p)
 
     print()

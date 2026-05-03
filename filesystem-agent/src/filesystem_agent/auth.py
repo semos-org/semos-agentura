@@ -46,7 +46,8 @@ def acquire_sharepoint_token(tenant_id: str, client_id: str, client_secret: str,
     raise RuntimeError(f"Failed to acquire SharePoint token: {error}")
 
 
-SESSION_PATH = Path(".tokens/sharepoint_session.json")
+# Store session next to this module so it works regardless of cwd
+SESSION_PATH = Path(__file__).resolve().parent.parent.parent / ".tokens" / "sharepoint_session.json"
 
 
 async def _extract_cookies_via_browser(sharepoint_url: str, session_path: Path = SESSION_PATH) -> dict[str, str]:
@@ -68,12 +69,12 @@ async def _extract_cookies_via_browser(sharepoint_url: str, session_path: Path =
         )
         page = await context.new_page()
 
-        # Navigate to SharePoint — triggers SSO / smartcard prompt
+        # Navigate to SharePoint  - triggers SSO / smartcard prompt
         print("  Waiting for SharePoint login to complete...", flush=True)
         print("  (Complete smartcard/SSO login in the browser window)", flush=True)
         await page.goto(sharepoint_url, wait_until="domcontentloaded", timeout=120_000)
 
-        # Poll for FedAuth cookie — the definitive sign that login succeeded
+        # Poll for FedAuth cookie  - the definitive sign that login succeeded
         sp_cookies = {}
         for _ in range(600):  # up to 5 minutes
             all_cookies = await context.cookies()
@@ -90,6 +91,7 @@ async def _extract_cookies_via_browser(sharepoint_url: str, session_path: Path =
 
         # Save session for reuse
         state = await context.storage_state()
+        session_path.parent.mkdir(parents=True, exist_ok=True)
         session_path.write_text(json.dumps(state, indent=2), encoding="utf-8")
 
         print("  Browser closing automatically...", flush=True)
@@ -117,10 +119,53 @@ def _load_cached_cookies(session_path: Path) -> dict[str, str] | None:
     return None
 
 
+def _validate_cookies(sharepoint_url: str, cookies: dict[str, str]) -> bool:
+    """Check if cached cookies are still valid with a lightweight API call."""
+    from urllib.parse import urlparse
+
+    # Extract just the site URL (https://tenant/sites/name) for the API call,
+    # even if the caller passed a deeper path like .../Shared%20Documents
+    parsed = urlparse(sharepoint_url)
+    parts = parsed.path.rstrip("/").split("/")
+    # Find /sites/SiteName and stop there
+    site_path = parsed.path
+    if "/sites/" in parsed.path:
+        idx = parts.index("sites")
+        site_path = "/".join(parts[: idx + 2])
+    site_root = f"{parsed.scheme}://{parsed.netloc}{site_path}"
+
+    try:
+        r = httpx.get(
+            f"{site_root}/_api/web/title",
+            auth=CookieAuth(cookies),
+            headers={"Accept": "application/json;odata=verbose"},
+            follow_redirects=True,
+            timeout=10,
+        )
+        return r.status_code == 200
+    except Exception:
+        return False
+
+
 def extract_sharepoint_cookies(sharepoint_url: str, session_path: Path = SESSION_PATH) -> dict[str, str]:
-    """Extract SharePoint cookies — reuses cached session if available, otherwise opens browser."""
+    """Extract SharePoint cookies  - reuses cached session if available, otherwise opens browser.
+
+    Validates cached cookies before returning them. If expired, opens browser for re-login.
+    Works from both sync and async contexts.
+    """
     cached = _load_cached_cookies(session_path)
     if cached:
-        print("  Using cached session (no browser needed)", flush=True)
-        return cached
+        if _validate_cookies(sharepoint_url, cached):
+            print("  Using cached session (no browser needed)", flush=True)
+            return cached
+        print("  Cached session expired, re-authenticating...", flush=True)
+    try:
+        asyncio.get_running_loop()
+        # Already in an async context  - can't use asyncio.run().
+        # Use nest_asyncio to allow nested event loops.
+        import nest_asyncio
+
+        nest_asyncio.apply()
+    except RuntimeError:
+        pass  # No running loop  - asyncio.run() will work fine
     return asyncio.run(_extract_cookies_via_browser(sharepoint_url, session_path))
