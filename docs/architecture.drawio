@@ -1,0 +1,160 @@
+<mxfile host="app.diagrams.net" modified="2026-05-01T00:00:00.000Z" agent="semos-agentura" version="24.0.0">
+  <diagram id="arch" name="Architecture">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="700" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <!-- User -->
+        <mxCell id="user" value="User" style="shape=actor;whiteSpace=wrap;html=1;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="500" y="20" width="40" height="50" as="geometry"/>
+        </mxCell>
+
+        <!-- Message Paths (top row) -->
+        <mxCell id="ui" value="&lt;b&gt;Agentura UI&lt;/b&gt;&lt;br&gt;chat client" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="370" y="100" width="120" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="email_ch" value="&lt;b&gt;Email&lt;/b&gt;&lt;br&gt;inbox monitor" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="550" y="100" width="120" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="more_mp" value="..." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=16;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="720" y="108" width="40" height="35" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="e_user_ui" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="user" target="ui" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="lbl_chat" value="chat" style="edgeLabel;html=1;fontSize=10;" vertex="1" connectable="0" parent="e_user_ui">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_user_email" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="user" target="email_ch" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="lbl_email" value="email" style="edgeLabel;html=1;fontSize=10;" vertex="1" connectable="0" parent="e_user_email">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- Orchestrator -->
+        <mxCell id="orch_group" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;strokeWidth=2;dashed=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="370" y="190" width="300" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="orch_label" value="&lt;b&gt;Orchestrator&lt;/b&gt; (session manager, task list, memory) &lt;i&gt;planned&lt;/i&gt;" style="text;html=1;align=center;verticalAlign=middle;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="380" y="200" width="280" height="50" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="e_ui_orch" value="message path" style="fontSize=10;" edge="1" source="ui" target="orch_group" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_email_orch" value="message path" style="fontSize=10;" edge="1" source="email_ch" target="orch_group" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- Specialist Agents Row -->
+        <mxCell id="ea" value="&lt;b&gt;Email Agent&lt;/b&gt;&lt;br&gt;9 tools" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="40" y="320" width="120" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="da" value="&lt;b&gt;Document Agent&lt;/b&gt;&lt;br&gt;7 tools" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="190" y="320" width="130" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="fa" value="&lt;b&gt;Filesystem Agent&lt;/b&gt;&lt;br&gt;15 tools" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="350" y="320" width="130" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="ba" value="&lt;b&gt;Browser Agent&lt;/b&gt;&lt;br&gt;&lt;i&gt;planned&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;strokeWidth=1;dashed=1;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="510" y="320" width="120" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="ca" value="&lt;b&gt;Coding Agent&lt;/b&gt;&lt;br&gt;&lt;i&gt;planned&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;strokeWidth=1;dashed=1;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="660" y="320" width="120" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="ka" value="&lt;b&gt;Knowledge Agent&lt;/b&gt;&lt;br&gt;&lt;i&gt;planned (OO-LD)&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;strokeWidth=1;dashed=1;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="810" y="320" width="140" height="50" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="more_ag" value="..." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=16;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="970" y="328" width="40" height="35" as="geometry"/>
+        </mxCell>
+
+        <!-- Orchestrator to Agents -->
+        <mxCell id="e_o_ea" value="MCP / A2A" style="fontSize=9;" edge="1" source="orch_group" target="ea" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_o_da" value="MCP / A2A" style="fontSize=9;" edge="1" source="orch_group" target="da" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_o_fa" value="MCP" style="fontSize=9;" edge="1" source="orch_group" target="fa" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_o_ba" style="dashed=1;fontSize=9;" edge="1" source="orch_group" target="ba" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_o_ca" style="dashed=1;fontSize=9;" edge="1" source="orch_group" target="ca" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_o_ka" style="dashed=1;fontSize=9;" edge="1" source="orch_group" target="ka" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_o_more" style="dashed=1;fontSize=9;" edge="1" source="orch_group" target="more_ag" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_moremp_o" style="fontSize=10;" edge="1" source="more_mp" target="orch_group" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- Virtual Filesystem Layer -->
+        <mxCell id="vfs" value="&lt;b&gt;Virtual Filesystem&lt;/b&gt; (local, WebDAV, SharePoint, session memory, ...)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="200" y="420" width="460" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_fa_vfs" style="strokeWidth=2;" edge="1" source="fa" target="vfs" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- agentura-commons Foundation Layer -->
+        <mxCell id="commons" value="&lt;b&gt;agentura-commons&lt;/b&gt;: BaseAgentService, MCP+A2A transport, file middleware, LLMExecutor, AgenturaClient" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="40" y="510" width="910" height="35" as="geometry"/>
+        </mxCell>
+
+        <!-- Dotted lines from agents to commons (uses) -->
+        <mxCell id="e_ea_c" style="dashed=1;strokeColor=#999999;entryX=0.1;entryY=0;" edge="1" source="ea" target="commons" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_da_c" style="dashed=1;strokeColor=#999999;entryX=0.2;entryY=0;" edge="1" source="da" target="commons" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_fa_c" style="dashed=1;strokeColor=#999999;entryX=0.4;entryY=0;" edge="1" source="fa" target="commons" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- Legend (component types) -->
+        <mxCell id="leg1" value="" style="rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="40" y="570" width="16" height="12" as="geometry"/>
+        </mxCell>
+        <mxCell id="leg1t" value="Message path (user interface)" style="text;fontSize=9;align=left;" vertex="1" parent="1">
+          <mxGeometry x="60" y="567" width="160" height="18" as="geometry"/>
+        </mxCell>
+        <mxCell id="leg2" value="" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="230" y="570" width="16" height="12" as="geometry"/>
+        </mxCell>
+        <mxCell id="leg2t" value="Orchestrator (session manager)" style="text;fontSize=9;align=left;" vertex="1" parent="1">
+          <mxGeometry x="250" y="567" width="170" height="18" as="geometry"/>
+        </mxCell>
+        <mxCell id="leg3" value="" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="430" y="570" width="16" height="12" as="geometry"/>
+        </mxCell>
+        <mxCell id="leg3t" value="Specialist agent" style="text;fontSize=9;align=left;" vertex="1" parent="1">
+          <mxGeometry x="450" y="567" width="100" height="18" as="geometry"/>
+        </mxCell>
+        <mxCell id="leg4" value="" style="rounded=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="560" y="570" width="16" height="12" as="geometry"/>
+        </mxCell>
+        <mxCell id="leg4t" value="Virtual filesystem" style="text;fontSize=9;align=left;" vertex="1" parent="1">
+          <mxGeometry x="580" y="567" width="100" height="18" as="geometry"/>
+        </mxCell>
+        <mxCell id="leg5" value="" style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="690" y="570" width="16" height="12" as="geometry"/>
+        </mxCell>
+        <mxCell id="leg5t" value="Shared library" style="text;fontSize=9;align=left;" vertex="1" parent="1">
+          <mxGeometry x="710" y="567" width="80" height="18" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
