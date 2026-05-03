@@ -35,7 +35,19 @@ def render_mermaid_to_png(code: str, output_path: Path, *, mmdc_path: Path) -> P
         input_path = Path(f.name)
 
     try:
-        cmd = [str(mmdc_path), "-i", str(input_path), "-o", str(output_path), "-b", "transparent", "-s", "4"]
+        cmd = [
+            str(mmdc_path),
+            "-i",
+            str(input_path),
+            "-o",
+            str(output_path),
+            "-b",
+            "transparent",
+            "-s",
+            "4",
+            "-w",
+            "2400",
+        ]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=60, shell=(os.name == "nt"))
         if result.returncode != 0:
             raise MermaidRenderError(f"mmdc failed: {result.stderr}")
