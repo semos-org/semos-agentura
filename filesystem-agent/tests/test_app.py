@@ -4,6 +4,8 @@ Wunderbaum renders inside Panel/Bokeh shadow DOM.
 Playwright's ``css=`` selector prefix pierces shadow roots.
 Context menu interaction is unreliable in shadow DOM (upstream known issue),
 so mutation tests use Python API methods instead.
+
+Requires: playwright browsers installed (npx playwright install).
 """
 
 from __future__ import annotations
@@ -13,6 +15,8 @@ import time
 import panel as pn
 import pytest
 from playwright.sync_api import Page, expect
+
+pytestmark = pytest.mark.integration
 
 
 @pytest.fixture(scope="module")

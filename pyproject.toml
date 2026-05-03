@@ -18,7 +18,8 @@ panelini = { git = "https://github.com/opensemanticworld/panelini.git", branch =
 
 [tool.pytest.ini_options]
 asyncio_mode = "strict"
-addopts = "--import-mode=importlib"
+# Each package runs tests from its own dir (cd pkg && uv run pytest tests/)
+# to pick up its own pyproject.toml [tool.pytest] config and conftest.py.
 markers = [
     "integration: requires external deps (COM, IMAP, pandoc, LLM API) - run with -m integration",
 ]
