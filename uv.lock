@@ -2129,7 +2129,7 @@ wheels = [
 [[package]]
 name = "panelini"
 version = "0.8.0"
-source = { git = "https://github.com/opensemanticworld/panelini.git?branch=dev-agentura#6611c0731b7c2eb8f274c14733f3ddf012ae8fe0" }
+source = { git = "https://github.com/opensemanticworld/panelini.git?branch=dev-agentura#c693dcb8f338c3a2d0a55207902f3b15b05e2d40" }
 dependencies = [
     { name = "panel" },
     { name = "param" },
