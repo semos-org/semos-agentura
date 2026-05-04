@@ -280,34 +280,35 @@ def _build_tool_tree(frontend, hub):
             }
         )
 
-    # Read checked state from source. When an agent folder
-    # is checked, all its children are considered checked
-    # (Wunderbaum JS may not propagate to children in source).
-    def _get_checked_keys():
+    def _get_checked_keys(src):
+        """Return keys of all selected nodes (folders + leaves)."""
         keys = []
 
-        def walk(nodes, parent_selected=False):
+        def walk(nodes):
             for n in nodes:
-                sel = n.get("selected") or parent_selected
-                if sel:
+                if n.get("selected"):
                     keys.append(n["key"])
-                walk(
-                    n.get("children", []),
-                    parent_selected=sel,
-                )
+                walk(n.get("children", []))
 
-        walk(tree.source)
+        walk(src)
         return keys
 
     def _sync_tools_from_source(*_args):
-        """Sync panelini backend from tree source state."""
-        checked = set(_get_checked_keys())
-        for name, info in frontend.tool_checkboxes.items():
-            info["checkbox"].value = name in checked
-        frontend.backend.update_tools(
-            frontend._get_selected_tools(),
+        """Sync panelini backend when tree checkboxes change.
+
+        selectMode "hier" handles parent/child propagation in JS.
+        We just read the resulting state and update the backend.
+        """
+        checked = set(_get_checked_keys(tree.source))
+        # Only tool keys matter (skip folder keys like "agent:...")
+        tool_keys = {k for k in checked if not k.startswith("agent:")}
+        count = frontend.batch_update_tools(tool_keys)
+        frontend.chat_interface.send(
+            f"Tools updated. {count} tool(s) now available.",
+            user="System",
+            respond=False,
         )
-        logger.info("Tools updated: %s", sorted(checked))
+        logger.info("Tools synced: %d checked", count)
 
     tree = Wunderbaum(
         source=source,
@@ -321,20 +322,18 @@ def _build_tool_tree(frontend, hub):
         ],
         options={
             "checkbox": True,
+            "selectMode": "hier",
         },
         sizing_mode="stretch_width",
         height=400,
     )
 
-    # Set default tools on backend
-    for name, info in frontend.tool_checkboxes.items():
-        info["checkbox"].value = name in default_selected
-    frontend.backend.update_tools(
-        [info["tool"] for name, info in frontend.tool_checkboxes.items() if name in default_selected]
-    )
+    # Set default tools on backend (single batch, no spam)
+    frontend.batch_update_tools(default_selected)
     logger.info("Default tools: %s", sorted(default_selected))
 
-    # Watch source changes (checkbox toggles sync source)
+    # Watch source changes (checkbox toggles sync source).
+    # selectMode "hier" handles parent/child propagation in JS.
     tree.param.watch(_sync_tools_from_source, ["source"])
     return tree
 
