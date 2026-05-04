@@ -10,7 +10,7 @@ A modular multi-agent system for professional and scientific workflows, built on
 
 **Modular composition.** Each agent encapsulates a single domain and exposes it as MCP tools (for LLM-driven use) and A2A skills (for programmatic workflows). The shared `agentura-commons` library provides only protocol wiring - no business logic, no framework lock-in. Agents are plain Python packages that work standalone, with or without the multi-agent layer.
 
-**Open standards, no vendor lock-in.** MCP and A2A are both Linux Foundation standards (under [AAIF](https://aaif.dev/)) with multi-vendor support. LLM providers are interchangeable via `litellm`. Agents run as standard HTTP services - deployable with uvicorn, Docker, Kubernetes, or any infrastructure.
+**Open standards, no vendor lock-in.** MCP and A2A are both Linux Foundation standards (under [AAIF](https://aaif.io/)) with multi-vendor support. LLM providers are interchangeable via `litellm`. Agents run as standard HTTP services - deployable with uvicorn, Docker, Kubernetes, or any infrastructure.
 
 **Research-grade extensibility.** The system is designed for scientific and engineering environments where workflows evolve rapidly. Adding a new capability means adding a new agent - not modifying existing ones.
 
