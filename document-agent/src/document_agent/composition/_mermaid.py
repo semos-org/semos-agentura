@@ -48,6 +48,10 @@ def render_mermaid_to_png(code: str, output_path: Path, *, mmdc_path: Path) -> P
             "-w",
             "2400",
         ]
+        # Docker/CI: pass puppeteer config for --no-sandbox
+        puppeteer_cfg = os.environ.get("PUPPETEER_CONFIG")
+        if puppeteer_cfg and Path(puppeteer_cfg).exists():
+            cmd.extend(["-p", puppeteer_cfg])
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=60, shell=(os.name == "nt"))
         if result.returncode != 0:
             raise MermaidRenderError(f"mmdc failed: {result.stderr}")

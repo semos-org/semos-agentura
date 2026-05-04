@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+.git/
+.github/
+.claude/
+.ruff_cache/
+.pytest_cache/
+output/
+local-tests/
+docs/
+node_modules/
+document-agent/tools/node_modules/

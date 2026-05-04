@@ -1,0 +1,40 @@
+# Base image for all Semos Agentura agents
+# Python 3.13 + uv + workspace sync (shared dependencies)
+FROM python:3.13-slim AS base
+
+# System deps shared by all agents
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
+WORKDIR /app
+
+# Copy workspace root config first (for caching)
+COPY pyproject.toml uv.lock .python-version ./
+
+# Copy all package pyproject.toml files (for dependency resolution)
+COPY agentura-commons/pyproject.toml agentura-commons/pyproject.toml
+COPY email-agent/pyproject.toml email-agent/pyproject.toml
+COPY document-agent/pyproject.toml document-agent/pyproject.toml
+COPY filesystem-agent/pyproject.toml filesystem-agent/pyproject.toml
+COPY agentura-ui/pyproject.toml agentura-ui/pyproject.toml
+
+# Copy READMEs (required by hatchling build backend)
+COPY agentura-commons/README.md agentura-commons/README.md
+COPY email-agent/README.md email-agent/README.md
+COPY document-agent/README.md document-agent/README.md
+COPY filesystem-agent/README.md filesystem-agent/README.md
+COPY agentura-ui/README.md agentura-ui/README.md
+
+# Copy source code
+COPY agentura-commons/src/ agentura-commons/src/
+COPY email-agent/src/ email-agent/src/
+COPY document-agent/src/ document-agent/src/
+COPY filesystem-agent/src/ filesystem-agent/src/
+COPY agentura-ui/src/ agentura-ui/src/
+
+# Sync all workspace packages
+RUN uv sync --all-packages --no-dev --frozen

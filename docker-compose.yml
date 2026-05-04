@@ -1,0 +1,47 @@
+services:
+  email-agent:
+    build:
+      context: .
+      dockerfile: email-agent/Dockerfile
+    ports:
+      - "8001:8001"
+    env_file:
+      - path: .env
+        required: false
+      - path: email-agent/.env
+        required: false
+    restart: unless-stopped
+
+  document-agent:
+    build:
+      context: .
+      dockerfile: document-agent/Dockerfile
+    ports:
+      - "8002:8002"
+    env_file:
+      - path: .env
+        required: false
+      - path: document-agent/.env
+        required: false
+    restart: unless-stopped
+
+  agentura-ui:
+    build:
+      context: .
+      dockerfile: agentura-ui/Dockerfile
+    ports:
+      - "5006:5006"
+    env_file:
+      - path: .env
+        required: false
+      - path: agentura-ui/.env
+        required: false
+    environment:
+      - EMAIL_AGENT_BASE=http://email-agent:8001
+      - EMAIL_AGENT_URL=http://email-agent:8001/mcp/sse
+      - DOCUMENT_AGENT_BASE=http://document-agent:8002
+      - DOCUMENT_AGENT_URL=http://document-agent:8002/mcp/sse
+    depends_on:
+      - email-agent
+      - document-agent
+    restart: unless-stopped
