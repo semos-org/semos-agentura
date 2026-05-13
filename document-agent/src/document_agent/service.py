@@ -102,8 +102,11 @@ class DocumentAgentService(BaseAgentService):
             ),
             ToolDef(
                 name="generate_diagram",
-                description="Generate a diagram (Mermaid or draw.io) from a text description. Returns a download URL.",
+                description="Generate or modify a diagram (Mermaid or draw.io). "
+                "Pass 'source' to modify an existing diagram (file path, drawio/mermaid code, "
+                "or an image to redraw). Returns a download URL.",
                 fn=self._generate_diagram,
+                file_params=["source"],
                 task_support="optional",
             ),
             ToolDef(
@@ -320,12 +323,27 @@ class DocumentAgentService(BaseAgentService):
         result = await asyncio.to_thread(_run)
         return self.file_response(result.output_path, display_name=filename)
 
-    async def _generate_diagram(self, description: str, diagram_type: str = "mermaid") -> str:
-        """Generate a diagram from a text description."""
-        # generate_diagram is async (unlike the other functions)
+    async def _generate_diagram(
+        self,
+        description: str = "",
+        diagram_type: str = "mermaid",
+        source: FileAttachment | str | None = None,
+    ) -> str:
+        """Generate or modify a diagram.
+
+        Args:
+            description: Natural-language description or modification instructions.
+            diagram_type: 'mermaid' or 'drawio'.
+            source: Existing diagram to modify - file path, inline code,
+                or image to redraw. Accepts {name, content} file attachment.
+        """
+        src = None
+        if source:
+            src = self.resolve_file_attachment(source, ".png")
         result = await generate_diagram(
-            description=description,
+            description=description or None,
             diagram_type=diagram_type,
+            source=src,
             output_dir=self.output_dir,
             settings=self._settings,
         )
