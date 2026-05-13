@@ -73,11 +73,15 @@ You are an expert at creating draw.io diagrams in XML format. \
 Generate valid draw.io/mxGraph XML for the user's description. \
 Return ONLY the raw XML - no markdown fences, no explanation.
 
-CRITICAL layout rules to prevent arrow overlap and entanglement:
-- Use explicit exitX/exitY and entryX/entryY on EVERY edge to \
-control exactly where arrows connect to shapes.
-- Leave generous spacing (at least 120px) between groups so \
-arrows have clear routing channels.
+CRITICAL: Return ONLY valid, complete XML. Do NOT wrap in markdown code \
+fences (no ```xml). The output must start with <mxfile> and end with \
+</mxfile>. Never truncate - all XML tags must be properly closed.
+
+- Plan routing channels: reserve horizontal/vertical lanes between \
+box rows/columns where arrows can travel without crossing any element.
+- When multiple arrows exit the same side of a box, use different \
+exitX/exitY values (e.g. exitY=0.25 and exitY=0.75) and offset \
+waypoints by 10-20px to avoid overlap.
 - Never route arrows through or across boxes/groups.
 - Use different sides of shapes for different connections \
 (e.g. top for input, right for output, bottom for feedback).
@@ -86,6 +90,23 @@ each other. Stagger connection points if multiple arrows enter \
 the same side of a shape.
 - Place edge labels as separate mxCell text elements positioned \
 near the midpoint of the arrow path, NOT as edge value attributes.
+- Labels must NOT collide with arrow lines or overlap other labels. \
+Offset label positions so they sit beside, not on top of, the line.
+- All labels must use at least the same minimum font size as other \
+text in the diagram (typically 11px). Never use a smaller font for \
+labels than for box content.
+
+Layout rules:
+- Plan the layout on a grid BEFORE writing XML. Determine row/column \
+positions and arrow routing channels first.
+- Leave at least 80px between box rows and 100px between box columns \
+for arrow routing space.
+- Align boxes at the same logical level to the same x or y coordinate, \
+depending on which axis best represents the level hierarchy.
+- Use consistent box sizes within each level (e.g. all same-level \
+boxes share the same width and height).
+- Cross-cutting/spanning elements should use full-width horizontal \
+bars at the top or bottom of the diagram.
 - Avoid placing any element (box, label, arrow) in the routing \
 channel between two connected groups.
 
@@ -94,31 +115,49 @@ Visual style rules:
 for groups with bold 14px titles and colored fills.
 - Use rounded=1 inner boxes with matching fill colors inside \
 each swimlane. Font size 12px.
-- Use a consistent, distinct color for each group \
+- Use a consistent, distinct color palette for each logical group \
 (e.g. blue, orange, purple, grey, green, red).
-- All arrows must have endArrow=classic and be clearly visible."""
+- All arrows must have endArrow=classic and strokeWidth=2 or 3.
+- Use dashed=1 for secondary/feedback arrows, solid for primary flow.
+- Use strokeWidth=3 for main flow arrows, strokeWidth=2 for secondary.
+
+PERT chart specific rules (only when creating PERT/dependency diagrams):
+- Cross-cutting work packages (management, dissemination, governance) \
+should span the full diagram width as horizontal bars at top and bottom.
+- Technical work packages at the same pipeline stage should be \
+aligned to the same x or y coordinate in a row or column.
+- Use different arrow styles to distinguish primary flow (solid, thick), \
+secondary/infrastructure connections (dashed, thinner), and feedback \
+loops (dashed, different color).
+- Feedback/iteration arrows should route through a dedicated channel \
+(above or below the main flow row) to avoid crossing the main boxes."""
 
 _REVIEW_SYSTEM = """\
 You are a diagram quality reviewer. You will receive a rendered \
 diagram image and the original description it was created from.
 
-Evaluate the diagram on three criteria:
+Evaluate the diagram on these criteria:
 (a) COMPLETENESS - does it reflect ALL aspects of the description?
 (b) VISUAL QUALITY - is it visually appealing? Check for: \
 misaligned elements, label collisions, overlapping shapes, \
 truncated text, poor spacing, unreadable fonts, arrows pointing \
-to wrong targets, inconsistent styling.
+to wrong targets, inconsistent styling, boxes at the same logical \
+level not aligned to the same coordinate.
 (c) ARROW ROUTING - this is critical. Check specifically for: \
-arrows that cross over or through boxes/groups, arrows that \
-overlap each other on the same path, arrows that obscure text \
-labels, arrows that take unnecessarily long detours, connection \
-points that cause visual clutter by bunching together. Every \
-arrow must have a clear, unobstructed path.
+arrows with diagonal segments (all segments must be perfectly \
+horizontal or vertical), arrows that cross over or through boxes, \
+arrows that overlap each other on the same path, arrows that \
+zigzag unnecessarily instead of taking clean L or U shapes, \
+arrows that obscure text labels, connection points that cause \
+visual clutter. Every arrow must have a clear, unobstructed path.
+(d) LABEL CONSISTENCY - if any arrows are labeled, ALL arrows \
+must be labeled (or none). Labels must not collide with arrow \
+lines or other labels. Label font size must match other text.
 
 Respond with ONLY a JSON object (no markdown fences):
 {"pass": true/false, "issues": ["issue1", ...], "suggestions": "..."}
 
-Be strict. Only pass if all three criteria are fully satisfied."""
+Be strict. Only pass if all four criteria are fully satisfied."""
 
 
 def _extract_code(text: str, diagram_type: str) -> str:
@@ -128,11 +167,42 @@ def _extract_code(text: str, diagram_type: str) -> str:
         r"```(?:mermaid|xml|drawio)\s*\n(.*?)```",
         r"```\s*\n(.*?)```",
     ]
+    code = text
     for pat in patterns:
         m = re.search(pat, text, re.DOTALL)
         if m:
-            return m.group(1).strip()
-    return text.strip()
+            code = m.group(1).strip()
+            break
+    else:
+        code = text.strip()
+
+    # Fix truncated drawio XML by closing unclosed tags
+    if diagram_type == "drawio" and not code.rstrip().endswith("</mxfile>"):
+        logger.warning("Drawio XML appears truncated, attempting to close tags")
+        # Find the last complete XML element (self-closing or closing tag)
+        last_complete = -1
+        for m_tag in re.finditer(r"(/>|</\w+>)", code):
+            last_complete = m_tag.end()
+        if last_complete > 0:
+            code = code[:last_complete]
+        # Use a stack to track actually-open tags
+        stack: list[str] = []
+        for m_tag in re.finditer(r"<(/?)(\w+)(?:[^>]*?)(/?)>", code):
+            is_close = m_tag.group(1) == "/"
+            tag_name = m_tag.group(2)
+            is_self_close = m_tag.group(3) == "/"
+            if is_self_close:
+                continue
+            if is_close:
+                if stack and stack[-1] == tag_name:
+                    stack.pop()
+            else:
+                stack.append(tag_name)
+        # Close remaining open tags in reverse order
+        for tag_name in reversed(stack):
+            code += f"\n</{tag_name}>"
+
+    return code
 
 
 def _parse_review(text: str) -> dict:
@@ -290,7 +360,7 @@ async def optimize_diagram(
         )
 
         # --- Generate ---
-        raw = await codegen_client.chat(codegen_messages)
+        raw = await codegen_client.chat(codegen_messages, max_tokens=32_000)
         code = _extract_code(raw, diagram_type)
         codegen_messages.append(
             {"role": "assistant", "content": raw},
