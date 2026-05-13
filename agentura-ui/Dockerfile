@@ -3,8 +3,8 @@ FROM semos-agentura-base:latest
 
 WORKDIR /app
 
-# Config and static files not in src/
-COPY agentura-ui/config.yml /app/agentura-ui/
+# Config template (mount config.yml at runtime to override)
+COPY agentura-ui/config.example.yml /app/agentura-ui/config.example.yml
 
 EXPOSE 5006
 

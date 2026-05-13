@@ -1,0 +1,51 @@
+# Agentura UI - LLM provider configuration
+#
+# Copy to config.yml and adjust for your setup.
+# Environment variables (${VAR}) are resolved at runtime.
+#
+# Supported client_type values: anthropic, openai, litellm
+
+providers:
+  # Azure AI Foundry with Anthropic models
+  azure_anthropic:
+    display_name: "Azure AI Foundry (Claude)"
+    client_type: "anthropic"
+    env_vars:
+      api_key: "${AZURE_API_KEY}"
+      endpoint: "${AZURE_API_BASE}"
+    models:
+      - name: "Claude Sonnet 4"
+        value: "anthropic/claude-sonnet-4-6"
+
+  # Direct Anthropic API
+  # anthropic:
+  #   display_name: "Anthropic"
+  #   client_type: "anthropic"
+  #   env_vars:
+  #     api_key: "${ANTHROPIC_API_KEY}"
+  #   models:
+  #     - name: "Claude Sonnet 4"
+  #       value: "claude-sonnet-4-6"
+  #     - name: "Claude Haiku 4.5"
+  #       value: "claude-haiku-4-5-20251001"
+
+  # OpenAI API
+  # openai:
+  #   display_name: "OpenAI"
+  #   client_type: "openai"
+  #   env_vars:
+  #     api_key: "${OPENAI_API_KEY}"
+  #   models:
+  #     - name: "GPT-4o"
+  #       value: "gpt-4o"
+
+  # Any provider via litellm (multi-provider routing)
+  # litellm:
+  #   display_name: "LiteLLM"
+  #   client_type: "litellm"
+  #   env_vars:
+  #     api_key: "${LITELLM_API_KEY}"
+  #     endpoint: "${LITELLM_API_BASE}"
+  #   models:
+  #     - name: "Auto-routed"
+  #       value: "anthropic/claude-sonnet-4-6"

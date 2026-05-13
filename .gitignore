@@ -20,3 +20,6 @@ local-tests/
 
 # Form templates (may contain org-specific data)
 **/forms/templates/*.json
+
+# UI config (user-specific LLM provider settings, use config.example.yml)
+agentura-ui/config.yml

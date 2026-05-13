@@ -148,13 +148,14 @@ app = create_app(MyAgentService())
 
 ## Configuration
 
-Each agent loads `.env` from its own directory, falling back to the workspace root `.env` for shared keys.
+Each agent loads `.env` from its own directory, falling back to the workspace root `.env` for shared keys. See `.env.example` files in each package.
 
 ```
 semos-agentura/
   .env                    # Shared: ANTHROPIC_API_KEY, AZURE_API_KEY, ...
   email-agent/.env        # IMAP_HOST, EMAIL_ADDRESS, ...
   document-agent/.env     # DOCUMENT_AI_*, DIAGRAM_CODEGEN_*, ...
+  agentura-ui/config.yml  # LLM provider config (see config.example.yml)
 ```
 
 ## Protocols

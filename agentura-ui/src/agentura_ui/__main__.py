@@ -41,7 +41,8 @@ logger = logging.getLogger(__name__)
 
 _PKG_DIR = Path(__file__).resolve().parent
 _UI_DIR = _PKG_DIR.parent.parent  # agentura-ui/
-_CONFIG_YML = _UI_DIR / "config.yml"
+_config = _UI_DIR / "config.yml"
+_CONFIG_YML = _config if _config.exists() else _UI_DIR / "config.example.yml"
 
 _SYSTEM_MESSAGE = """\
 You are a helpful assistant that orchestrates tasks across \
