@@ -107,6 +107,17 @@ class LLMClient:
     def _extract_text(self, data: dict[str, Any]) -> str:
         """Extract assistant text from provider response."""
         if self.provider in ("anthropic", "azure_anthropic"):
+            # Log stop reason and token usage
+            stop = data.get("stop_reason")
+            usage = data.get("usage", {})
+            out_tokens = usage.get("output_tokens")
+            if stop == "max_tokens":
+                logger.warning(
+                    "Response truncated (stop_reason=max_tokens, output_tokens=%s)",
+                    out_tokens,
+                )
+            elif stop:
+                logger.debug("stop_reason=%s, output_tokens=%s", stop, out_tokens)
             # Anthropic messages API
             for block in data.get("content", []):
                 if block.get("type") == "text":
@@ -115,6 +126,9 @@ class LLMClient:
         # OpenAI / Azure / Mistral format
         choices = data.get("choices", [])
         if choices:
+            finish = choices[0].get("finish_reason")
+            if finish == "length":
+                logger.warning("Response truncated (finish_reason=length)")
             return choices[0]["message"]["content"]
         return ""
 
@@ -129,12 +143,14 @@ class LLMClient:
             messages,
             max_tokens=max_tokens,
         )
+        # Scale timeout with max_tokens (large outputs need more time)
+        timeout = max(120.0, max_tokens / 100)
         async with httpx.AsyncClient() as client:
             resp = await client.post(
                 url,
                 headers=headers,
                 json=payload,
-                timeout=120.0,
+                timeout=timeout,
             )
             if resp.status_code >= 400:
                 logger.error(

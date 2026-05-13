@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -64,6 +65,15 @@ def create_app(
         POST /a2a                         -> A2A JSON-RPC (when implemented)
         GET  /files/<filename>            -> download output files
     """
+    # Pre-configure logging with a plain handler so FastMCP's
+    # configure_logging (which installs RichHandler) becomes a no-op.
+    if not logging.root.handlers:
+        level = os.environ.get("LOG_LEVEL", "INFO").upper()
+        logging.basicConfig(
+            level=getattr(logging, level, logging.INFO),
+            format="%(asctime)s  %(name)-30s  %(levelname)-8s  %(message)s",
+        )
+
     url = base_url or "http://127.0.0.1:8000"
 
     # Output directory for files produced by tools
