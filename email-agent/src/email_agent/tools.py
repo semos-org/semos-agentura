@@ -1,4 +1,11 @@
-"""Tool definitions for LLM function calling with email backend."""
+"""Tool definitions for LLM function calling with email backend.
+
+Contains:
+- TOOL_DEFINITIONS: JSON schemas for the mailgent LLM function calling
+- ToolExecutor: backend dispatch for tool execution
+- AgentTool subclasses: MCP tool wrappers that delegate to service._exec()
+- get_email_tools(): factory to create all AgentTool instances bound to a service
+"""
 
 from __future__ import annotations
 
@@ -6,6 +13,10 @@ import json
 import logging
 import re
 from datetime import datetime, timedelta
+from typing import Any
+
+from agentura_commons import AgentTool, FileAttachment
+from pydantic import BaseModel, Field
 
 from .formatting import md_to_plain
 
@@ -451,3 +462,359 @@ class ToolExecutor:
             appt.Save()
             logger.info("Appointment saved: %s", subject)
         return getattr(appt, "EntryID", "")
+
+
+# AgentTool input models
+
+
+class SearchEmailsInput(BaseModel):
+    query: str = Field(
+        default="",
+        description="Subject keyword (partial match). Optional.",
+    )
+    limit: int = Field(
+        default=20,
+        description="Max results to return.",
+    )
+    from_addr: str = Field(
+        default="",
+        description="Sender email address (partial match).",
+    )
+    to_addr: str = Field(
+        default="",
+        description="Recipient email address (partial match).",
+    )
+    since: str = Field(
+        default="",
+        description="Only emails on or after this date (YYYY-MM-DD).",
+    )
+    before: str = Field(
+        default="",
+        description="Only emails before this date (YYYY-MM-DD).",
+    )
+    unread_only: bool = Field(
+        default=False,
+        description="Only return unread emails.",
+    )
+    has_attachments: bool | None = Field(
+        default=None,
+        description="true = only with attachments, false = only without.",
+    )
+
+
+class ReadEmailInput(BaseModel):
+    entry_id: str = Field(
+        default="",
+        description="Exact email ID from search_emails results. Preferred.",
+    )
+    query: str = Field(
+        default="",
+        description="Subject keyword (partial match). Used if no entry_id.",
+    )
+    from_addr: str = Field(
+        default="",
+        description="Sender email address (partial match).",
+    )
+    to_addr: str = Field(
+        default="",
+        description="Recipient email address (partial match).",
+    )
+    include_attachments: bool = Field(
+        default=False,
+        description="If true, save attachments and return download URLs.",
+    )
+
+
+class ListEventsInput(BaseModel):
+    start: str = Field(
+        default="",
+        description="Start date (YYYY-MM-DD). Defaults to today.",
+    )
+    end: str = Field(
+        default="",
+        description="End date (YYYY-MM-DD). If set, days is ignored.",
+    )
+    days: int = Field(
+        default=14,
+        description="Number of days from start. Only used when end is not set.",
+    )
+
+
+class FreeSlotsInput(BaseModel):
+    start: str = Field(
+        default="",
+        description="Start date (YYYY-MM-DD). Defaults to today.",
+    )
+    end: str = Field(
+        default="",
+        description="End date (YYYY-MM-DD). If set, days is ignored.",
+    )
+    days: int = Field(
+        default=14,
+        description="Number of days from start. Only used when end is not set.",
+    )
+
+
+class CreateDraftInput(BaseModel):
+    to: str = Field(
+        description="Recipient email address(es), semicolon-separated.",
+    )
+    subject: str = Field(
+        description="Email subject line.",
+    )
+    body: str = Field(
+        description="Email body text.",
+    )
+    cc: str = Field(
+        default="",
+        description="CC recipients, semicolon-separated.",
+    )
+    attachments: list[FileAttachment] | None = Field(
+        default=None,
+        description=(
+            "Array of file objects with 'name' and 'content' fields. "
+            'Example: [{"name": "report.docx", "content": "/path/to/file.docx"}]. '
+            "The content field accepts a file path, base64, or data URI."
+        ),
+    )
+
+
+class DraftEventInput(BaseModel):
+    subject: str = Field(
+        description="Event title.",
+    )
+    start: str = Field(
+        description="Start time as 'YYYY-MM-DD HH:MM'.",
+    )
+    end: str = Field(
+        description="End time as 'YYYY-MM-DD HH:MM'.",
+    )
+    location: str = Field(
+        default="",
+        description="Event location.",
+    )
+    body: str = Field(
+        default="",
+        description="Meeting body/agenda text.",
+    )
+    attendees: str = Field(
+        default="",
+        description="Required attendees (semicolon-separated emails).",
+    )
+
+
+class SendEventInput(BaseModel):
+    subject: str = Field(
+        description="Event title.",
+    )
+    start: str = Field(
+        description="Start time as 'YYYY-MM-DD HH:MM'.",
+    )
+    end: str = Field(
+        description="End time as 'YYYY-MM-DD HH:MM'.",
+    )
+    attendees: str = Field(
+        description="Required attendees (semicolon-separated emails).",
+    )
+    location: str = Field(
+        default="",
+        description="Event location.",
+    )
+    body: str = Field(
+        default="",
+        description="Meeting body/agenda text.",
+    )
+
+
+class DraftReplyInput(BaseModel):
+    query: str = Field(
+        description="Search term to find the email to reply to.",
+    )
+    body: str = Field(
+        description="Reply body text.",
+    )
+
+
+class SendReplyInput(BaseModel):
+    query: str = Field(
+        description="Search term to find the email to reply to.",
+    )
+    body: str = Field(
+        description="Reply body text.",
+    )
+
+
+# AgentTool implementations
+
+
+class SearchEmailsTool(AgentTool):
+    name: str = "search_emails"
+    description: str = (
+        "Search emails with composable filters: subject, sender, recipient, "
+        "date range, unread, attachments. All optional, AND-combined."
+    )
+    args_schema: type[BaseModel] = SearchEmailsInput
+    read_only: bool = True
+    idempotent: bool = True
+
+    async def _arun(self, **kwargs: Any) -> str:
+        return await self._service._exec(
+            "search_emails",
+            {
+                "query": kwargs.get("query", ""),
+                "limit": kwargs.get("limit", 20),
+                "from_addr": kwargs.get("from_addr", ""),
+                "to_addr": kwargs.get("to_addr", ""),
+                "since": kwargs.get("since", ""),
+                "before": kwargs.get("before", ""),
+                "unread_only": kwargs.get("unread_only", False),
+                "has_attachments": kwargs.get("has_attachments"),
+            },
+        )
+
+
+class ReadEmailTool(AgentTool):
+    name: str = "read_email"
+    description: str = "Read the full content of the most recent email matching filters (subject, sender, recipient)."
+    args_schema: type[BaseModel] = ReadEmailInput
+    read_only: bool = True
+    idempotent: bool = True
+
+    async def _arun(self, **kwargs: Any) -> str:
+        return await self._service._read_email(**kwargs)
+
+
+class ListEventsTool(AgentTool):
+    name: str = "list_events"
+    description: str = (
+        "List calendar events. Specify start/end dates (YYYY-MM-DD) for an "
+        "exact range, or days for a relative range from today."
+    )
+    args_schema: type[BaseModel] = ListEventsInput
+    read_only: bool = True
+    idempotent: bool = True
+
+    async def _arun(self, **kwargs: Any) -> str:
+        return await self._service._exec(
+            "list_events",
+            {
+                "start": kwargs.get("start", ""),
+                "end": kwargs.get("end", ""),
+                "days": kwargs.get("days", 14),
+            },
+        )
+
+
+class FreeSlotsTool(AgentTool):
+    name: str = "free_slots"
+    description: str = (
+        "Calculate free meeting slots during business hours. Specify start/end "
+        "dates (YYYY-MM-DD) for an exact range, or days for a relative range "
+        "from today. Preferred over list_events when looking for available time."
+    )
+    args_schema: type[BaseModel] = FreeSlotsInput
+    read_only: bool = True
+    idempotent: bool = True
+
+    async def _arun(self, **kwargs: Any) -> str:
+        return await self._service._exec(
+            "free_slots",
+            {
+                "start": kwargs.get("start", ""),
+                "end": kwargs.get("end", ""),
+                "days": kwargs.get("days", 14),
+            },
+        )
+
+
+class CreateDraftTool(AgentTool):
+    name: str = "create_draft"
+    description: str = (
+        "Create an email draft with optional attachments. Accepts absolute file paths or base64-encoded content."
+    )
+    args_schema: type[BaseModel] = CreateDraftInput
+
+    async def _arun(self, **kwargs: Any) -> str:
+        return await self._service._create_draft(**kwargs)
+
+
+class DraftEventTool(AgentTool):
+    name: str = "draft_event"
+    description: str = "Create a calendar event draft (invitations NOT sent)."
+    args_schema: type[BaseModel] = DraftEventInput
+
+    async def _arun(self, **kwargs: Any) -> str:
+        return await self._service._exec(
+            "draft_event",
+            {
+                "subject": kwargs["subject"],
+                "start": kwargs["start"],
+                "end": kwargs["end"],
+                "location": kwargs.get("location", ""),
+                "body": kwargs.get("body", ""),
+                "attendees": kwargs.get("attendees", ""),
+            },
+        )
+
+
+class SendEventTool(AgentTool):
+    name: str = "send_event"
+    description: str = "Create a calendar event and send invitations immediately."
+    args_schema: type[BaseModel] = SendEventInput
+    destructive: bool = True
+
+    async def _arun(self, **kwargs: Any) -> str:
+        return await self._service._exec(
+            "send_event",
+            {
+                "subject": kwargs["subject"],
+                "start": kwargs["start"],
+                "end": kwargs["end"],
+                "location": kwargs.get("location", ""),
+                "body": kwargs.get("body", ""),
+                "attendees": kwargs["attendees"],
+            },
+        )
+
+
+class DraftReplyTool(AgentTool):
+    name: str = "draft_reply"
+    description: str = "Create a reply draft to the most recent email matching a query."
+    args_schema: type[BaseModel] = DraftReplyInput
+
+    async def _arun(self, **kwargs: Any) -> str:
+        return await self._service._exec(
+            "draft_reply",
+            {"query": kwargs["query"], "body": kwargs["body"]},
+        )
+
+
+class SendReplyTool(AgentTool):
+    name: str = "send_reply"
+    description: str = "Reply to the most recent email matching a query and send immediately."
+    args_schema: type[BaseModel] = SendReplyInput
+    destructive: bool = True
+
+    async def _arun(self, **kwargs: Any) -> str:
+        return await self._service._exec(
+            "send_reply",
+            {"query": kwargs["query"], "body": kwargs["body"]},
+        )
+
+
+def get_email_tools(service: Any) -> list[AgentTool]:
+    """Create all email-agent tools bound to a service instance."""
+    tools = [
+        SearchEmailsTool(),
+        ReadEmailTool(),
+        ListEventsTool(),
+        FreeSlotsTool(),
+        CreateDraftTool(),
+        DraftEventTool(),
+        SendEventTool(),
+        DraftReplyTool(),
+        SendReplyTool(),
+    ]
+    for t in tools:
+        t.bind_service(service)
+    return tools

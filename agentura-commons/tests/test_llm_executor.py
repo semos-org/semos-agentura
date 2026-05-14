@@ -9,7 +9,7 @@ import json
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from agentura_commons.base import ToolDef
+from agentura_commons.base import agent_tool
 from agentura_commons.llm_executor import (
     TOOL_REJECT_TASK,
     TOOL_REPORT_PROGRESS,
@@ -19,22 +19,30 @@ from agentura_commons.llm_executor import (
     LLMExecutor,
 )
 
-# Test tools
+# Test tools (using @agent_tool decorator)
 
 
-async def _echo(text: str = "") -> str:
+@agent_tool()
+async def echo(text: str = "") -> str:
+    """Echo text back."""
     return f"echo: {text}"
 
 
-async def _add(a: int = 0, b: int = 0) -> str:
+@agent_tool()
+async def add(a: int = 0, b: int = 0) -> str:
+    """Add two numbers."""
     return str(int(a) + int(b))
 
 
-async def _failing_tool() -> str:
+@agent_tool()
+async def fail() -> str:
+    """Always fails."""
     raise RuntimeError("tool crashed")
 
 
-async def _file_tool() -> str:
+@agent_tool()
+async def file_tool() -> str:
+    """Produce a file."""
     return json.dumps(
         {
             "download_url": "http://test/file.pdf",
@@ -44,11 +52,7 @@ async def _file_tool() -> str:
     )
 
 
-TOOLS = [
-    ToolDef(name="echo", description="Echo text", fn=_echo),
-    ToolDef(name="add", description="Add numbers", fn=_add),
-    ToolDef(name="file_tool", description="Produce file", fn=_file_tool),
-]
+TOOLS = [echo, add, file_tool]
 
 
 def _make_executor(tools=None, **kw) -> LLMExecutor:
@@ -383,13 +387,7 @@ class TestErrorHandling:
     @pytest.mark.asyncio
     async def test_tool_error_reported_to_llm(self):
         """Failing tool error is fed back to LLM."""
-        tools_with_fail = TOOLS + [
-            ToolDef(
-                name="fail",
-                description="Always fails",
-                fn=_failing_tool,
-            ),
-        ]
+        tools_with_fail = TOOLS + [fail]
         responses = [
             _anthropic_tool_use("fail", {}),
             _anthropic_text("The tool failed: tool crashed"),

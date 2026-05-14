@@ -7,7 +7,6 @@ from .base import (
     FileAttachment,
     NamedFile,
     SkillDef,
-    ToolDef,
     ToolResult,
     agent_tool,
 )
@@ -37,7 +36,6 @@ __all__ = [
     "MCPHub",
     "NamedFile",
     "SkillDef",
-    "ToolDef",
     "ToolResult",
     "agent_tool",
     "create_app",

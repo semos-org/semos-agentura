@@ -21,7 +21,7 @@ _agent_dir = Path(__file__).resolve().parent.parent.parent
 load_dotenv(_agent_dir / ".env")
 load_dotenv(_agent_dir.parent / ".env")
 
-from agentura_commons import BaseAgentService, FileAttachment, SkillDef, ToolDef, create_app
+from agentura_commons import BaseAgentService, FileAttachment, SkillDef, create_app
 
 from .backend import create_backend
 from .config import Settings
@@ -163,66 +163,10 @@ class EmailAgentService(BaseAgentService):
 
     # _resolve_file and _resolve_file_attachment inherited from BaseAgentService
 
-    def get_tools(self) -> list[ToolDef]:
-        _fh = "Accepts absolute file paths or base64-encoded content."
-        return [
-            ToolDef(
-                name="search_emails",
-                description="Search emails with composable filters: subject, sender, recipient, date range, unread, attachments. All optional, AND-combined.",
-                fn=self._search_emails,
-                read_only=True,
-                idempotent=True,
-            ),
-            ToolDef(
-                name="read_email",
-                description="Read the full content of the most recent email matching filters (subject, sender, recipient).",
-                fn=self._read_email,
-                read_only=True,
-                idempotent=True,
-            ),
-            ToolDef(
-                name="list_events",
-                description="List calendar events. Specify start/end dates (YYYY-MM-DD) for an exact range, or days for a relative range from today.",
-                fn=self._list_events,
-                read_only=True,
-                idempotent=True,
-            ),
-            ToolDef(
-                name="free_slots",
-                description="Calculate free meeting slots during business hours. Specify start/end dates (YYYY-MM-DD) for an exact range, or days for a relative range from today. Preferred over list_events when looking for available time.",
-                fn=self._free_slots,
-                read_only=True,
-                idempotent=True,
-            ),
-            ToolDef(
-                name="create_draft",
-                description=f"Create an email draft with optional attachments. {_fh}",
-                fn=self._create_draft,
-                file_params=["attachments"],
-            ),
-            ToolDef(
-                name="draft_event",
-                description="Create a calendar event draft (invitations NOT sent).",
-                fn=self._draft_event,
-            ),
-            ToolDef(
-                name="send_event",
-                description="Create a calendar event and send invitations immediately.",
-                fn=self._send_event,
-                destructive=True,
-            ),
-            ToolDef(
-                name="draft_reply",
-                description="Create a reply draft to the most recent email matching a query.",
-                fn=self._draft_reply,
-            ),
-            ToolDef(
-                name="send_reply",
-                description="Reply to the most recent email matching a query and send immediately.",
-                fn=self._send_reply,
-                destructive=True,
-            ),
-        ]
+    def get_tools(self) -> list:
+        from .tools import get_email_tools
+
+        return get_email_tools(self)
 
     def get_skills(self) -> list[SkillDef]:
         return [

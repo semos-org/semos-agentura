@@ -8,7 +8,6 @@ Bearer auth + anthropic-version header).
 
 from __future__ import annotations
 
-import inspect
 import json
 import logging
 from typing import TYPE_CHECKING, Any
@@ -16,7 +15,7 @@ from typing import TYPE_CHECKING, Any
 import httpx
 
 if TYPE_CHECKING:
-    from .base import ToolDef
+    from .base import AgentTool
 
 logger = logging.getLogger(__name__)
 
@@ -37,43 +36,16 @@ def _detect_provider(endpoint: str) -> str:
     return "openai"
 
 
-def _tool_schema(t: ToolDef) -> dict[str, Any]:
-    """Convert a ToolDef to a tool schema."""
-    if t.parameters:
-        params = t.parameters
-    else:
-        sig = inspect.signature(t.fn)
-        props = {}
-        required = []
-        for name, p in sig.parameters.items():
-            if name == "self":
-                continue
-            prop: dict[str, Any] = {"type": "string"}
-            ann = p.annotation
-            if ann is int:
-                prop["type"] = "integer"
-            elif ann is float:
-                prop["type"] = "number"
-            elif ann is bool:
-                prop["type"] = "boolean"
-            if t.description:
-                prop["description"] = ""
-            props[name] = prop
-            if p.default is inspect.Parameter.empty:
-                required.append(name)
-        params = {
-            "type": "object",
-            "properties": props,
-            "required": required,
-        }
+def _tool_schema(t: AgentTool) -> dict[str, Any]:
+    """Convert an AgentTool to Anthropic tool schema."""
     return {
         "name": t.name,
-        "description": t.description,
-        "input_schema": params,
+        "description": t.description or "",
+        "input_schema": t.get_input_schema(),
     }
 
 
-def _tool_schema_openai(t: ToolDef) -> dict[str, Any]:
+def _tool_schema_openai(t: AgentTool) -> dict[str, Any]:
     """OpenAI-format tool schema."""
     schema = _tool_schema(t)
     return {
@@ -88,7 +60,7 @@ def _tool_schema_openai(t: ToolDef) -> dict[str, Any]:
 
 async def route_to_tool(
     message: str,
-    tools: list[ToolDef],
+    tools: list[AgentTool],
     *,
     model: str,
     api_key: str = "",
@@ -131,7 +103,7 @@ async def route_to_tool(
 
 async def _route_anthropic(
     message: str,
-    tools: list[ToolDef],
+    tools: list[AgentTool],
     *,
     model: str,
     api_key: str,
@@ -187,7 +159,7 @@ async def _route_anthropic(
 
 async def _route_openai(
     message: str,
-    tools: list[ToolDef],
+    tools: list[AgentTool],
     *,
     model: str,
     api_key: str,

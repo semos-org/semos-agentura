@@ -14,7 +14,7 @@ import os
 import re
 from typing import Any
 
-from agentura_commons import BaseAgentService, SkillDef, ToolDef, create_app
+from agentura_commons import BaseAgentService, SkillDef, create_app
 
 from .config import Settings
 from .vfs import VirtualFileSystem
@@ -61,282 +61,6 @@ def _build_vfs(settings: Settings) -> VirtualFileSystem:
     return vfs
 
 
-# Protocol-specific option schemas for add_root.
-# Each entry in oneOf describes one fsspec protocol and its kwargs.
-# Only protocols whose dependencies are installed are listed.
-# Installed: fsspec (local, memory, http, ftp), webdav4[fsspec] (webdav).
-# Optional extras (need separate pip install): sftp (paramiko), smb (smbprotocol),
-# s3 (s3fs), gcs (gcsfs), az (adlfs).
-_PROTOCOL_SCHEMAS = [
-    {
-        "type": "object",
-        "title": "local",
-        "description": "Local filesystem",
-        "properties": {
-            "protocol": {"const": "local"},
-        },
-        "required": ["protocol"],
-    },
-    {
-        "type": "object",
-        "title": "memory",
-        "description": "In-memory filesystem (ephemeral, lost on restart)",
-        "properties": {
-            "protocol": {"const": "memory"},
-        },
-        "required": ["protocol"],
-    },
-    {
-        "type": "object",
-        "title": "webdav",
-        "description": "WebDAV server (SharePoint, Nextcloud, etc.)",
-        "properties": {
-            "protocol": {"const": "webdav"},
-            "kwargs": {
-                "type": "object",
-                "properties": {
-                    "base_url": {"type": "string", "description": "WebDAV endpoint URL"},
-                    "auth": {
-                        "type": "object",
-                        "description": "Auth object (CookieAuth or BearerAuth)",
-                        "properties": {
-                            "type": {"type": "string", "enum": ["cookie", "bearer"]},
-                            "token": {"type": "string", "description": "Token or cookie value"},
-                        },
-                        "required": ["type", "token"],
-                    },
-                },
-                "required": ["base_url"],
-            },
-        },
-        "required": ["protocol", "kwargs"],
-    },
-    {
-        "type": "object",
-        "title": "sharepoint",
-        "description": (
-            "SharePoint Online. Connects via WebDAV with automatic cookie-based auth "
-            "(opens browser for smartcard/SSO if needed, caches session for reuse). "
-            "All connection details go in kwargs  - do NOT use base_path for this protocol."
-        ),
-        "properties": {
-            "protocol": {"const": "sharepoint"},
-            "kwargs": {
-                "type": "object",
-                "description": "SharePoint connection details. Only site_url is required; doc_library and subfolder have sensible defaults.",
-                "properties": {
-                    "site_url": {
-                        "type": "string",
-                        "description": (
-                            "SharePoint SITE URL only  - must end at the site name, "
-                            "do NOT append the document library path. "
-                            "Correct: https://contoso.sharepoint.com/sites/MySite  "
-                            "Wrong:   https://contoso.sharepoint.com/sites/MySite/Shared%20Documents"
-                        ),
-                        "pattern": r"^https://[^/]+/sites/[^/]+$",
-                    },
-                    "doc_library": {
-                        "type": "string",
-                        "description": (
-                            "Document library URL folder name. Auto-detected from SharePoint if omitted. "
-                            "Only set this if the site has multiple document libraries and you want a specific one. "
-                            "Example: 'Freigegebene Dokumente' or 'Shared Documents'."
-                        ),
-                    },
-                    "subfolder": {
-                        "type": "string",
-                        "description": (
-                            "Subfolder path within the document library to scope to. "
-                            "Example: 'General' or 'Projects/2025'. Empty string mounts the library root."
-                        ),
-                        "default": "",
-                    },
-                },
-                "required": ["site_url"],
-            },
-        },
-        "required": ["protocol", "kwargs"],
-    },
-    {
-        "type": "object",
-        "title": "http",
-        "description": "Read-only HTTP/HTTPS file access",
-        "properties": {
-            "protocol": {"const": "http"},
-            "kwargs": {
-                "type": "object",
-                "properties": {
-                    "headers": {
-                        "type": "object",
-                        "description": "Extra HTTP headers",
-                        "additionalProperties": {"type": "string"},
-                    },
-                },
-            },
-        },
-        "required": ["protocol"],
-    },
-    {
-        "type": "object",
-        "title": "ftp",
-        "description": "FTP file access",
-        "properties": {
-            "protocol": {"const": "ftp"},
-            "kwargs": {
-                "type": "object",
-                "properties": {
-                    "host": {"type": "string"},
-                    "port": {"type": "integer", "default": 21},
-                    "username": {"type": "string"},
-                    "password": {"type": "string"},
-                },
-                "required": ["host"],
-            },
-        },
-        "required": ["protocol", "kwargs"],
-    },
-]
-
-
-# Optional protocols  - only included if their extra dependency is installed.
-def _optional_schema(title: str, description: str, check_import: str, kwargs_schema: dict) -> dict | None:
-    try:
-        __import__(check_import)
-    except ImportError:
-        return None
-    return {
-        "type": "object",
-        "title": title,
-        "description": description,
-        "properties": {
-            "protocol": {"const": title},
-            "kwargs": kwargs_schema,
-        },
-        "required": ["protocol", "kwargs"],
-    }
-
-
-for _s in [
-    _optional_schema(
-        "sftp",
-        "SFTP/SSH file access (requires paramiko)",
-        "paramiko",
-        {
-            "type": "object",
-            "properties": {
-                "host": {"type": "string", "description": "SSH hostname"},
-                "port": {"type": "integer", "description": "SSH port", "default": 22},
-                "username": {"type": "string"},
-                "password": {"type": "string"},
-                "key_filename": {"type": "string", "description": "Path to SSH private key"},
-            },
-            "required": ["host", "username"],
-        },
-    ),
-    _optional_schema(
-        "smb",
-        "SMB/CIFS network share (requires smbprotocol)",
-        "smbprotocol",
-        {
-            "type": "object",
-            "properties": {
-                "host": {"type": "string", "description": "Server hostname or IP"},
-                "port": {"type": "integer", "default": 445},
-                "username": {"type": "string"},
-                "password": {"type": "string"},
-            },
-            "required": ["host"],
-        },
-    ),
-    _optional_schema(
-        "s3",
-        "Amazon S3 or S3-compatible storage (requires s3fs)",
-        "s3fs",
-        {
-            "type": "object",
-            "properties": {
-                "key": {"type": "string", "description": "AWS access key ID"},
-                "secret": {"type": "string", "description": "AWS secret access key"},
-                "endpoint_url": {"type": "string", "description": "S3-compatible endpoint (MinIO, etc.)"},
-                "region_name": {"type": "string", "description": "AWS region"},
-                "anon": {"type": "boolean", "description": "Anonymous access (public buckets)", "default": False},
-            },
-        },
-    ),
-    _optional_schema(
-        "gcs",
-        "Google Cloud Storage (requires gcsfs)",
-        "gcsfs",
-        {
-            "type": "object",
-            "properties": {
-                "project": {"type": "string", "description": "GCP project ID"},
-                "token": {"type": "string", "description": "Path to service account JSON or 'anon'"},
-            },
-        },
-    ),
-    _optional_schema(
-        "az",
-        "Azure Blob Storage (requires adlfs)",
-        "adlfs",
-        {
-            "type": "object",
-            "properties": {
-                "account_name": {"type": "string", "description": "Azure storage account name"},
-                "account_key": {"type": "string", "description": "Azure storage account key"},
-                "connection_string": {
-                    "type": "string",
-                    "description": "Full connection string (alternative to account_name+key)",
-                },
-                "sas_token": {"type": "string", "description": "Shared Access Signature token"},
-            },
-            "required": ["account_name"],
-        },
-    ),
-]:
-    if _s is not None:
-        _PROTOCOL_SCHEMAS.append(_s)
-
-_ADD_ROOT_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "name": {
-            "type": "string",
-            "description": (
-                "Short identifier for the mount  - becomes the URI scheme. "
-                "Example: name='docs' creates URIs like docs://path/to/file"
-            ),
-        },
-        "protocol": {
-            "type": "string",
-            "description": (
-                "Storage backend to use. Each protocol has its own kwargs. "
-                "For SharePoint, use 'sharepoint' (not 'webdav')  - it handles auth automatically."
-            ),
-            "enum": [s["title"] for s in _PROTOCOL_SCHEMAS],
-        },
-        "base_path": {
-            "type": "string",
-            "description": (
-                "Subdirectory to scope the root to (only for local/webdav/ftp/sftp/smb). "
-                "NOT used for 'sharepoint' protocol  - use kwargs.subfolder instead."
-            ),
-            "default": "",
-        },
-        "kwargs": {
-            "type": "object",
-            "description": (
-                "Protocol-specific connection options. "
-                "Required fields depend on the chosen protocol  - see each protocol's schema."
-            ),
-            "oneOf": [s["properties"].get("kwargs", {"type": "object"}) for s in _PROTOCOL_SCHEMAS],
-        },
-    },
-    "required": ["name", "protocol"],
-    "oneOf": _PROTOCOL_SCHEMAS,
-}
-
-
 class FilesystemAgentService(BaseAgentService):
     def __init__(self, vfs: VirtualFileSystem | None = None) -> None:
         self._settings = Settings()
@@ -359,173 +83,10 @@ class FilesystemAgentService(BaseAgentService):
     def agent_version(self) -> str:
         return "0.2.0"
 
-    def get_tools(self) -> list[ToolDef]:
-        return [
-            ToolDef(
-                name="list_files",
-                description="List files and folders at a VFS URI. Empty URI lists all available roots.",
-                fn=self._list_files,
-                read_only=True,
-                idempotent=True,
-            ),
-            ToolDef(
-                name="file_info",
-                description="Get metadata (type, size, name) for a file or folder.",
-                fn=self._file_info,
-                read_only=True,
-                idempotent=True,
-            ),
-            ToolDef(
-                name="read_file",
-                description=(
-                    "Read the contents of a file. Returns text for text files, base64 for binary. "
-                    "Also reads files inside archives using the ! separator, "
-                    "e.g. downloads://data.zip!path/to/file.csv"
-                ),
-                fn=self._read_file,
-                read_only=True,
-            ),
-            ToolDef(
-                name="file_tree",
-                description="Get a nested directory tree starting at a URI, pre-loaded to a given depth.",
-                fn=self._file_tree,
-                read_only=True,
-                idempotent=True,
-            ),
-            ToolDef(
-                name="write_file",
-                description="Write text content to a file. Creates parent directories if needed.",
-                fn=self._write_file,
-            ),
-            ToolDef(
-                name="create_folder",
-                description="Create a new folder at the given URI.",
-                fn=self._create_folder,
-            ),
-            ToolDef(
-                name="move_file",
-                description="Move or rename a file/folder. Works across roots.",
-                fn=self._move_file,
-                destructive=True,
-            ),
-            ToolDef(
-                name="copy_file",
-                description=(
-                    "Copy a file/folder to a new location. Works across roots. "
-                    "Can extract from archives: copy_file(source='root://data.zip!file.txt', destination='session://file.txt')"
-                ),
-                fn=self._copy_file,
-            ),
-            ToolDef(
-                name="delete_file",
-                description="Delete a file or folder (recursive for folders).",
-                fn=self._delete_file,
-                destructive=True,
-            ),
-            ToolDef(
-                name="list_archive",
-                description="List contents of an archive file (zip, tar). Use ! separator for inner paths.",
-                fn=self._list_archive,
-                read_only=True,
-                idempotent=True,
-            ),
-            ToolDef(
-                name="read_archive_file",
-                description="Read a file from inside an archive without extracting the whole archive.",
-                fn=self._read_archive_file,
-                read_only=True,
-            ),
-            ToolDef(
-                name="search_sharepoint",
-                description="Search across SharePoint sites using the REST search API.",
-                fn=self._search_sharepoint,
-                read_only=True,
-                idempotent=True,
-            ),
-            ToolDef(
-                name="grep",
-                description=(
-                    "Search file contents for a regex pattern across VFS. "
-                    "Walks the directory tree, reads text files, returns matching lines with URIs. "
-                    "Works across all roots including SharePoint and archives. "
-                    "For SharePoint keyword queries, prefer search_sharepoint (server-side, indexed)."
-                ),
-                fn=self._grep,
-                read_only=True,
-            ),
-            ToolDef(
-                name="glob",
-                description=(
-                    "Find files by name pattern (e.g. '*.pdf', 'report_*.xlsx') across VFS. "
-                    "Walks the directory tree and matches filenames using fnmatch patterns."
-                ),
-                fn=self._glob,
-                read_only=True,
-                idempotent=True,
-            ),
-            ToolDef(
-                name="edit_file",
-                description=(
-                    "Edit a text file by replacing a specific string. "
-                    "Reads the file, replaces old_text with new_text, writes back. "
-                    "Fails if old_text is not found or is ambiguous (multiple occurrences)."
-                ),
-                fn=self._edit_file,
-            ),
-            ToolDef(
-                name="batch_edit",
-                description=(
-                    "Apply multiple search/replace edits to a file in a single operation. "
-                    "More efficient than multiple edit_file calls  - reduces round trips. "
-                    "Edits are applied sequentially (each sees the result of prior edits)."
-                ),
-                fn=self._batch_edit,
-                parameters={
-                    "type": "object",
-                    "properties": {
-                        "uri": {"type": "string", "description": "VFS URI of the file to edit"},
-                        "edits": {
-                            "type": "array",
-                            "description": "List of replacements to apply sequentially",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "old": {"type": "string", "description": "Text to find"},
-                                    "new": {"type": "string", "description": "Replacement text"},
-                                },
-                                "required": ["old", "new"],
-                            },
-                        },
-                    },
-                    "required": ["uri", "edits"],
-                },
-            ),
-            ToolDef(
-                name="add_root",
-                description=(
-                    "Mount a new filesystem root that becomes accessible via VFS URIs (name://path). "
-                    "For SharePoint use protocol='sharepoint' with kwargs.site_url  - "
-                    "auth is handled automatically. "
-                    "For local dirs use protocol='local' with base_path. "
-                    "For other backends see the protocol-specific kwargs schemas."
-                ),
-                fn=self._add_root,
-                parameters=_ADD_ROOT_SCHEMA,
-            ),
-            ToolDef(
-                name="remove_root",
-                description="Unmount a filesystem root by name.",
-                fn=self._remove_root,
-                destructive=True,
-            ),
-            ToolDef(
-                name="list_roots",
-                description="List all mounted filesystem roots with their protocols.",
-                fn=self._list_roots,
-                read_only=True,
-                idempotent=True,
-            ),
-        ]
+    def get_tools(self) -> list:
+        from .tools import get_filesystem_tools
+
+        return get_filesystem_tools(self)
 
     def get_skills(self) -> list[SkillDef]:
         return [
@@ -574,39 +135,18 @@ class FilesystemAgentService(BaseAgentService):
         tools_schema = []
         tool_map: dict[str, Any] = {}
         for td in self.get_tools():
-            # Build JSON schema from function signature
-            import inspect
-
-            sig = inspect.signature(td.fn)
-            props: dict[str, Any] = {}
-            required = []
-            for pname, param in sig.parameters.items():
-                if pname == "self":
-                    continue
-                ptype = "string"
-                if param.annotation in (int, "int"):
-                    ptype = "integer"
-                elif param.annotation in (bool, "bool"):
-                    ptype = "boolean"
-                props[pname] = {"type": ptype, "description": ""}
-                if param.default is inspect.Parameter.empty:
-                    required.append(pname)
-
+            schema = td.get_input_schema()
             tools_schema.append(
                 {
                     "type": "function",
                     "function": {
                         "name": td.name,
                         "description": td.description,
-                        "parameters": {
-                            "type": "object",
-                            "properties": props,
-                            "required": required,
-                        },
+                        "parameters": schema,
                     },
                 }
             )
-            tool_map[td.name] = td.fn
+            tool_map[td.name] = td
 
         response = await litellm.acompletion(
             model=self.router_llm_model,
@@ -627,10 +167,10 @@ class FilesystemAgentService(BaseAgentService):
         if msg.tool_calls:
             results = []
             for tc in msg.tool_calls:
-                fn = tool_map.get(tc.function.name)
-                if fn:
+                tool = tool_map.get(tc.function.name)
+                if tool:
                     args = json.loads(tc.function.arguments)
-                    result = await fn(**args)
+                    result = await tool._arun(**args)
                     results.append(f"[{tc.function.name}]: {result}")
             return "\n\n".join(results)
 

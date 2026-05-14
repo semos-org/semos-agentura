@@ -10,7 +10,6 @@ Each instantiation differs only in the tools list and system_prompt.
 
 from __future__ import annotations
 
-import inspect
 import json
 import logging
 from dataclasses import dataclass, field
@@ -18,7 +17,7 @@ from typing import Any
 
 import httpx
 
-from .base import AgentTool, ToolDef
+from .base import AgentTool
 
 logger = logging.getLogger(__name__)
 
@@ -69,46 +68,16 @@ def _detect_provider(endpoint: str) -> str:
     return "openai"
 
 
-def _tool_schema(t: ToolDef | AgentTool) -> dict[str, Any]:
-    """Convert ToolDef or AgentTool to Anthropic tool schema."""
-    if isinstance(t, AgentTool):
-        params = t.get_input_schema()
-    elif t.parameters:
-        params = t.parameters
-    else:
-        sig = inspect.signature(t.fn)
-        props = {}
-        required = []
-        for name, p in sig.parameters.items():
-            if name == "self":
-                continue
-            prop: dict[str, Any] = {"type": "string"}
-            ann = p.annotation
-            if ann is int:
-                prop["type"] = "integer"
-            elif ann is float:
-                prop["type"] = "number"
-            elif ann is bool:
-                prop["type"] = "boolean"
-            elif ann is list or (hasattr(ann, "__origin__") and ann.__origin__ is list):
-                prop["type"] = "array"
-                prop["items"] = {"type": "string"}
-            props[name] = prop
-            if p.default is inspect.Parameter.empty:
-                required.append(name)
-        params = {
-            "type": "object",
-            "properties": props,
-            "required": required,
-        }
+def _tool_schema(t: AgentTool) -> dict[str, Any]:
+    """Convert AgentTool to Anthropic tool schema."""
     return {
         "name": t.name,
         "description": t.description or "",
-        "input_schema": params,
+        "input_schema": t.get_input_schema(),
     }
 
 
-def _tool_schema_openai(t: ToolDef | AgentTool) -> dict[str, Any]:
+def _tool_schema_openai(t: AgentTool) -> dict[str, Any]:
     schema = _tool_schema(t)
     return {
         "type": "function",
@@ -248,7 +217,7 @@ class LLMExecutor:
 
     def __init__(
         self,
-        tools: list[ToolDef],
+        tools: list[AgentTool],
         model: str,
         api_key: str,
         api_base: str,
@@ -452,13 +421,7 @@ class LLMExecutor:
         if not td:
             return f"Error: unknown tool '{name}'"
 
-        # Resolve file_params and callable based on tool type
-        if isinstance(td, AgentTool):
-            file_params = td.resolved_file_params
-            tool_fn = td._arun
-        else:
-            file_params = td.file_params
-            tool_fn = td.fn
+        file_params = td.resolved_file_params
 
         # Inject file content into file params.
         if file_params:
@@ -476,20 +439,14 @@ class LLMExecutor:
                 if isinstance(val, str):
                     if val in by_name:
                         fa = {"name": val, "content": by_name[val]}
-                        # Check if the tool expects a list
-                        if isinstance(td, AgentTool) and td.args_schema:
+                        if td.args_schema:
                             fi = td.args_schema.model_fields.get(param)
                             if fi and "list" in str(fi.annotation).lower():
                                 arguments[param] = [fa]
                             else:
                                 arguments[param] = fa
                         else:
-                            sig = inspect.signature(tool_fn)
-                            p = sig.parameters.get(param)
-                            if p and "list" in str(p.annotation).lower():
-                                arguments[param] = [fa]
-                            else:
-                                arguments[param] = fa
+                            arguments[param] = fa
                     else:
                         logger.warning(
                             "File param %s=%r not in files: %s",
@@ -498,15 +455,15 @@ class LLMExecutor:
                             list(by_name.keys()),
                         )
 
-        # Validate input for AgentTool (Pydantic validation)
-        if isinstance(td, AgentTool) and td.args_schema:
+        # Validate input (Pydantic)
+        if td.args_schema:
             try:
                 td.args_schema(**arguments)
             except Exception as e:
                 return f"Validation error for {name}: {e}"
 
         try:
-            result = await tool_fn(**arguments)
+            result = await td._arun(**arguments)
         except Exception as e:
             logger.warning("Tool %s failed: %s", name, e)
             return f"Error executing {name}: {e}"

@@ -20,7 +20,7 @@ from mcp.types import (
     ToolAnnotations,
 )
 
-from .base import AgentTool, BaseAgentService, NamedFile, ToolResult
+from .base import BaseAgentService, NamedFile, ToolResult
 
 logger = logging.getLogger(__name__)
 
@@ -271,19 +271,13 @@ def create_mcp_server(service: BaseAgentService) -> FastMCP:
             )
 
     for tool in service.get_tools():
-        if isinstance(tool, AgentTool):
-            tool_fn = tool._arun
-            file_params = tool.resolved_file_params
-            fn = _make_normalized_wrapper(
-                tool.name,
-                tool_fn,
-                service,
-                args_schema=tool.args_schema,
-            )
-        else:
-            fn = _make_normalized_wrapper(tool.name, tool.fn, service)
-            file_params = tool.file_params
-
+        file_params = tool.resolved_file_params
+        fn = _make_normalized_wrapper(
+            tool.name,
+            tool._arun,
+            service,
+            args_schema=tool.args_schema,
+        )
         server.add_tool(fn=fn, name=tool.name, description=tool.description)
 
         registered = server._tool_manager._tools.get(tool.name)

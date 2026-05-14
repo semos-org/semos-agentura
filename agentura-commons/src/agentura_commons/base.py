@@ -107,22 +107,6 @@ def _detect_file_params(schema: type | None) -> list[str]:
     return result
 
 
-# Keep ToolDef as a deprecated alias during migration
-@dataclass
-class ToolDef:
-    """DEPRECATED: Use AgentTool instead. Will be removed in v0.5."""
-
-    name: str
-    description: str
-    fn: Any
-    parameters: dict[str, Any] | None = None
-    file_params: list[str] = field(default_factory=list)
-    read_only: bool = False
-    destructive: bool = False
-    idempotent: bool = False
-    task_support: str | None = None
-
-
 class AgentTool(BaseTool):
     """Tool with MCP annotations, file param auto-detection, and Pydantic validation.
 
@@ -442,7 +426,7 @@ class BaseAgentService(ABC):
         return os.environ.get("ROUTER_LLM_API_BASE", "")
 
     @abstractmethod
-    def get_tools(self) -> list[ToolDef]:
+    def get_tools(self) -> list[AgentTool]:
         """Return all MCP tools this agent exposes."""
 
     @abstractmethod

@@ -20,10 +20,24 @@ from agentura_commons.a2a_server import (
     create_agent_card,
 )
 from agentura_commons.base import (
+    AgentTool,
     BaseAgentService,
     SkillDef,
-    ToolDef,
 )
+from pydantic import BaseModel, Field
+
+
+class EchoInput(BaseModel):
+    text: str = Field(default="", description="Text to echo")
+
+
+class EchoTool(AgentTool):
+    name: str = "echo"
+    description: str = "Echo input"
+    args_schema: type[BaseModel] = EchoInput
+
+    async def _arun(self, **kwargs) -> str:
+        return f"echo: {kwargs.get('text', '')}"
 
 
 class _MockService(BaseAgentService):
@@ -37,14 +51,8 @@ class _MockService(BaseAgentService):
     def agent_description(self) -> str:
         return "A test agent"
 
-    def get_tools(self) -> list[ToolDef]:
-        return [
-            ToolDef(
-                name="echo",
-                description="Echo input",
-                fn=self._echo,
-            ),
-        ]
+    def get_tools(self) -> list:
+        return [EchoTool().bind_service(self)]
 
     def get_skills(self) -> list[SkillDef]:
         return [
@@ -55,9 +63,6 @@ class _MockService(BaseAgentService):
                 tags=["test"],
             ),
         ]
-
-    async def _echo(self, text: str = "") -> str:
-        return f"echo: {text}"
 
     async def execute_skill(
         self,
@@ -225,9 +230,14 @@ async def test_executor_with_file_output(service):
             }
         )
 
-    service.get_tools = lambda: [
-        ToolDef(name="file_tool", description="Returns a file", fn=_file_tool),
-    ]
+    class _FT(AgentTool):
+        name: str = "file_tool"
+        description: str = "Returns a file"
+
+        async def _arun(self, **kw):
+            return await _file_tool()
+
+    service.get_tools = lambda: [_FT()]
     executor = _AgentExecutor(service)
 
     from google.protobuf.struct_pb2 import Value
@@ -253,9 +263,14 @@ async def test_executor_error_handling(service):
     async def _failing_tool() -> str:
         raise RuntimeError("boom")
 
-    service.get_tools = lambda: [
-        ToolDef(name="fail", description="Always fails", fn=_failing_tool),
-    ]
+    class _FailT(AgentTool):
+        name: str = "fail"
+        description: str = "Always fails"
+
+        async def _arun(self, **kw):
+            return await _failing_tool()
+
+    service.get_tools = lambda: [_FailT()]
     executor = _AgentExecutor(service)
 
     from google.protobuf.struct_pb2 import Value
@@ -346,14 +361,16 @@ async def test_call_tool_injects_file_into_param(service):
         received_args.update(kwargs)
         return "ok"
 
-    service.get_tools = lambda: [
-        ToolDef(
-            name="digest",
-            description="Digest a doc",
-            fn=_capture,
-            file_params=["source"],
-        ),
-    ]
+    class _DigestT(AgentTool):
+        name: str = "digest"
+        description: str = "Digest a doc"
+        file_params: list[str] | None = ["source"]
+
+        async def _arun(self_inner, **kwargs):
+            received_args.update(kwargs)
+            return "ok"
+
+    service.get_tools = lambda: [_DigestT()]
     executor = _AgentExecutor(service)
 
     files = [{"name": "doc.pdf", "content": "data:app/pdf;base64,abc"}]
@@ -375,18 +392,16 @@ async def test_call_tool_no_match_passes_through(service):
     """File param value that doesn't match any file is unchanged."""
     received_args = {}
 
-    async def _capture(**kwargs):
-        received_args.update(kwargs)
-        return "ok"
+    class _DigestT(AgentTool):
+        name: str = "digest"
+        description: str = "d"
+        file_params: list[str] | None = ["source"]
 
-    service.get_tools = lambda: [
-        ToolDef(
-            name="digest",
-            description="d",
-            fn=_capture,
-            file_params=["source"],
-        ),
-    ]
+        async def _arun(self_inner, **kwargs):
+            received_args.update(kwargs)
+            return "ok"
+
+    service.get_tools = lambda: [_DigestT()]
     executor = _AgentExecutor(service)
 
     files = [{"name": "other.pdf", "content": "data:app/pdf;base64,xyz"}]
@@ -404,18 +419,16 @@ async def test_call_tool_no_files_no_change(service):
     """Without files, file_params are not modified."""
     received_args = {}
 
-    async def _capture(**kwargs):
-        received_args.update(kwargs)
-        return "ok"
+    class _DigestT(AgentTool):
+        name: str = "digest"
+        description: str = "d"
+        file_params: list[str] | None = ["source"]
 
-    service.get_tools = lambda: [
-        ToolDef(
-            name="digest",
-            description="d",
-            fn=_capture,
-            file_params=["source"],
-        ),
-    ]
+        async def _arun(self_inner, **kwargs):
+            received_args.update(kwargs)
+            return "ok"
+
+    service.get_tools = lambda: [_DigestT()]
     executor = _AgentExecutor(service)
 
     await executor._call_tool(
