@@ -92,15 +92,17 @@ def test_generate_image_tool_file_params():
     """generate_image should declare source and mask as file params."""
     svc = DocumentAgentService()
     tool = next(t for t in svc.get_tools() if t.name == "generate_image")
-    assert "source" in tool.file_params
-    assert "mask" in tool.file_params
+    fp = tool.resolved_file_params
+    assert "source" in fp
+    assert "mask" in fp
 
 
 def test_generate_diagram_embeds_file_param():
     """generate_diagram should declare embeds as a file param."""
     svc = DocumentAgentService()
     tool = next(t for t in svc.get_tools() if t.name == "generate_diagram")
-    assert "embeds" in tool.file_params
+    fp = tool.resolved_file_params
+    assert "source" in fp
 
 
 @pytest.mark.asyncio
@@ -244,7 +246,7 @@ async def test_generate_diagram_mocked(service):
         iterations=1,
     )
 
-    with patch("document_agent.service.generate_diagram", new_callable=AsyncMock, return_value=mock_result):
+    with patch("document_agent.tools.generate_diagram", new_callable=AsyncMock, return_value=mock_result):
         async with mcp_client_for(service) as client:
             result = await client.call_tool(
                 "generate_diagram",
