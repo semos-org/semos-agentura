@@ -7,6 +7,7 @@ from document_agent.models import (
     DiagramResult,
     DigestResult,
     ImageDescription,
+    ImageResult,
     OutputFormat,
     OutputMode,
 )
@@ -59,6 +60,18 @@ class TestDiagramResult:
     def test_review_log_default(self):
         r = DiagramResult(code="graph TD", image_path=Path("x.png"), iterations=1)
         assert r.review_log == []
+
+
+class TestImageResult:
+    def test_creation(self):
+        r = ImageResult(
+            image_path=Path("/tmp/icon.png"),
+            mode="generate",
+            prompt="a cloud icon",
+            size=(1024, 1024),
+        )
+        assert r.mode == "generate"
+        assert r.size == (1024, 1024)
 
 
 class TestImageDescription:

@@ -41,6 +41,24 @@ _has_llm = _check_llm_available()
 needs_llm = pytest.mark.skipif(not _has_llm, reason="No LLM endpoint configured")
 
 
+def _check_image_gen_available() -> bool:
+    """Check if an image generation endpoint is configured."""
+    if os.environ.get("IMAGE_GEN_ENDPOINT"):
+        return True
+    try:
+        from dotenv import load_dotenv
+
+        agent_dir = Path(__file__).resolve().parent.parent
+        load_dotenv(agent_dir / ".env")
+        return bool(os.environ.get("IMAGE_GEN_ENDPOINT"))
+    except Exception:
+        return False
+
+
+_has_image_gen = _check_image_gen_available()
+needs_image_gen = pytest.mark.skipif(not _has_image_gen, reason="No IMAGE_GEN_ENDPOINT configured")
+
+
 @pytest.fixture
 def service(tmp_path: Path) -> DocumentAgentService:
     """Create a DocumentAgentService with output_dir pointed at tmp_path."""
@@ -62,11 +80,27 @@ async def test_list_tools(service):
             "digest_document",
             "compose_document",
             "generate_diagram",
+            "generate_image",
             "inspect_form",
             "fill_form",
             "merge_slides",
             "get_examples",
         }
+
+
+def test_generate_image_tool_file_params():
+    """generate_image should declare source and mask as file params."""
+    svc = DocumentAgentService()
+    tool = next(t for t in svc.get_tools() if t.name == "generate_image")
+    assert "source" in tool.file_params
+    assert "mask" in tool.file_params
+
+
+def test_generate_diagram_embeds_file_param():
+    """generate_diagram should declare embeds as a file param."""
+    svc = DocumentAgentService()
+    tool = next(t for t in svc.get_tools() if t.name == "generate_diagram")
+    assert "embeds" in tool.file_params
 
 
 @pytest.mark.asyncio
@@ -301,3 +335,57 @@ async def test_compose_missing_format(service):
         assert result.content
         text = result.content[0].text
         assert "error" in text.lower() or "format" in text.lower() or "required" in text.lower()
+
+
+# generate_image integration tests
+
+
+@_integration
+@needs_image_gen
+@pytest.mark.asyncio
+async def test_generate_image_real(service):
+    """Test generate_image with a real image generation backend."""
+    async with mcp_client_for(service) as client:
+        result = await client.call_tool(
+            "generate_image",
+            {
+                "description": "A simple flat icon of a blue cloud, white background, minimal style",
+                "mode": "generate",
+                "size": "1024x1024",
+            },
+        )
+        data = parse_tool_result(result)
+        assert "download_url" in data
+        assert data["mode"] == "generate"
+        assert data["size"][0] > 0
+        assert data["size"][1] > 0
+
+
+@_integration
+@needs_image_gen
+@pytest.mark.asyncio
+async def test_generate_image_edit_real(service, tmp_path):
+    """Test generate_image edit mode with a real backend."""
+    import io
+
+    from PIL import Image
+
+    # Create a source image
+    img = Image.new("RGB", (1024, 1024), (255, 0, 0))
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    source_path = tmp_path / "red_square.png"
+    source_path.write_bytes(buf.getvalue())
+
+    async with mcp_client_for(service) as client:
+        result = await client.call_tool(
+            "generate_image",
+            {
+                "description": "Change the color to blue",
+                "mode": "edit",
+                "source": str(source_path),
+            },
+        )
+        data = parse_tool_result(result)
+        assert "download_url" in data
+        assert data["mode"] == "edit"

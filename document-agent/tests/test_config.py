@@ -39,3 +39,21 @@ class TestSettings:
             assert s.pandoc_path is None
             assert s.mmdc_path is None
             assert s.drawio_path is None
+
+    def test_image_gen_settings_exist(self):
+        s = Settings(_env_file=None)
+        assert isinstance(s.image_gen_endpoint, str | None)
+        assert isinstance(s.image_gen_api_key, str | None)
+        assert isinstance(s.image_gen_model, str)
+
+    def test_image_gen_settings_from_values(self):
+        with patch.dict(os.environ, {}, clear=True):
+            s = Settings(
+                _env_file=None,
+                image_gen_endpoint="https://example.com/openai",
+                image_gen_api_key="test-key",
+                image_gen_model="dall-e-3",
+            )
+            assert s.image_gen_endpoint == "https://example.com/openai"
+            assert s.image_gen_api_key == "test-key"
+            assert s.image_gen_model == "dall-e-3"
