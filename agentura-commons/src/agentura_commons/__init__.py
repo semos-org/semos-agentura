@@ -2,12 +2,14 @@
 
 from .a2a_client import A2AAgentInfo, A2AResult, FileInfo
 from .base import (
+    AgentTool,
     BaseAgentService,
     FileAttachment,
     NamedFile,
     SkillDef,
     ToolDef,
     ToolResult,
+    agent_tool,
 )
 from .client import AgenturaClient, ClientA2AResult, ClientToolResult
 from .file_middleware import FileEntry, FileRegistry
@@ -20,6 +22,7 @@ __all__ = [
     "A2AAgentInfo",
     "A2AResult",
     "AgentConnection",
+    "AgentTool",
     "AgenturaClient",
     "BaseAgentService",
     "ClientA2AResult",
@@ -36,5 +39,6 @@ __all__ = [
     "SkillDef",
     "ToolDef",
     "ToolResult",
+    "agent_tool",
     "create_app",
 ]

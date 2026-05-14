@@ -17,6 +17,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, TypedDict
 
+from langchain_core.tools import BaseTool
+from pydantic import PrivateAttr
+
 logger = logging.getLogger(__name__)
 
 
@@ -66,21 +69,195 @@ class ToolResult:
     files: list[Path | NamedFile] = field(default_factory=list)
 
 
+def _is_file_type(annotation: Any) -> bool:
+    """Check if a type annotation involves FileAttachment."""
+    import typing
+
+    if annotation is FileAttachment:
+        return True
+    origin = typing.get_origin(annotation)
+    args = typing.get_args(annotation)
+    # Union types: FileAttachment | str, Optional[FileAttachment], etc.
+    if origin is typing.Union or str(origin) == "typing.Union":
+        return any(_is_file_type(a) for a in args)
+    # list[FileAttachment]
+    if origin is list:
+        return any(_is_file_type(a) for a in args)
+    # types.UnionType (X | Y syntax in 3.10+)
+    if hasattr(annotation, "__args__"):
+        return any(_is_file_type(a) for a in annotation.__args__)
+    return False
+
+
+def _detect_file_params(schema: type | None) -> list[str]:
+    """Detect file parameters from a Pydantic model's field annotations.
+
+    Checks for FileAttachment type hints and json_schema_extra with x-file.
+    """
+    if schema is None:
+        return []
+    result = []
+    for name, field_info in schema.model_fields.items():
+        if _is_file_type(field_info.annotation):
+            result.append(name)
+            continue
+        extra = field_info.json_schema_extra
+        if isinstance(extra, dict) and extra.get("x-file"):
+            result.append(name)
+    return result
+
+
+# Keep ToolDef as a deprecated alias during migration
 @dataclass
 class ToolDef:
-    """Definition of a tool that the agent exposes via MCP."""
+    """DEPRECATED: Use AgentTool instead. Will be removed in v0.5."""
 
     name: str
     description: str
-    fn: Any  # Callable - async or sync
+    fn: Any
     parameters: dict[str, Any] | None = None
     file_params: list[str] = field(default_factory=list)
+    read_only: bool = False
+    destructive: bool = False
+    idempotent: bool = False
+    task_support: str | None = None
+
+
+class AgentTool(BaseTool):
+    """Tool with MCP annotations, file param auto-detection, and Pydantic validation.
+
+    Subclass this for each tool, or use the @agent_tool decorator for simple cases.
+
+    Example (subclass):
+        class DigestInput(BaseModel):
+            source: FileAttachment | str = Field(description="Document to digest")
+
+        class DigestDocumentTool(AgentTool):
+            name: str = "digest_document"
+            description: str = "Digest a document into Markdown."
+            args_schema: type[BaseModel] = DigestInput
+            read_only: bool = True
+
+            async def _arun(self, **kwargs) -> str:
+                ...
+
+    Example (decorator):
+        @agent_tool(read_only=True)
+        async def get_examples(category: str = "") -> str:
+            \"\"\"List available examples.\"\"\"
+            ...
+    """
+
     # MCP annotations (hints for client behavior)
     read_only: bool = False
     destructive: bool = False
     idempotent: bool = False
     # MCP execution hints
     task_support: str | None = None
+    # File params - None = auto-detect from args_schema, [] = explicitly none
+    file_params: list[str] | None = None
+    # Override for dynamic schemas (e.g., add_root with runtime-detected protocols)
+    parameters_override: dict[str, Any] | None = None
+
+    # Service reference (set by bind_service)
+    _service: Any = PrivateAttr(default=None)
+
+    def bind_service(self, service: BaseAgentService) -> AgentTool:
+        """Bind this tool to a service instance. Returns self for chaining."""
+        self._service = service
+        return self
+
+    @property
+    def resolved_file_params(self) -> list[str]:
+        """File parameter names, auto-detected if not explicitly set."""
+        if self.file_params is not None:
+            return self.file_params
+        return _detect_file_params(self.args_schema)
+
+    def get_input_schema(self) -> dict[str, Any]:
+        """Return JSON Schema for this tool's input parameters.
+
+        Uses parameters_override if set, otherwise generates from args_schema.
+        """
+        if self.parameters_override is not None:
+            return self.parameters_override
+        if self.args_schema is not None:
+            schema = self.args_schema.model_json_schema()
+            # Strip Pydantic metadata that LLM APIs don't expect
+            schema.pop("$defs", None)
+            schema.pop("title", None)
+            return schema
+        return {"type": "object", "properties": {}}
+
+    def _run(self, *args: Any, **kwargs: Any) -> Any:
+        raise NotImplementedError("Use async _arun()")
+
+    async def _arun(self, *args: Any, **kwargs: Any) -> Any:
+        raise NotImplementedError("Subclass must implement _arun()")
+
+
+def agent_tool(
+    _fn: Any = None,
+    *,
+    read_only: bool = False,
+    destructive: bool = False,
+    idempotent: bool = False,
+    task_support: str | None = None,
+    file_params: list[str] | None = None,
+    name: str | None = None,
+) -> Any:
+    """Decorator to create an AgentTool from an async function.
+
+    Usage:
+        @agent_tool(read_only=True)
+        async def search_emails(query: str, limit: int = 50) -> str:
+            \"\"\"Search emails matching a query.\"\"\"
+            ...
+
+    The tool's name defaults to the function name. Description comes from
+    the docstring. args_schema is auto-generated from the function signature.
+    """
+    from langchain_core.tools import StructuredTool
+
+    def _wrap(fn: Any) -> AgentTool:
+        tool_name = name or fn.__name__
+        description = (fn.__doc__ or "").strip().split("\n")[0]
+
+        # Create a StructuredTool to get the auto-generated args_schema
+        st = StructuredTool.from_function(
+            func=fn,
+            name=tool_name,
+            description=description,
+            coroutine=fn,
+        )
+
+        class _DecoratedTool(AgentTool):
+            pass
+
+        # Build the tool instance
+        tool = _DecoratedTool(
+            name=tool_name,
+            description=description,
+            args_schema=st.args_schema,
+            read_only=read_only,
+            destructive=destructive,
+            idempotent=idempotent,
+            task_support=task_support,
+            file_params=file_params,
+        )
+
+        # Store the original function for _arun
+        _original_fn = fn
+
+        async def _arun_impl(**kwargs: Any) -> Any:
+            return await _original_fn(**kwargs)
+
+        tool._arun = _arun_impl  # type: ignore[assignment]
+        return tool
+
+    if _fn is not None:
+        return _wrap(_fn)
+    return _wrap
 
 
 @dataclass

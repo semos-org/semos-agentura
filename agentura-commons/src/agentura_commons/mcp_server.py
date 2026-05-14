@@ -20,7 +20,7 @@ from mcp.types import (
     ToolAnnotations,
 )
 
-from .base import BaseAgentService, NamedFile, ToolResult
+from .base import AgentTool, BaseAgentService, NamedFile, ToolResult
 
 logger = logging.getLogger(__name__)
 
@@ -187,6 +187,7 @@ def _make_normalized_wrapper(
     name: str,
     fn: Any,
     service: BaseAgentService,
+    args_schema: Any = None,
 ) -> Any:
     """Wrap a tool function to normalize its return value to CallToolResult."""
 
@@ -223,6 +224,26 @@ def _make_normalized_wrapper(
     # Strip return annotation so FastMCP doesn't auto-generate
     # an output schema that conflicts with CallToolResult.
     wrapper.__annotations__.pop("return", None)
+
+    # For AgentTool._arun (which has **kwargs), copy the args_schema
+    # field signatures onto the wrapper so FastMCP generates the
+    # correct parameter schema instead of a single "kwargs" field.
+    if args_schema is not None:
+        sig_params = [inspect.Parameter("self", inspect.Parameter.POSITIONAL_OR_KEYWORD)]
+        annotations = {}
+        for field_name, field_info in args_schema.model_fields.items():
+            if field_info.is_required():
+                default = inspect.Parameter.empty
+            else:
+                default = field_info.default
+            sig_params.append(inspect.Parameter(field_name, inspect.Parameter.KEYWORD_ONLY, default=default))
+            if field_info.annotation is not None:
+                annotations[field_name] = field_info.annotation
+        # Remove 'self' - FastMCP doesn't expect it
+        sig_params = sig_params[1:]
+        wrapper.__signature__ = inspect.Signature(sig_params)
+        wrapper.__annotations__ = annotations
+
     return wrapper
 
 
@@ -250,20 +271,28 @@ def create_mcp_server(service: BaseAgentService) -> FastMCP:
             )
 
     for tool in service.get_tools():
-        fn = _make_normalized_wrapper(tool.name, tool.fn, service)
-        server.add_tool(
-            fn=fn,
-            name=tool.name,
-            description=tool.description,
-        )
+        if isinstance(tool, AgentTool):
+            tool_fn = tool._arun
+            file_params = tool.resolved_file_params
+            fn = _make_normalized_wrapper(
+                tool.name,
+                tool_fn,
+                service,
+                args_schema=tool.args_schema,
+            )
+        else:
+            fn = _make_normalized_wrapper(tool.name, tool.fn, service)
+            file_params = tool.file_params
+
+        server.add_tool(fn=fn, name=tool.name, description=tool.description)
 
         registered = server._tool_manager._tools.get(tool.name)
         if not registered:
             continue
 
-        # Inject x-file annotations into JSON schema for file params.
-        if tool.file_params and "properties" in registered.parameters:
-            for param_name in tool.file_params:
+        # Inject x-file annotations for file params.
+        if file_params and "properties" in registered.parameters:
+            for param_name in file_params:
                 prop = registered.parameters["properties"]
                 if param_name in prop:
                     prop[param_name]["x-file"] = True

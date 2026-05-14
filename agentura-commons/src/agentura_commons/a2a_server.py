@@ -376,14 +376,24 @@ class _AgentExecutor(AgentExecutor):
         files: list[dict] | None = None,
     ) -> tuple[str, list[dict]]:
         """Call a tool by name, return (text, file_list)."""
+        from .base import AgentTool
+
         tool_defs = {t.name: t for t in self._service.get_tools()}
         td = tool_defs.get(name)
         if not td:
             return f"Unknown tool: {name}", []
 
-        if files and td.file_params:
+        # Resolve file_params and callable
+        if isinstance(td, AgentTool):
+            file_params = td.resolved_file_params
+            tool_fn = td._arun
+        else:
+            file_params = td.file_params
+            tool_fn = td.fn
+
+        if files and file_params:
             by_name = {f["name"]: f["content"] for f in files if f.get("name") and f.get("content")}
-            for param in td.file_params:
+            for param in file_params:
                 val = args.get(param)
                 if isinstance(val, str) and val in by_name:
                     args[param] = {
@@ -391,7 +401,7 @@ class _AgentExecutor(AgentExecutor):
                         "content": by_name[val],
                     }
 
-        result = await td.fn(**args)
+        result = await tool_fn(**args)
         return self._parse_tool_result(result)
 
     def _parse_tool_result(

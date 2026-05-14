@@ -42,5 +42,8 @@ ignore = [
 [dependency-groups]
 dev = [
     "ruff>=0.15.12",
+    "pytest>=9.0",
+    "pytest-asyncio>=1.0",
+    "pytest-httpx>=0.30",
     "pytest-timeout>=2.3",
 ]
