@@ -409,3 +409,66 @@ async def _extract_from_image(
         image_b64=image_b64,
         diagram_type="unknown",
     )
+
+
+def prepare_embed_images(
+    files: list[Path],
+    descriptions: list[str],
+    start_index: int = 1,
+) -> tuple[dict, list[str]]:
+    """Create embedded_images entries for new embed files.
+
+    Uses the same store format as strip_embedded_images() so that
+    restore_embedded_images() handles both stripped originals and
+    new embeds identically.
+
+    Args:
+        files: List of image file paths to embed.
+        descriptions: Human-readable description for each image.
+        start_index: Starting __IMG_N__ index (continue from
+            existing stripped images).
+
+    Returns:
+        (store, prompt_lines) where store has {"uris": {...}} and
+        prompt_lines are descriptions for the LLM system prompt.
+    """
+    import io as _io
+
+    from PIL import Image
+
+    uri_store: dict[str, str] = {}
+    prompt_lines: list[str] = []
+
+    for i, (fpath, desc) in enumerate(zip(files, descriptions, strict=True)):
+        idx = start_index + i
+        pid = f"__IMG_{idx}__"
+
+        raw = fpath.read_bytes()
+        b64 = base64.b64encode(raw).decode()
+
+        # Detect MIME type from extension
+        ext = fpath.suffix.lower()
+        mime = {
+            ".png": "image/png",
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".webp": "image/webp",
+            ".gif": "image/gif",
+        }.get(ext, "image/png")
+
+        # Use draw.io shorthand format (no ";base64,") because
+        # semicolons in the data URI would be parsed as style separators
+        # in mxCell style attributes.
+        uri_store[pid] = f"data:{mime},{b64}"
+
+        # Get dimensions
+        try:
+            img = Image.open(_io.BytesIO(raw))
+            w, h = img.size
+        except Exception:
+            w, h = 0, 0
+
+        fname = fpath.name
+        prompt_lines.append(f"{pid} = {fname} ({desc}, {w}x{h}px)")
+
+    return {"uris": uri_store}, prompt_lines

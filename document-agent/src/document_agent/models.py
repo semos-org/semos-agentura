@@ -70,6 +70,16 @@ class DiagramResult:
 
 
 @dataclass
+class ImageResult:
+    """Result of image generation/editing."""
+
+    image_path: Path
+    mode: str
+    prompt: str
+    size: tuple[int, int]
+
+
+@dataclass
 class MergeResult:
     """Result of PPTX slide merge operation."""
 

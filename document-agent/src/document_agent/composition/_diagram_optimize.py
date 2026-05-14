@@ -222,9 +222,23 @@ def _build_initial_messages(
     description: str | None,
     source: DiagramSource | None,
     diagram_type: str,
+    embed_descriptions: list[str] | None = None,
 ) -> list[dict]:
     """Build the initial codegen message list based on inputs."""
     messages: list[dict] = [{"role": "system", "content": system}]
+
+    # Append embed descriptions to system prompt
+    if embed_descriptions:
+        embed_section = (
+            "\n\nAvailable images to embed in the diagram:\n"
+            + "\n".join(f"- {line}" for line in embed_descriptions)
+            + "\n\nTo place an image, create an mxCell with "
+            'style="shape=image;image=__IMG_N__;'
+            'verticalLabelPosition=bottom;verticalAlign=top;" '
+            "and set appropriate mxGeometry (x, y, width, height). "
+            "The placeholders will be replaced with actual image data automatically."
+        )
+        messages[0]["content"] += embed_section
 
     if source and source.code:
         # Existing code - seed as assistant message, then refine
@@ -319,6 +333,7 @@ async def optimize_diagram(
     review_client: LLMClient,
     render_fn: Callable[[str, Path], Path],
     output_dir: Path,
+    embed_descriptions: list[str] | None = None,
 ) -> DiagramResult:
     """Generate and iteratively refine a diagram.
 
@@ -333,6 +348,7 @@ async def optimize_diagram(
             differ from codegen_client to avoid self-bias).
         render_fn: Callable(code, output_path) -> output_path.
         output_dir: Directory for intermediate images.
+        embed_descriptions: List of embed image descriptions for LLM prompt.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -343,6 +359,7 @@ async def optimize_diagram(
         description,
         source,
         diagram_type,
+        embed_descriptions=embed_descriptions,
     )
     # Use source description for review context if no user description
     if not description and source and source.description:

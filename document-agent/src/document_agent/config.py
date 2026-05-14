@@ -39,6 +39,11 @@ class Settings(BaseSettings):
     diagram_review_api_key: str | None = Field(default=None)
     diagram_review_model: str | None = Field(default=None)
 
+    # Image generation (Azure AI Foundry / gpt-image-2)
+    image_gen_endpoint: str | None = Field(default=None)
+    image_gen_api_key: str | None = Field(default=None)
+    image_gen_model: str = Field(default="gpt-image-2")
+
     # OCR settings
     table_format: str = Field(default="markdown")  # "markdown" or "html"
     max_pdf_pages: int = Field(default=10)

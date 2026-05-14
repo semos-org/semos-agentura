@@ -1,6 +1,6 @@
 # document-agent
 
-Document digestion (OCR to Markdown) and composition (Markdown to documents) with full round-trip support for footnotes, tracked changes, comments, and styles.
+Document digestion (OCR to Markdown), composition (Markdown to documents), diagram generation, raster image generation, and form filling. Full round-trip support for footnotes, tracked changes, comments, and styles.
 
 ## Digestion
 
@@ -135,6 +135,39 @@ draw.io diagrams with embedded raster images are handled automatically:
 images are stripped for LLM editing (reducing context from ~400 KB to ~8 KB)
 and restored in the output. For correct PNG rendering of embedded images,
 set `DRAWIO_DESKTOP_PATH` in `.env` (the npm CLI can't render inline images).
+
+## Image Generation
+
+Generate, edit, and extract elements from raster images using text-to-image models.
+
+### Modes
+
+- **generate**: Text-to-image from a prompt, with optional style prefix
+- **edit**: Modify an existing image with a text prompt (inpainting with optional mask for OpenAI, img2img for Flux)
+- **cut**: Extract a specific element from an image (VLM-guided bounding box + background removal, falls back to image model isolation)
+
+### Supported providers
+
+| Provider | Endpoint format | Generate | Edit | Models |
+|----------|----------------|----------|------|--------|
+| Azure OpenAI | `https://{resource}.cognitiveservices.azure.com/openai/deployments/{model}` | Yes | Yes (mask) | gpt-image-2 |
+| OpenAI | `https://api.openai.com` | Yes | Yes (mask) | gpt-image-2, dall-e-3 |
+| Azure AI Foundry | `https://{resource}.services.ai.azure.com/providers/{provider}` | Yes | Yes (img2img) | flux-2-pro, flux-2-dev |
+| Direct provider | `https://api.bfl.ai` | Yes | Yes (img2img) | flux-2-pro, flux-2-dev |
+
+Configure via environment variables:
+
+```bash
+IMAGE_GEN_ENDPOINT=https://example.cognitiveservices.azure.com/openai/deployments/gpt-image-2
+IMAGE_GEN_API_KEY=your-key
+IMAGE_GEN_MODEL=gpt-image-2
+```
+
+### Crossover: embedding images in diagrams
+
+Generated images (icons, symbols) can be embedded into draw.io diagrams via the `embeds` parameter on `generate_diagram`. Refer to each embed by its filename in the diagram description so the LLM knows where to place them.
+
+The embed mechanism reuses the existing draw.io image strip/restore pipeline: images are represented as `__IMG_N__` placeholders during LLM codegen and replaced with base64 data URIs before rendering.
 
 ## Forms
 

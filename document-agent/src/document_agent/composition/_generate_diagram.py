@@ -13,7 +13,7 @@ from ..config import Settings
 from ..exceptions import ProviderError
 from ..models import DiagramResult
 from ._diagram_optimize import optimize_diagram
-from ._diagram_source import DiagramSource, extract_diagram_source, restore_embedded_images
+from ._diagram_source import DiagramSource, extract_diagram_source, prepare_embed_images, restore_embedded_images
 from ._drawio import render_drawio_to_png
 from ._mermaid import render_mermaid_to_png
 
@@ -36,6 +36,7 @@ async def generate_diagram(
     diagram_type: Literal["mermaid", "drawio"] | None = None,
     *,
     source: Path | str | None = None,
+    embeds: list[dict] | None = None,
     output_dir: Path,
     max_iterations: int = 3,
     settings: Settings | None = None,
@@ -48,6 +49,8 @@ async def generate_diagram(
         diagram_type: "mermaid" or "drawio". Auto-detected from
             source if not specified. Defaults to "mermaid".
         source: Existing diagram - file path or inline code string.
+        embeds: List of dicts with "path" (Path) and "description" (str)
+            for images to embed in the diagram.
         output_dir: Where to write intermediate and final images.
         max_iterations: Max generate-render-review cycles.
         settings: Settings (auto-loaded if None).
@@ -88,6 +91,35 @@ async def generate_diagram(
         if diagram_type is None and diagram_source.diagram_type != "unknown":
             diagram_type = diagram_source.diagram_type
 
+    # Handle embeds
+    embed_descriptions: list[str] | None = None
+    if embeds:
+        # Auto-switch to drawio when embeds are provided
+        if diagram_type is None or diagram_type == "mermaid":
+            logger.info("Embeds provided, switching diagram_type to drawio")
+            diagram_type = "drawio"
+
+        # Determine start index (continue after stripped images)
+        existing_uris = {}
+        if diagram_source and diagram_source.embedded_images:
+            existing_uris = diagram_source.embedded_images.get("uris", {})
+        start_idx = len(existing_uris) + 1
+
+        embed_files = [e["path"] for e in embeds]
+        embed_descs = [e["description"] for e in embeds]
+        embed_store, embed_descriptions = prepare_embed_images(
+            embed_files,
+            embed_descs,
+            start_index=start_idx,
+        )
+
+        # Merge embed URIs into diagram_source.embedded_images
+        if diagram_source is None:
+            diagram_source = DiagramSource(diagram_type="drawio")
+        if diagram_source.embedded_images is None:
+            diagram_source.embedded_images = {"cells": {}, "uris": {}}
+        diagram_source.embedded_images["uris"].update(embed_store["uris"])
+
     # Default to mermaid
     if diagram_type is None:
         diagram_type = "mermaid"
@@ -126,6 +158,7 @@ async def generate_diagram(
         review_client=review,
         render_fn=render_fn,
         output_dir=output_dir,
+        embed_descriptions=embed_descriptions,
     )
 
     # Restore embedded images in the final code output

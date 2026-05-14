@@ -176,6 +176,70 @@ class LLMClient:
         msgs = _inject_image(messages, image_b64, self.provider)
         return await self.chat(msgs, max_tokens=max_tokens)
 
+    async def chat_structured(
+        self,
+        messages: list[dict[str, Any]],
+        schema: dict[str, Any],
+        *,
+        tool_name: str = "structured_output",
+        image_b64: str | None = None,
+        max_tokens: int = 4096,
+    ) -> dict[str, Any]:
+        """Chat with forced structured output matching a JSON schema.
+
+        Uses tool_use (Anthropic) or response_format (OpenAI) to
+        guarantee the response matches the schema.
+
+        Returns the parsed dict.
+        """
+        import json
+
+        if image_b64:
+            messages = _inject_image(messages, image_b64, self.provider)
+
+        url, headers, payload = self._build_request(messages, max_tokens=max_tokens)
+
+        if self.provider in ("anthropic", "azure_anthropic"):
+            # Anthropic: use tools + tool_choice to force structured output
+            payload["tools"] = [
+                {
+                    "name": tool_name,
+                    "description": "Return structured data",
+                    "input_schema": schema,
+                }
+            ]
+            payload["tool_choice"] = {"type": "tool", "name": tool_name}
+        else:
+            # OpenAI / Azure / Mistral: use response_format
+            payload["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": tool_name,
+                    "strict": True,
+                    "schema": schema,
+                },
+            }
+
+        timeout = max(120.0, max_tokens / 100)
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(url, headers=headers, json=payload, timeout=timeout)
+            if resp.status_code >= 400:
+                logger.error("LLM API error %d: %s", resp.status_code, resp.text[:500])
+                resp.raise_for_status()
+
+        data = resp.json()
+
+        if self.provider in ("anthropic", "azure_anthropic"):
+            # Extract tool_use input from response
+            for block in data.get("content", []):
+                if block.get("type") == "tool_use":
+                    return block["input"]
+            raise ValueError("No tool_use block in Anthropic response")
+        else:
+            # OpenAI: parse from message content
+            text = self._extract_text(data)
+            return json.loads(text)
+
 
 def _inject_image(
     messages: list[dict[str, Any]],
@@ -185,6 +249,7 @@ def _inject_image(
     """Return a copy of messages with the image added to the
     last user message."""
     msgs = [m.copy() for m in messages]
+    media_type, raw_b64 = _parse_image_b64(image_b64)
     # Find last user message
     for i in range(len(msgs) - 1, -1, -1):
         if msgs[i].get("role") == "user":
@@ -202,16 +267,14 @@ def _inject_image(
                         "type": "image",
                         "source": {
                             "type": "base64",
-                            "media_type": "image/png",
-                            "data": _strip_data_uri(image_b64),
+                            "media_type": media_type,
+                            "data": raw_b64,
                         },
                     },
                 ]
             else:
                 # OpenAI / Azure / Mistral vision format
-                data_uri = image_b64
-                if not data_uri.startswith("data:"):
-                    data_uri = f"data:image/png;base64,{data_uri}"
+                data_uri = f"data:{media_type};base64,{raw_b64}"
                 msgs[i]["content"] = [
                     {"type": "text", "text": text_part},
                     {
@@ -223,9 +286,37 @@ def _inject_image(
     return msgs
 
 
-def _strip_data_uri(b64: str) -> str:
-    """Strip 'data:image/...;base64,' prefix if present."""
+def _parse_image_b64(b64: str) -> tuple[str, str]:
+    """Extract media type and raw base64 from image data.
+
+    Accepts:
+    - data:image/png;base64,... (data URI)
+    - data:image/jpeg,... (shorthand)
+    - raw base64 (detects type from magic bytes)
+
+    Returns (media_type, raw_base64).
+    """
+    import base64 as b64mod
+
     if b64.startswith("data:"):
-        _, _, raw = b64.partition(",")
-        return raw
-    return b64
+        # Parse data URI
+        header, _, raw = b64.partition(",")
+        # header = "data:image/png;base64" or "data:image/jpeg"
+        mime = header.split(";")[0].removeprefix("data:")
+        return mime, raw
+
+    # Raw base64 - sniff magic bytes
+    try:
+        header_bytes = b64mod.b64decode(b64[:32])
+    except Exception:
+        return "image/png", b64
+
+    if header_bytes[:3] == b"\xff\xd8\xff":
+        return "image/jpeg", b64
+    if header_bytes[:4] == b"\x89PNG":
+        return "image/png", b64
+    if header_bytes[:4] == b"RIFF" and header_bytes[8:12] == b"WEBP":
+        return "image/webp", b64
+    if header_bytes[:3] == b"GIF":
+        return "image/gif", b64
+    return "image/png", b64

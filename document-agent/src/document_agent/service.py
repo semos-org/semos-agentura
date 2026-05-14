@@ -37,6 +37,7 @@ from . import (
     inspect_form,
     merge_slides,
 )
+from .composition import generate_image_fn
 from .config import Settings
 from .models import OutputFormat, OutputMode
 
@@ -53,7 +54,7 @@ class DocumentAgentService(BaseAgentService):
 
     @property
     def agent_description(self) -> str:
-        return "Document processing - digest (OCR), compose (render), generate diagrams, and fill forms."
+        return "Document processing - digest (OCR), compose (render), generate diagrams and images, and fill forms."
 
     @property
     def agent_version(self) -> str:
@@ -104,9 +105,24 @@ class DocumentAgentService(BaseAgentService):
                 name="generate_diagram",
                 description="Generate or modify a diagram (Mermaid or draw.io). "
                 "Pass 'source' to modify an existing diagram (file path, drawio/mermaid code, "
-                "or an image to redraw). Returns a download URL.",
+                "or an image to redraw). Pass 'embeds' to include raster images (icons, symbols) "
+                "in the diagram - refer to each embed by its filename in the description "
+                "so the diagram generator knows where to place them. Returns a download URL.",
                 fn=self._generate_diagram,
-                file_params=["source"],
+                file_params=["source", "embeds"],
+                task_support="optional",
+            ),
+            ToolDef(
+                name="generate_image",
+                description=(
+                    "Generate, edit, or cut elements from raster images. "
+                    "Modes: 'generate' (text-to-image via gpt-image-2), "
+                    "'edit' (modify existing image with text prompt, optional mask for inpainting), "
+                    "'cut' (extract a specific element from an image). "
+                    "Returns a download URL."
+                ),
+                fn=self._generate_image,
+                file_params=["source", "mask"],
                 task_support="optional",
             ),
             ToolDef(
@@ -176,6 +192,8 @@ class DocumentAgentService(BaseAgentService):
             return "Use the compose_document tool with Markdown content and an output format."
         elif "diagram" in msg:
             return "Use the generate_diagram tool with a text description."
+        elif "image" in msg or "icon" in msg or "raster" in msg:
+            return "Use the generate_image tool with a description and mode (generate/edit/cut)."
         elif "form" in msg and "fill" in msg:
             return "Use the fill_form tool with a file path and field data."
         elif "form" in msg and "inspect" in msg:
@@ -183,7 +201,7 @@ class DocumentAgentService(BaseAgentService):
         return (
             "Available tools: digest_document (supports DOCX tracked changes, footnotes, comments), "
             "compose_document (supports footnotes and reference doc for styles), "
-            "generate_diagram, inspect_form, fill_form."
+            "generate_diagram, generate_image, inspect_form, fill_form."
         )
 
     # _resolve_file and _resolve_file_attachment inherited from BaseAgentService
@@ -328,6 +346,7 @@ class DocumentAgentService(BaseAgentService):
         description: str = "",
         diagram_type: str = "mermaid",
         source: FileAttachment | str | None = None,
+        embeds: list[dict] | None = None,
     ) -> str:
         """Generate or modify a diagram.
 
@@ -336,14 +355,36 @@ class DocumentAgentService(BaseAgentService):
             diagram_type: 'mermaid' or 'drawio'.
             source: Existing diagram to modify - file path, inline code,
                 or image to redraw. Accepts {name, content} file attachment.
+            embeds: List of images to embed in the diagram. Each entry is a
+                dict with 'name', 'content' (file path/base64), and 'description'.
         """
         src = None
         if source:
             src = self.resolve_file_attachment(source, ".png")
+
+        resolved_embeds = None
+        if embeds:
+            resolved_embeds = []
+            for embed in embeds:
+                if isinstance(embed, str):
+                    # Plain filename/path from LLM or middleware
+                    path = self.resolve_file(embed, default_ext=".png")
+                    desc = Path(embed).stem
+                elif isinstance(embed, dict):
+                    name = embed.get("name", "")
+                    content = embed.get("content", name)
+                    desc = embed.get("description", name or Path(content).stem)
+                    ext = Path(name).suffix if name else ".png"
+                    path = self.resolve_file(content, default_ext=ext, filename=name)
+                else:
+                    continue
+                resolved_embeds.append({"path": path, "description": desc})
+
         result = await generate_diagram(
             description=description or None,
             diagram_type=diagram_type,
             source=src,
+            embeds=resolved_embeds,
             output_dir=self.output_dir,
             settings=self._settings,
         )
@@ -357,6 +398,59 @@ class DocumentAgentService(BaseAgentService):
             shutil.copy2(img, dest)
             file_meta = json.loads(self.file_response(dest, display_name=img.name))
             resp.update(file_meta)
+        return json.dumps(resp, ensure_ascii=False)
+
+    async def _generate_image(
+        self,
+        description: str,
+        mode: str = "generate",
+        source: FileAttachment | str | None = None,
+        mask: FileAttachment | str | None = None,
+        style: str = "",
+        size: str = "1024x1024",
+        background: str = "auto",
+        output_format: str = "png",
+    ) -> str:
+        """Generate, edit, or cut raster images.
+
+        Args:
+            description: What to generate/edit/extract.
+            mode: 'generate' (text-to-image), 'edit' (modify image),
+                or 'cut' (extract element from image).
+            source: Input image for edit/cut modes.
+            mask: Mask image for inpainting (edit mode, white = edit area).
+            style: Style hint (e.g. 'flat icon', 'isometric', 'photorealistic').
+            size: Output size (e.g. '1024x1024', '512x512').
+            background: 'auto', 'transparent', or 'white'.
+            output_format: 'png' or 'webp'.
+        """
+        src_path = None
+        if source:
+            src_path = self.resolve_file_attachment(source, ".png")
+        mask_path = None
+        if mask:
+            mask_path = self.resolve_file_attachment(mask, ".png")
+
+        result = await generate_image_fn(
+            description=description,
+            mode=mode,
+            source=src_path,
+            mask=mask_path,
+            style=style,
+            size=size,
+            background=background,
+            output_format=output_format,
+            output_dir=self.output_dir,
+            settings=self._settings,
+        )
+
+        img = result.image_path
+        safe_name = f"{uuid.uuid4().hex[:8]}_{img.name}"
+        dest = self.output_dir / safe_name
+        shutil.copy2(img, dest)
+        resp = json.loads(self.file_response(dest, display_name=img.name))
+        resp["mode"] = result.mode
+        resp["size"] = list(result.size)
         return json.dumps(resp, ensure_ascii=False)
 
     async def _inspect_form(self, file_path: FileAttachment | str) -> str:
