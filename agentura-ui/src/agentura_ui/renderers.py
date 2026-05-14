@@ -137,9 +137,13 @@ def resolve_file_references(
 
         mime = entry.mime.split(";")[0].strip().lower()
 
-        # Only inline images (base64 encoding large files
-        # like PPTX/DOCX would freeze the websocket).
-        if not mime.startswith("image/"):
+        # Only inline small images as thumbnails. Large files
+        # and non-images are left as text references (the file
+        # notification widget handles preview/download).
+        # TODO: generate JPEG thumbnails for large images,
+        # with click-to-preview + VFS tree highlight.
+        _MAX_INLINE = 200 * 1024  # 200 KB
+        if not mime.startswith("image/") or entry.size > _MAX_INLINE:
             return match.group(0)
 
         b64 = base64.b64encode(entry.blob).decode()

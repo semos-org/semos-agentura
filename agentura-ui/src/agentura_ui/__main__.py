@@ -423,6 +423,29 @@ def create_app() -> Panelini:
     async def _handle_with_more_iterations(self, user_message):
         if not self.ai_interface:
             return "Error: AI interface not initialized"
+
+        # Clean up orphaned messages from a previous aborted run.
+        # If the user clicked Stop mid-tool-loop, the history may
+        # end with ToolMessage(s) without a final AI response.
+        # The LLM expects: Human, AI, Tool, AI, ... Human.
+        # Truncate back to the last AI or Human message.
+        from langchain_core.messages import ToolMessage
+
+        hist = self.ai_interface.conversation_history
+        while hist and isinstance(hist[-1], ToolMessage):
+            removed = hist.pop()
+            logger.info(
+                "Cleaned orphaned ToolMessage: %s",
+                removed.tool_call_id,
+            )
+        # If last msg is AIMessage with tool_calls but no
+        # ToolMessage followed, remove it too (incomplete round).
+        if hist and isinstance(hist[-1], AIMessage):
+            tc = getattr(hist[-1], "tool_calls", [])
+            if tc:
+                hist.pop()
+                logger.info("Cleaned orphaned AIMessage with tool_calls")
+
         max_iterations = 50
         iteration = 0
         while iteration < max_iterations:

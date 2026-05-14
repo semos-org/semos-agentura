@@ -46,7 +46,8 @@ class TestResolveFileReferences:
         )
         md = "Download [the report](report.pdf) here."
         resolved = resolve_file_references(md, registry)
-        assert "(data:application/pdf;base64," in resolved
+        # Non-image files are NOT inlined (prevents websocket freeze)
+        assert resolved == md
 
     def test_url_not_replaced(self, registry):
         from agentura_ui.renderers import resolve_file_references
