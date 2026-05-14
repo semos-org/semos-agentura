@@ -1,3 +1,5 @@
+# TODO: Consider replacing MCPHub with langchain_mcp_adapters.MCPToolkit
+# for native LangChain tool integration (auto-converts MCP tools to BaseTool).
 """Multi-agent MCP SSE connection manager.
 
 Extracted from agentura-ui/mcp_hub.py (protocol-level, no UI deps).

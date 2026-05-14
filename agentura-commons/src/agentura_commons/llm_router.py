@@ -1,3 +1,5 @@
+# TODO: Consider replacing custom routing with langchain structured output
+# (e.g. with_structured_output() on ChatModel).
 """LLM-based tool routing for A2A natural language requests.
 
 Given a user message and a list of tool definitions, asks an LLM

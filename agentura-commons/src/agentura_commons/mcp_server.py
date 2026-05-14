@@ -1,3 +1,5 @@
+# TODO: Replace _make_normalized_wrapper with langchain_mcp_adapters.to_fastmcp()
+# once the recursion bug with AgentTool extra fields is resolved.
 """Create an MCP server from a BaseAgentService."""
 
 from __future__ import annotations

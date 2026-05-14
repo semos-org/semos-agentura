@@ -1,3 +1,5 @@
+# TODO: Consider replacing custom LLM loop with LangGraph agent
+# for built-in streaming, checkpointing, and memory support.
 """Multi-step LLM tool-calling loop (agentic execution).
 
 The universal agent loop used by:

@@ -3,6 +3,13 @@ name = "semos-agentura"
 version = "0.2.0"
 description = "Semos Agentura - Multi-agent system with MCP + A2A"
 requires-python = ">=3.13"
+dependencies = [
+    "agentura-commons",
+    "email-agent",
+    "document-agent",
+    "filesystem-agent",
+    "agentura-ui",
+]
 
 [tool.uv.workspace]
 members = [
@@ -14,6 +21,11 @@ members = [
 ]
 
 [tool.uv.sources]
+agentura-commons = { workspace = true }
+email-agent = { workspace = true }
+document-agent = { workspace = true }
+filesystem-agent = { workspace = true }
+agentura-ui = { workspace = true }
 panelini = { git = "https://github.com/opensemanticworld/panelini.git", branch = "dev-agentura" }
 
 [tool.pytest.ini_options]

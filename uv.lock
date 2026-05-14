@@ -3251,6 +3251,13 @@ wheels = [
 name = "semos-agentura"
 version = "0.2.0"
 source = { virtual = "." }
+dependencies = [
+    { name = "agentura-commons" },
+    { name = "agentura-ui" },
+    { name = "document-agent" },
+    { name = "email-agent" },
+    { name = "filesystem-agent" },
+]
 
 [package.dev-dependencies]
 dev = [
@@ -3262,6 +3269,13 @@ dev = [
 ]
 
 [package.metadata]
+requires-dist = [
+    { name = "agentura-commons", editable = "agentura-commons" },
+    { name = "agentura-ui", editable = "agentura-ui" },
+    { name = "document-agent", editable = "document-agent" },
+    { name = "email-agent", editable = "email-agent" },
+    { name = "filesystem-agent", editable = "filesystem-agent" },
+]
 
 [package.metadata.requires-dev]
 dev = [
