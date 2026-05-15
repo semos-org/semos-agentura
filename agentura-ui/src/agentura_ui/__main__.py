@@ -63,9 +63,10 @@ FILES:
 Do not strip UUIDs or path components. Never include the file \
 size in a file reference (e.g., use "report.pdf" not \
 "report.pdf (240 KB)").
-- Session files (uploads, tool outputs) can be referenced by name.
-- Mounted drives (sidebar tree): use the full VFS path as shown \
-(e.g., "local://Documents/report.docx").
+- Always use the full VFS path for file references: \
+session://report.pdf, temp://logo.jpg, local://Documents/file.docx. \
+Bare filenames without a root prefix may work as fallback but are \
+ambiguous and slow.
 - The system always reads the latest version from disk.
 - Pass exact filenames between tool calls to chain results.
 - If filesystem tools are available (list_files, read_file, \
@@ -595,6 +596,16 @@ def create_app() -> Panelini:
     pending_uploads: list[str] = []
     tree_browser = VFSTreeBrowser(_vfs, preload_depth=2)
 
+    # Hidden download widget for context menu downloads
+    # (triggers browser download without adding chat messages)
+    import io as _io
+
+    _download_widget = pn.widgets.FileDownload(
+        callback=lambda: _io.BytesIO(b""),
+        filename="download",
+        visible=False,
+    )
+
     def _preview_entry(entry):
         """Show file preview in panelini's preview pane."""
         import base64 as b64mod
@@ -653,16 +664,104 @@ def create_app() -> Panelini:
             uri = event_params.get("key", "")
             if uri and "://" in uri:
                 try:
-                    if not _vfs.isdir(uri):
-                        _, rel = _vfs.parse_uri(uri)
-                        fn = rel.rsplit("/", 1)[-1] if "/" in rel else rel
-                        entry = _registry.get(fn)
-                        if entry:
-                            _preview_entry(entry)
+                    if _vfs.isdir(uri):
+                        return
+                    import mimetypes
+
+                    from .file_registry import FileEntry
+
+                    _, rel = _vfs.parse_uri(uri)
+                    fn = rel.rsplit("/", 1)[-1] if "/" in rel else rel
+                    blob = _vfs.cat(uri)
+                    mime = mimetypes.guess_type(fn)[0] or "application/octet-stream"
+                    _preview_entry(
+                        FileEntry(
+                            filename=fn,
+                            blob=blob,
+                            mime=mime,
+                            size=len(blob),
+                            source=f"vfs:{uri}",
+                        )
+                    )
                 except Exception:
-                    pass
+                    logger.debug(
+                        "Preview failed for %s",
+                        uri,
+                        exc_info=True,
+                    )
 
     tree_browser.tree._tree_event_callback = _on_file_tree_event
+
+    # Context menu: preview (no size limit)
+    def _ctx_preview(uri):
+        try:
+            if _vfs.isdir(uri):
+                return
+            import mimetypes
+
+            from .file_registry import FileEntry
+
+            _, rel = _vfs.parse_uri(uri)
+            fn = rel.rsplit("/", 1)[-1] if "/" in rel else rel
+            blob = _vfs.cat(uri)
+            mime = mimetypes.guess_type(fn)[0] or "application/octet-stream"
+            _preview_entry(
+                FileEntry(
+                    filename=fn,
+                    blob=blob,
+                    mime=mime,
+                    size=len(blob),
+                    source=f"vfs:{uri}",
+                )
+            )
+        except Exception:
+            logger.debug("Context preview failed: %s", uri, exc_info=True)
+
+    tree_browser.on_preview = _ctx_preview
+
+    # Context menu: download
+    def _ctx_download(uri):
+        try:
+            if _vfs.isdir(uri):
+                return
+            import io as _io
+
+            _, rel = _vfs.parse_uri(uri)
+            fn = rel.rsplit("/", 1)[-1] if "/" in rel else rel
+            blob = _vfs.cat(uri)
+            # Swap the hidden download widget's callback and
+            # filename, then trigger it (no chat message needed).
+            _download_widget.filename = fn
+            _download_widget._buffer = blob
+            _download_widget.callback = lambda b=blob: _io.BytesIO(b)
+            # Trigger download by toggling the _clicks param
+            _download_widget._clicks += 1
+        except Exception:
+            logger.debug("Context download failed: %s", uri, exc_info=True)
+
+    tree_browser.on_download = _ctx_download
+
+    # Context menu: add to chat (paste file ref into input)
+    def _ctx_add_to_chat(uri):
+        try:
+            if _vfs.isdir(uri):
+                return
+            # Append the VFS URI to the chat input field
+            # (same as drag-and-drop into the text area)
+            widgets = frontend.chat_interface.widgets
+            text_widget = widgets[0] if widgets else None
+            if text_widget and hasattr(text_widget, "value_input"):
+                current = text_widget.value_input or ""
+                sep = "\n" if current.strip() else ""
+                text_widget.value_input = f"{current}{sep}{uri}\n"
+        except Exception:
+            logger.debug(
+                "Context add-to-chat failed: %s",
+                uri,
+                exc_info=True,
+            )
+
+    tree_browser.on_add_to_chat = _ctx_add_to_chat
 
     # File upload from tree browser adds to registry
     orig_upload = tree_browser._on_file_upload
@@ -763,6 +862,7 @@ def create_app() -> Panelini:
                 tree_browser.tree,
                 tree_browser.file_input,
                 tree_browser.status,
+                _download_widget,
                 title="Files",
                 collapsed=False,
             ),

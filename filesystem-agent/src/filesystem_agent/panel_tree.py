@@ -50,6 +50,23 @@ def _format_size(size: Any) -> str:
     return f"{size} B"
 
 
+def _format_modified(ts: Any) -> str:
+    """Format a timestamp for display."""
+    from datetime import datetime
+
+    if isinstance(ts, (int, float)):
+        try:
+            dt = datetime.fromtimestamp(ts)
+            return dt.strftime("%Y-%m-%d %H:%M")
+        except (OSError, ValueError):
+            return ""
+    if isinstance(ts, datetime):
+        return ts.strftime("%Y-%m-%d %H:%M")
+    if isinstance(ts, str):
+        return ts[:16]  # trim to YYYY-MM-DD HH:MM
+    return ""
+
+
 def _basename(uri: str) -> str:
     """Extract the filename from a URI, handling archive inner paths."""
     if ARCHIVE_SEPARATOR in uri:
@@ -87,6 +104,15 @@ class VFSTreeBrowser:
         self.remote_archives = remote_archives or []
         self.preload_depth = preload_depth
         self.archive_prompt_threshold = archive_prompt_threshold
+
+        # Optional callbacks for UI-specific context menu actions.
+        # Set by the host (e.g. __main__.py) after construction.
+        # on_preview(uri): show file preview (no size limit)
+        # on_download(uri): trigger browser download
+        # on_add_to_chat(uri): register file in chat context
+        self.on_preview: Any | None = None
+        self.on_download: Any | None = None
+        self.on_add_to_chat: Any | None = None
 
         # Auto-refresh tree when roots are added/removed
         self.vfs._on_roots_changed = self._on_roots_changed
@@ -159,10 +185,21 @@ class VFSTreeBrowser:
         self.tree = Wunderbaum(
             source=self.build_source(),
             columns=[
-                {"id": "*", "title": "Name", "width": "300px"},
-                {"id": "size", "title": "Size", "width": "100px"},
+                {"id": "*", "title": "Name", "width": "250px", "sortable": True},
+                {"id": "size", "title": "Size", "width": "80px", "sortable": True},
+                {
+                    "id": "modified",
+                    "title": "Modified",
+                    "width": "130px",
+                    "sortable": True,
+                    "sortOrder": "desc",
+                },
             ],
             context_menu_items=[
+                {"id": "preview", "label": "Preview", "icon": "bi bi-eye"},
+                {"id": "download", "label": "Download", "icon": "bi bi-download"},
+                {"id": "add_to_chat", "label": "Add to Chat", "icon": "bi bi-chat-left-text"},
+                {"id": "---"},
                 {"id": "new_folder", "label": "New Folder", "icon": "bi bi-folder-plus"},
                 {"id": "new_file", "label": "New File", "icon": "bi bi-file-earmark-plus"},
                 {"id": "delete", "label": "Delete", "icon": "bi bi-trash"},
@@ -173,6 +210,7 @@ class VFSTreeBrowser:
                 "checkbox": False,
                 "dnd": True,
                 "edit": {"trigger": ["clickActive", "F2"]},
+                "columnsSortable": True,
             },
             tree_event_callback=self.on_tree_event,
             lazy_load_callback=self.on_lazy_load,
@@ -202,10 +240,23 @@ class VFSTreeBrowser:
                 result["icon"] = _icon_for_file(node["name"])
                 result["size"] = _format_size(node.get("size", 0))
 
+            # Timestamp (if available from filesystem)
+            mod = node.get("modified")
+            if mod:
+                result["modified"] = _format_modified(mod)
+
             if is_dir:
                 raw = node.get("children")
                 if isinstance(raw, list):
-                    result["children"] = [_to_wb(c) for c in raw]
+                    # Sort: directories first, then by modified desc
+                    sorted_children = sorted(
+                        raw,
+                        key=lambda c: (
+                            c["type"] != "directory",
+                            -(c.get("modified") or 0) if isinstance(c.get("modified"), (int, float)) else "",
+                        ),
+                    )
+                    result["children"] = [_to_wb(c) for c in sorted_children]
                 else:
                     result["children"] = []
             elif is_archive:
@@ -269,6 +320,21 @@ class VFSTreeBrowser:
         action = params.get("action", "")
         key = params.get("key", "")
         title = params.get("title", "")
+
+        if action == "preview":
+            if self.on_preview and key:
+                self.on_preview(key)
+            return
+
+        if action == "download":
+            if self.on_download and key:
+                self.on_download(key)
+            return
+
+        if action == "add_to_chat":
+            if self.on_add_to_chat and key:
+                self.on_add_to_chat(key)
+            return
 
         if action == "new_folder":
             self._counter["value"] += 1

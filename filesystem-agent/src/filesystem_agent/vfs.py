@@ -187,14 +187,17 @@ class VirtualFileSystem:
             entry_uri = self.make_uri(root_name, f"{rel}/{basename}".strip("/"))
             if detail:
                 info = e if isinstance(e, dict) else {"name": raw_name}
-                results.append(
-                    {
-                        "uri": entry_uri,
-                        "name": basename,
-                        "type": info.get("type") or "file",
-                        "size": info.get("size") or 0,
-                    }
-                )
+                entry_dict: dict[str, Any] = {
+                    "uri": entry_uri,
+                    "name": basename,
+                    "type": info.get("type") or "file",
+                    "size": info.get("size") or 0,
+                }
+                for ts_key in ("modified", "created", "mtime"):
+                    if info.get(ts_key):
+                        entry_dict["modified"] = info[ts_key]
+                        break
+                results.append(entry_dict)
             else:
                 results.append(entry_uri)
         return results
@@ -223,12 +226,17 @@ class VirtualFileSystem:
             else:
                 raise
         basename = PurePosixPath(str(raw.get("name", rel))).name
-        return {
+        result: dict[str, Any] = {
             "uri": uri,
             "name": basename,
             "type": raw.get("type", "file"),
             "size": raw.get("size", 0),
         }
+        for ts_key in ("modified", "created", "mtime"):
+            if raw.get(ts_key):
+                result["modified"] = raw[ts_key]
+                break
+        return result
 
     def isdir(self, uri: str) -> bool:
         return self.info(uri).get("type") == "directory"
