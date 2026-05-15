@@ -1,6 +1,6 @@
 # File Handling Specification for MCP/A2A Chat Clients
 
-> Status: Draft v2 - March 2026
+> Status: Draft v3 - May 2026
 > Context: Semos Agentura agents need to exchange files with chat UIs.
 > Neither MCP nor any chat client handles this well today.
 
@@ -114,6 +114,42 @@ For array parameters (e.g. email attachments):
   }
 }
 ```
+
+#### Nested File Fields in Structured Parameters
+
+When a tool accepts an array of typed objects where some fields are file references, `x-file: true` is placed on the nested field, not the array itself. The middleware walks the schema recursively to detect these.
+
+Example: diagram embeds with typed items:
+
+```json
+{
+  "$defs": {
+    "EmbedItem": {
+      "type": "object",
+      "properties": {
+        "name": {"type": "string", "description": "Filename of the image"},
+        "content": {"type": "string", "x-file": true, "description": "File content"},
+        "description": {"type": "string", "description": "Placement instructions"}
+      },
+      "required": ["name"]
+    }
+  },
+  "embeds": {
+    "anyOf": [
+      {"type": "array", "items": {"$ref": "#/$defs/EmbedItem"}},
+      {"type": "null"}
+    ]
+  }
+}
+```
+
+The middleware:
+1. Detects `embeds` has array items with `x-file` fields via `$defs` traversal
+2. For each item in the array, resolves `content` from the file registry
+3. If `content` is empty, falls back to `name` as the registry lookup key
+4. Normalizes string input to a single-item list (LLMs sometimes pass `"file.png"` instead of `[{"name": "file.png"}]`)
+
+Use typed Pydantic models (not `list[dict]`) for nested file parameters - this gives the LLM a clear schema with named fields.
 
 ### 3. Symmetric Middleware Design
 

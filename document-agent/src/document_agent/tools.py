@@ -97,6 +97,21 @@ class ComposeInput(BaseModel):
     )
 
 
+class EmbedItem(BaseModel):
+    """A raster image to embed in a diagram."""
+
+    name: str = Field(description="Filename of the image (e.g. 'logo.png').")
+    content: str = Field(
+        default="",
+        description="File content as base64/path/data URI. Uses name as path if empty.",
+        json_schema_extra={"x-file": True},
+    )
+    description: str = Field(
+        default="",
+        description="Where/how to place this image in the diagram.",
+    )
+
+
 class GenerateDiagramInput(BaseModel):
     description: str = Field(
         default="",
@@ -111,9 +126,9 @@ class GenerateDiagramInput(BaseModel):
         description="Existing diagram to modify (file path, code, or image).",
         json_schema_extra={"x-file": True},
     )
-    embeds: list[dict] | None = Field(
+    embeds: list[EmbedItem] | None = Field(
         default=None,
-        description=("Images to embed in the diagram. Each: {name, content (path/base64), description}."),
+        description="Raster images to embed in the diagram (icons, logos, symbols).",
     )
 
 
@@ -330,20 +345,24 @@ class GenerateDiagramTool(AgentTool):
 
         resolved_embeds = None
         if kwargs.get("embeds"):
+            embeds_raw = kwargs["embeds"]
+            # LLM may pass a plain string instead of a list
+            if isinstance(embeds_raw, str):
+                embeds_raw = [{"name": embeds_raw}]
             resolved_embeds = []
-            for embed in kwargs["embeds"]:
+            for embed in embeds_raw:
+                # Handle EmbedItem (Pydantic model), dict, or plain string
+                if hasattr(embed, "model_dump"):
+                    embed = embed.model_dump()
                 if isinstance(embed, str):
-                    path = svc.resolve_file(embed, default_ext=".png")
-                    desc = Path(embed).stem
-                elif isinstance(embed, dict):
+                    embed = {"name": embed}
+                if isinstance(embed, dict):
                     name = embed.get("name", "")
-                    content = embed.get("content", name)
-                    desc = embed.get("description", name or Path(content).stem)
+                    content = embed.get("content", "") or name
+                    desc = embed.get("description", "") or name or Path(content).stem
                     ext = Path(name).suffix if name else ".png"
                     path = svc.resolve_file(content, default_ext=ext, filename=name)
-                else:
-                    continue
-                resolved_embeds.append({"path": path, "description": desc})
+                    resolved_embeds.append({"path": path, "description": desc})
 
         result = await generate_diagram(
             description=kwargs.get("description") or None,

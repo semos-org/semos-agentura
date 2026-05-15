@@ -102,15 +102,17 @@ def human_size(nbytes: int) -> str:
 
 
 def _identify_file_params(tool: Tool) -> set[str]:
-    """Find parameters that accept file references.
+    """Find top-level parameters that accept file references.
 
     Detection layers (first match wins):
     1. x-file: true in JSON Schema property
     2. Description contains "file path or base64"
     3. Parameter name in _KNOWN_FILE_PARAMS
+    4. Array of objects where at least one object field has x-file
     """
     schema = tool.inputSchema or {}
     props = schema.get("properties", {})
+    defs = schema.get("$defs", {})
     file_params: set[str] = set()
     for name, prop in props.items():
         if prop.get("x-file"):
@@ -119,7 +121,45 @@ def _identify_file_params(tool: Tool) -> set[str]:
             file_params.add(name)
         elif name in _KNOWN_FILE_PARAMS:
             file_params.add(name)
+        elif _has_nested_file_fields(prop, defs):
+            file_params.add(name)
     return file_params
+
+
+def _has_nested_file_fields(prop: dict, defs: dict) -> bool:
+    """Check if a property contains nested x-file fields (e.g., array of objects)."""
+    # Direct $ref
+    ref = prop.get("$ref", "")
+    if ref:
+        ref_name = ref.rsplit("/", 1)[-1]
+        ref_schema = defs.get(ref_name, {})
+        return _schema_has_x_file(ref_schema)
+
+    # anyOf (Union types)
+    for variant in prop.get("anyOf", []):
+        if _has_nested_file_fields(variant, defs):
+            return True
+
+    # Array items
+    items = prop.get("items", {})
+    if items:
+        if items.get("x-file"):
+            return True
+        ref = items.get("$ref", "")
+        if ref:
+            ref_name = ref.rsplit("/", 1)[-1]
+            ref_schema = defs.get(ref_name, {})
+            return _schema_has_x_file(ref_schema)
+
+    return False
+
+
+def _schema_has_x_file(schema: dict) -> bool:
+    """Check if any property in a schema object has x-file: true."""
+    for prop in schema.get("properties", {}).values():
+        if prop.get("x-file"):
+            return True
+    return False
 
 
 def _has_file_attachment_schema(tool: Tool, param: str) -> bool:
@@ -187,6 +227,106 @@ def _resolve_attachment_item(
     return item
 
 
+def _is_array_param(schema: dict, param_name: str) -> bool:
+    """Check if a param is typed as an array in the schema."""
+    prop = schema.get("properties", {}).get(param_name, {})
+    if prop.get("type") == "array":
+        return True
+    for variant in prop.get("anyOf", []):
+        if variant.get("type") == "array":
+            return True
+    return False
+
+
+def _get_array_item_schema(
+    schema: dict,
+    param_name: str,
+    defs: dict,
+) -> dict:
+    """Get the resolved item schema for an array parameter."""
+    prop = schema.get("properties", {}).get(param_name, {})
+    items = prop.get("items", {})
+    # Check anyOf for the array variant
+    if not items:
+        for variant in prop.get("anyOf", []):
+            if variant.get("type") == "array":
+                items = variant.get("items", {})
+                break
+    # Resolve $ref
+    ref = items.get("$ref", "")
+    if ref:
+        ref_name = ref.rsplit("/", 1)[-1]
+        return defs.get(ref_name, {})
+    return items
+
+
+def _get_file_fields_in_schema(item_schema: dict) -> set[str]:
+    """Find field names with x-file: true in an object schema."""
+    result = set()
+    for name, prop in item_schema.get("properties", {}).items():
+        if prop.get("x-file"):
+            result.add(name)
+    return result
+
+
+def _resolve_item_deep(
+    item: dict | str,
+    registry: FileRegistry,
+    param_name: str,
+    item_schema: dict,
+) -> dict | str:
+    """Resolve file references in an array item, including nested x-file fields.
+
+    Handles:
+    - Plain string: resolve as filename from registry
+    - Dict with nested x-file fields: resolve each file field
+    - Dict that IS a FileAttachment: resolve as before
+    """
+    # String: could be a filename reference
+    if isinstance(item, str):
+        entry = registry.get(item)
+        if entry:
+            logger.info(
+                "Pre-middleware: resolved nested %s item '%s' (%s)",
+                param_name,
+                entry.filename,
+                human_size(entry.size),
+            )
+            return _make_file_attachment(entry.filename, entry)
+        return item
+
+    if not isinstance(item, dict):
+        return item
+
+    # Check if this dict has nested x-file fields to resolve
+    file_fields = _get_file_fields_in_schema(item_schema)
+    if file_fields:
+        resolved = dict(item)
+        for field_name in file_fields:
+            val = resolved.get(field_name)
+            if not isinstance(val, str) or not val:
+                # Use 'name' field as content source if content is empty
+                if field_name == "content" and not val:
+                    val = resolved.get("name", "")
+                if not val:
+                    continue
+            entry = registry.get(val)
+            if entry:
+                b64 = base64.b64encode(entry.blob).decode()
+                resolved[field_name] = f"data:{entry.mime};base64,{b64}"
+                logger.info(
+                    "Pre-middleware: resolved %s.%s='%s' (%s)",
+                    param_name,
+                    field_name,
+                    entry.filename,
+                    human_size(entry.size),
+                )
+        return resolved
+
+    # Fallback: treat as a regular FileAttachment-like dict
+    return _resolve_attachment_item(item, registry, param_name)
+
+
 def pre_process_tool_call(
     tool_name: str,
     arguments: dict,
@@ -203,6 +343,8 @@ def pre_process_tool_call(
     if not file_params:
         return arguments
 
+    schema = mcp_tool.inputSchema or {}
+    defs = schema.get("$defs", {})
     processed = dict(arguments)
     for param_name in file_params:
         value = processed.get(param_name)
@@ -211,14 +353,28 @@ def pre_process_tool_call(
             param_name,
         )
 
-        # List of FileAttachments
+        # LLM may pass a plain string for an array param - normalize
+        if isinstance(value, str) and _is_array_param(schema, param_name):
+            # Try JSON parse: '["file.png"]' or '[{"name": "file.png"}]'
+            try:
+                parsed = json.loads(value)
+                if isinstance(parsed, list):
+                    value = parsed
+            except (json.JSONDecodeError, TypeError):
+                # Plain filename string - wrap as single-item list
+                value = [value]
+            processed[param_name] = value
+
+        # List: resolve each item (may be FileAttachment, nested object, or string)
         if isinstance(value, list):
             resolved_list = []
+            item_schema = _get_array_item_schema(schema, param_name, defs)
             for item in value:
-                resolved_item = _resolve_attachment_item(
+                resolved_item = _resolve_item_deep(
                     item,
                     registry,
                     param_name,
+                    item_schema,
                 )
                 resolved_list.append(resolved_item)
             processed[param_name] = resolved_list

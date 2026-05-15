@@ -360,6 +360,85 @@ class TestPreProcess:
         assert atts[0]["content"].startswith("data:")
         assert processed["to"] == "test@example.com"
 
+    def test_nested_x_file_in_array_items(self, registry):
+        """Resolve x-file fields inside array-of-objects (e.g., embeds)."""
+        registry.register("logo.png", b"PNG-DATA", "image/png", "upload")
+        # Schema with EmbedItem that has x-file on 'content'
+        tool = MCPTool(
+            name="generate_diagram",
+            description="Generate diagram",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "description": {"type": "string"},
+                    "embeds": {
+                        "anyOf": [
+                            {"type": "array", "items": {"$ref": "#/$defs/EmbedItem"}},
+                            {"type": "null"},
+                        ],
+                        "default": None,
+                    },
+                },
+                "$defs": {
+                    "EmbedItem": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string"},
+                            "content": {"type": "string", "x-file": True},
+                            "description": {"type": "string"},
+                        },
+                        "required": ["name"],
+                    },
+                },
+            },
+        )
+        args = {
+            "description": "A diagram with a logo",
+            "embeds": [{"name": "logo.png", "content": "", "description": "center"}],
+        }
+        processed = pre_process_tool_call("generate_diagram", args, tool, registry)
+        embeds = processed["embeds"]
+        assert len(embeds) == 1
+        assert embeds[0]["name"] == "logo.png"
+        assert embeds[0]["content"].startswith("data:image/png;base64,")
+        assert embeds[0]["description"] == "center"
+
+    def test_string_to_list_normalization(self, registry):
+        """LLM passes string instead of list for array param."""
+        registry.register("img.png", b"IMG", "image/png", "upload")
+        tool = MCPTool(
+            name="generate_diagram",
+            description="Generate diagram",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "embeds": {
+                        "anyOf": [
+                            {"type": "array", "items": {"$ref": "#/$defs/EmbedItem"}},
+                            {"type": "null"},
+                        ],
+                        "default": None,
+                    },
+                },
+                "$defs": {
+                    "EmbedItem": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string"},
+                            "content": {"type": "string", "x-file": True},
+                        },
+                        "required": ["name"],
+                    },
+                },
+            },
+        )
+        # LLM passes plain string instead of list
+        args = {"embeds": "img.png"}
+        processed = pre_process_tool_call("generate_diagram", args, tool, registry)
+        embeds = processed["embeds"]
+        assert isinstance(embeds, list)
+        assert len(embeds) == 1
+
 
 # post_process_tool_result
 
