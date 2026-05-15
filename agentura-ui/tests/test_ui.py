@@ -306,6 +306,52 @@ def test_full_app_send_message(full_app):
 
 
 @pytest.fixture()
+def echo_app(page: Page):
+    """Minimal app with a mock callback that echoes back."""
+    from panelini.panels.ai.frontend import AVAILABLE_TOOLS
+    from panelini.panels.ai.frontend import AiChat as Frontend
+
+    AVAILABLE_TOOLS.clear()
+
+    frontend = Frontend(
+        system_message="Test",
+        config_path=_test_config_path(),
+    )
+
+    async def _echo(contents, user, instance):
+        yield f"You said: {contents}"
+
+    frontend.chat_interface.callback = _echo
+
+    layout = pn.Column(*frontend.main_objects)
+    serve_component(page, layout)
+
+    yield {"page": page}
+
+    AVAILABLE_TOOLS.clear()
+
+
+def test_hello_gets_response(echo_app):
+    """User says hello, assistant echoes it back."""
+    page = echo_app["page"]
+
+    textarea = page.locator("textarea").first
+    expect(textarea).to_be_visible(timeout=20000)
+    textarea.fill("hallo")
+    textarea.press("Enter")
+
+    # User bubble
+    expect(
+        page.locator("text=hallo").first,
+    ).to_be_visible(timeout=10000)
+
+    # Assistant response
+    expect(
+        page.locator("text=You said: hallo"),
+    ).to_be_visible(timeout=15000)
+
+
+@pytest.fixture()
 def tool_roundtrip_app(page: Page):
     """App with a fake callback that simulates LLM calling a tool
     and returning a response with the tool result."""

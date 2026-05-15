@@ -160,32 +160,25 @@ def _build_agents() -> list[AgentConnection]:
 
 
 def _wrap_chat_callback(original_callback, registry, pending_uploads, _unused=None):
-    """Wrap Frontend chat callback to prepend file context,
-    resolve file references, and register tool outputs."""
+    """Lightweight callback wrapper for input guards + file context.
+
+    Used by tests and as fallback. The real app uses
+    _make_executor_callback which replaces panelini's tool loop
+    with LLMExecutor.
+    """
 
     async def wrapped(contents, user, instance):
-        # Guard: never send empty content to the LLM
         if not isinstance(contents, str) or not contents.strip():
             yield "Please enter a message."
             return
-
-        # Prepend uploaded-file context so the LLM knows
-        # which files are available for tool calls.
         if pending_uploads:
             file_list = ", ".join(pending_uploads)
-            contents = f"[Uploaded files available: {file_list}]\n\n" + contents
+            contents = f"[Uploaded files available: {file_list}]\n\n{contents}"
             pending_uploads.clear()
-
-        # Delegate to the original Frontend callback.
-        last_chunk = None
         result = original_callback(contents, user, instance)
-        logger.info("Callback returned type=%s", type(result).__name__)
+        last_chunk = None
         if hasattr(result, "__aiter__"):
             async for chunk in result:
-                logger.info(
-                    "Callback chunk: %d chars",
-                    len(str(chunk)),
-                )
                 last_chunk = chunk
                 yield chunk
         elif asyncio.iscoroutine(result):
@@ -195,22 +188,148 @@ def _wrap_chat_callback(original_callback, registry, pending_uploads, _unused=No
         elif result is not None:
             last_chunk = result
             yield result
-
-        # Resolve markdown file refs (![](file.png)) to
-        # inline data URIs so images render in chat.
         if last_chunk and isinstance(last_chunk, str):
-            resolved = resolve_file_references(
-                last_chunk,
-                registry,
-            )
+            resolved = resolve_file_references(last_chunk, registry)
             if resolved != last_chunk:
                 yield resolved
-
-        # Files are notified in real-time via _on_file_produced
-        # callback. Drain the list here to prevent accumulation.
         drain_produced_files()
 
     return wrapped
+
+
+def _make_executor_callback(registry, pending_uploads):
+    """Build a chat callback powered by LLMExecutor.
+
+    Replaces panelini's built-in tool loop with the universal
+    agentic loop from agentura-commons. This enables:
+    - request_input (agent asks user a question, chat pauses)
+    - report_progress (status updates during tool execution)
+    - Clean cancellation (Stop button saves history for resume)
+    - Same loop that runs inside agents
+    """
+    from agentura_commons.llm_executor import LLMExecutor
+
+    def _clean_history(hist: list[dict]) -> list[dict]:
+        """Remove orphaned tool_use blocks from history.
+
+        After abort, the last assistant message may have
+        tool_use blocks without matching tool_result. The
+        Anthropic API rejects this. Truncate back to a
+        valid state.
+        """
+        if not hist:
+            return hist
+        cleaned = list(hist)
+        # If last message is assistant with tool_use content,
+        # check if it has matching tool_results after it.
+        while cleaned:
+            last = cleaned[-1]
+            role = last.get("role", "")
+            if role == "assistant":
+                content = last.get("content", [])
+                if isinstance(content, list):
+                    has_tool_use = any(isinstance(b, dict) and b.get("type") == "tool_use" for b in content)
+                    if has_tool_use:
+                        cleaned.pop()
+                        continue
+                break
+            elif role == "user":
+                # Check if it's a tool_result user message
+                content = last.get("content", [])
+                if isinstance(content, list) and all(
+                    isinstance(b, dict) and b.get("type") == "tool_result" for b in content
+                ):
+                    # Orphaned tool_result without prior
+                    # assistant tool_use - remove
+                    cleaned.pop()
+                    continue
+                break
+            else:
+                break
+        return cleaned
+
+    # Per-session state for multi-turn continuation
+    _history: list[list[dict]] = [[]]
+
+    def _create_executor(frontend) -> LLMExecutor:
+        """Create executor from panelini's current provider config."""
+        provider = frontend.backend.current_provider
+        model_cfg = frontend.backend.current_model
+        model_value = model_cfg.value if hasattr(model_cfg, "value") else str(model_cfg)
+        _, _, model_name = model_value.partition("/")
+        model_name = model_name or model_value
+
+        api_key = provider.env_vars.get("api_key", "")
+        api_base = provider.env_vars.get("endpoint", "") or provider.env_vars.get("api_base", "")
+
+        return LLMExecutor(
+            tools=frontend._get_selected_tools(),
+            model=model_name,
+            api_key=api_key,
+            api_base=api_base,
+            system_prompt=_SYSTEM_MESSAGE,
+            max_steps=50,
+        )
+
+    async def callback(contents, user, instance):
+        # Input guards
+        if not isinstance(contents, str) or not contents.strip():
+            yield "Please enter a message."
+            return
+
+        if pending_uploads:
+            file_list = ", ".join(pending_uploads)
+            contents = f"[Uploaded files available: {file_list}]\n\n{contents}"
+            pending_uploads.clear()
+
+        frontend = callback._frontend
+        executor = _create_executor(frontend)
+
+        # Clean orphaned tool_use blocks from previous aborts.
+        # Anthropic requires every tool_use to have a matching
+        # tool_result in the next message. If the user hit Stop
+        # mid-tool-loop, truncate back to valid state.
+        history = _history[0] or None
+        if history:
+            history = _clean_history(history)
+
+        logger.info("LLMExecutor.run: %s", contents[:100])
+        try:
+            result = await executor.run(
+                message=contents,
+                history=history,
+            )
+        except asyncio.CancelledError:
+            _history[0] = getattr(executor, "last_messages", [])
+            logger.info(
+                "Executor cancelled, history saved (%d msgs)",
+                len(_history[0]),
+            )
+            yield "Stopped. You can continue or start a new request."
+            return
+
+        logger.info(
+            "Executor result: status=%s text=%d chars files=%d",
+            result.status,
+            len(result.text),
+            len(result.files),
+        )
+        _history[0] = result.history
+
+        if result.status == "input_required":
+            yield result.question or "The agent needs more information."
+            return
+
+        if result.status in ("rejected", "auth_required", "failed"):
+            yield f"**{result.status.replace('_', ' ').title()}:** {result.text}"
+            return
+
+        text = result.text or "Done."
+        resolved = resolve_file_references(text, registry)
+        yield resolved
+        drain_produced_files()
+
+    return callback
 
 
 def _build_tool_tree(frontend, hub):
@@ -426,95 +545,8 @@ def create_app() -> Panelini:
         config_path=_CONFIG_YML,
     )
 
-    # Increase max tool iterations (panelini default is 10).
-    # A2A delegates with multi-step workflows need more.
-    # Patch max tool iterations (panelini default is 10).
-    import types
-
-    from langchain_core.messages import AIMessage
-
-    async def _handle_with_more_iterations(self, user_message):
-        if not self.ai_interface:
-            return "Error: AI interface not initialized"
-
-        # Clean up orphaned messages from a previous aborted run.
-        # If the user clicked Stop mid-tool-loop, the history may
-        # end with ToolMessage(s) without a final AI response.
-        # The LLM expects: Human, AI, Tool, AI, ... Human.
-        # Truncate back to the last AI or Human message.
-        from langchain_core.messages import ToolMessage
-
-        hist = self.ai_interface.conversation_history
-        while hist and isinstance(hist[-1], ToolMessage):
-            removed = hist.pop()
-            logger.info(
-                "Cleaned orphaned ToolMessage: %s",
-                removed.tool_call_id,
-            )
-        # If last msg is AIMessage with tool_calls but no
-        # ToolMessage followed, remove it too (incomplete round).
-        if hist and isinstance(hist[-1], AIMessage):
-            tc = getattr(hist[-1], "tool_calls", [])
-            if tc:
-                hist.pop()
-                logger.info("Cleaned orphaned AIMessage with tool_calls")
-
-        max_iterations = 50
-        iteration = 0
-        while iteration < max_iterations:
-            if iteration == 0:
-                response_data = await self.ai_interface.get_response_with_tools(user_message)
-            else:
-                response = await self.ai_interface.model.ainvoke(
-                    self.ai_interface.conversation_history,
-                )
-                response_text = response.content if isinstance(response.content, str) else str(response.content)
-                tool_calls = getattr(response, "tool_calls", [])
-                self.ai_interface.conversation_history.append(
-                    AIMessage(
-                        content=response_text,
-                        tool_calls=tool_calls,
-                    ),
-                )
-                response_data = {
-                    "text": response_text,
-                    "tool_calls": tool_calls,
-                }
-            tc = response_data.get("tool_calls", [])
-            logger.info(
-                "Iteration %d: %d tool calls, text=%s",
-                iteration,
-                len(tc),
-                str(response_data.get("text", ""))[:100],
-            )
-            if not tc:
-                final = str(response_data.get("text", ""))
-                logger.info(
-                    "Tool loop done, returning %d chars",
-                    len(final),
-                )
-                return final
-            for t in tc:
-                logger.info(
-                    "  -> tool_call: %s(%s)",
-                    t.get("name", "?"),
-                    str(t.get("args", {}))[:100],
-                )
-            tool_results = await self._execute_tool_calls(tc)
-            logger.info(
-                "  <- tool results: %d messages",
-                len(tool_results),
-            )
-            self.ai_interface.conversation_history.extend(
-                tool_results,
-            )
-            iteration += 1
-        return "Maximum tool execution iterations reached."
-
-    frontend.backend._handle_message_with_tools = types.MethodType(
-        _handle_with_more_iterations,
-        frontend.backend,
-    )
+    # Replace panelini's tool loop with LLMExecutor-based callback.
+    # This enables request_input, progress reporting, and clean cancel.
 
     # Status updates: send as italicized System messages in chat.
     # These appear immediately during tool execution, giving
@@ -686,13 +718,10 @@ def create_app() -> Panelini:
 
     set_vfs_changed_callback(_on_vfs_changed)
 
-    # Wrap chat callback
-    frontend.chat_interface.callback = _wrap_chat_callback(
-        frontend.chat_interface.callback,
-        _registry,
-        pending_uploads,
-        None,  # no FileManager - tree refreshes via callbacks
-    )
+    # Replace panelini's chat callback with LLMExecutor-based one.
+    chat_cb = _make_executor_callback(_registry, pending_uploads)
+    chat_cb._frontend = frontend  # closure ref for executor creation
+    frontend.chat_interface.callback = chat_cb
 
     # Compose Panelini layout.
     # Replace panelini's flat tool checkboxes with our tree.

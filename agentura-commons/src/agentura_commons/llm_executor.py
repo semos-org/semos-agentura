@@ -71,11 +71,18 @@ def _detect_provider(endpoint: str) -> str:
 
 
 def _tool_schema(t: AgentTool) -> dict[str, Any]:
-    """Convert AgentTool to Anthropic tool schema."""
+    """Convert AgentTool/BaseTool to Anthropic tool schema."""
+    schema = t.get_input_schema()
+    # BaseTool.get_input_schema() may return a Pydantic model class
+    # (ModelMetaclass) instead of a dict. Convert it.
+    if isinstance(schema, type):
+        schema = schema.model_json_schema()
+    elif not isinstance(schema, dict):
+        schema = {"type": "object", "properties": {}}
     return {
         "name": t.name,
         "description": t.description or "",
-        "input_schema": t.get_input_schema(),
+        "input_schema": schema,
     }
 
 
@@ -270,6 +277,7 @@ class LLMExecutor:
             ExecutorResult with text, files, status, and history.
         """
         self._produced_files = []
+        self.last_messages: list[dict] = []  # exposed for cancel recovery
         progress_updates: list[str] = []
 
         # Build conversation
@@ -279,6 +287,7 @@ class LLMExecutor:
             file_names = [f.get("name", "file") for f in files]
             user_content += f"\n\n[Attached files: {', '.join(file_names)}]"
         messages.append({"role": "user", "content": user_content})
+        self.last_messages = messages  # live ref for cancel recovery
 
         for step in range(self.max_steps):
             try:
@@ -423,7 +432,7 @@ class LLMExecutor:
         if not td:
             return f"Error: unknown tool '{name}'"
 
-        file_params = td.resolved_file_params
+        file_params = getattr(td, "resolved_file_params", [])
 
         # Inject file content into file params.
         if file_params:
