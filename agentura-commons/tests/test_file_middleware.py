@@ -303,15 +303,17 @@ class TestPreProcess:
         att = processed["source"]
         assert att["content"].startswith("data:")
 
-    def test_missing_file_passes_through(self, registry, digest_tool):
+    def test_missing_file_raises_error(self, registry, digest_tool):
+        from agentura_commons.file_middleware import FileNotResolvedError
+
         args = {"source": "nonexistent.pdf"}
-        processed = pre_process_tool_call(
-            "digest_document",
-            args,
-            digest_tool,
-            registry,
-        )
-        assert processed["source"] == "nonexistent.pdf"
+        with pytest.raises(FileNotResolvedError, match="nonexistent.pdf"):
+            pre_process_tool_call(
+                "digest_document",
+                args,
+                digest_tool,
+                registry,
+            )
 
     def test_non_file_params_unchanged(self, registry, search_tool):
         args = {"query": "meeting", "limit": 10}

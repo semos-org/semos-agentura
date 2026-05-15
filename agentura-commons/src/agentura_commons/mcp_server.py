@@ -286,6 +286,15 @@ def create_mcp_server(service: BaseAgentService) -> FastMCP:
         if not registered:
             continue
 
+        # Replace FastMCP's auto-inferred schema with the full
+        # Pydantic-generated schema (has proper types, descriptions,
+        # nested models like EmbedItem, $defs, etc.)
+        if tool.args_schema:
+            pydantic_schema = tool.get_input_schema()
+            if pydantic_schema.get("properties"):
+                registered = registered.model_copy(update={"parameters": pydantic_schema})
+                server._tool_manager._tools[tool.name] = registered
+
         # Inject x-file annotations for file params.
         if file_params and "properties" in registered.parameters:
             for param_name in file_params:

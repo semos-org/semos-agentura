@@ -22,6 +22,11 @@ from .mcp_client import AgentConnection
 
 logger = logging.getLogger(__name__)
 
+
+class FileNotResolvedError(Exception):
+    """Raised when a file reference cannot be resolved from the registry or VFS."""
+
+
 # Tool parameters known to accept files (fallback when x-file annotation absent).
 _KNOWN_FILE_PARAMS = {"source", "file_path"}
 
@@ -409,16 +414,27 @@ def pre_process_tool_call(
                 value,
                 human_size(entry.size),
             )
-        elif registry.files:
-            # Not an exact filename - might be markdown or
-            # other text containing embedded file references.
-            # Scan for registered filenames and replace inline.
-            resolved = _resolve_embedded_refs(
+        else:
+            # Try embedded refs (markdown with filenames)
+            if registry.files:
+                resolved = _resolve_embedded_refs(value, registry)
+                if resolved != value:
+                    processed[param_name] = resolved
+                    continue
+            # File param unresolved - flag as error so the LLM
+            # gets a clear message instead of a cryptic ENOENT
+            logger.warning(
+                "Pre-middleware: unresolved file param %s='%s'",
+                param_name,
                 value,
-                registry,
             )
-            if resolved != value:
-                processed[param_name] = resolved
+            raise FileNotResolvedError(
+                f"File '{value}' not found for parameter '{param_name}'. "
+                f"Make sure the file was uploaded or produced by a previous tool. "
+                f"For files on mounted drives, use the full VFS path "
+                f"(e.g., local://path/to/file). "
+                f"Use list_files to check available files."
+            )
     return processed
 
 

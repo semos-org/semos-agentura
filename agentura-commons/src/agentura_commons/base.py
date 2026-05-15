@@ -167,9 +167,6 @@ class AgentTool(BaseTool):
             return self.parameters_override
         if self.args_schema is not None:
             schema = self.args_schema.model_json_schema()
-            # Strip Pydantic metadata that LLM APIs don't expect
-            schema.pop("$defs", None)
-            schema.pop("title", None)
             return schema
         return {"type": "object", "properties": {}}
 

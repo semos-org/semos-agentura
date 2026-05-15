@@ -202,11 +202,25 @@ class FilesystemAgentService(BaseAgentService):
         vfs = self._ensure_vfs()
         data = vfs.cat(uri)
         try:
-            return data.decode("utf-8")
+            text = data.decode("utf-8")
+            # Guard against accidentally reading huge text files
+            if len(text) > 500_000:
+                return (
+                    f"[text file, {len(text)} chars - too large for context. "
+                    f"Use grep/glob to search, or pass the filename directly to tools.]"
+                )
+            return text
         except UnicodeDecodeError:
-            import base64
+            import mimetypes
 
-            return f"[binary, {len(data)} bytes, base64]: {base64.b64encode(data).decode()}"
+            mime, _ = mimetypes.guess_type(uri)
+            return (
+                f"[binary file: {uri.rsplit('/', 1)[-1]}, "
+                f"{len(data)} bytes, {mime or 'unknown type'}. "
+                f"Do NOT read binary files into context. "
+                f"Just pass the filename to tools - the file middleware "
+                f"resolves content automatically.]"
+            )
 
     async def _file_tree(self, uri: str = "", depth: int = 2) -> str:
         vfs = self._ensure_vfs()

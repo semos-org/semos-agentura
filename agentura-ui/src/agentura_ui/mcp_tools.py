@@ -174,12 +174,17 @@ def _make_mcp_tool_class(
             if is_fs:
                 processed = kwargs
             else:
-                processed = pre_process_tool_call(
-                    mcp_tool.name,
-                    kwargs,
-                    mcp_tool,
-                    registry,
-                )
+                from agentura_commons.file_middleware import FileNotResolvedError
+
+                try:
+                    processed = pre_process_tool_call(
+                        mcp_tool.name,
+                        kwargs,
+                        mcp_tool,
+                        registry,
+                    )
+                except FileNotResolvedError as e:
+                    return str(e)
 
             result = await hub.call_tool(mcp_tool.name, processed)
 

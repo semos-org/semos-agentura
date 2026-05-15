@@ -56,11 +56,24 @@ filename from one step as input to the next.
 - You can combine tools from different agents in one workflow.
 
 FILES:
-- The system resolves filenames automatically. Never ask for \
-paths or base64 - just use the filename.
+- Never generate base64 - just reference files by name.
 - Uploaded files appear as "I have uploaded: report.pdf (240 KB)".
 - Tool outputs appear as "File created: output.pdf (1.2 MB)".
-- Pass exact filenames between tool calls to chain them.
+- Always use the EXACT filename as shown (including any prefixes). \
+Do not strip UUIDs or path components. Never include the file \
+size in a file reference (e.g., use "report.pdf" not \
+"report.pdf (240 KB)").
+- Session files (uploads, tool outputs) can be referenced by name.
+- Mounted drives (sidebar tree): use the full VFS path as shown \
+(e.g., "local://Documents/report.docx").
+- The system always reads the latest version from disk.
+- Pass exact filenames between tool calls to chain results.
+- If filesystem tools are available (list_files, read_file, \
+write_file, grep, glob, edit_file), use them to browse, read, \
+and modify files directly in the VFS.
+- NEVER read binary files (images, PDFs, DOCX, etc.) with \
+read_file just to pass them to another tool. The file middleware \
+resolves file content automatically - just pass the filename.
 
 DATES:
 - If no year, month, or week is given, assume the current one \
