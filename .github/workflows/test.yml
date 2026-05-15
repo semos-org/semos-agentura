@@ -54,7 +54,7 @@ jobs:
       - name: Run tests (CI tier)
         timeout-minutes: 5
         run: |
-          cd agentura-commons && uv run pytest tests/ -m "not integration" --timeout=60 --tb=short -q && cd ..
-          cd email-agent && uv run pytest tests/ -m "not integration" --timeout=60 --tb=short -q && cd ..
-          cd document-agent && uv run pytest tests/ -m "not integration" --timeout=60 --tb=short -q && cd ..
-          cd filesystem-agent && uv run pytest tests/ -m "not integration" --timeout=60 --tb=short -q && cd ..
+          for pkg in agentura-commons email-agent document-agent filesystem-agent; do
+            echo "=== $pkg ==="
+            (cd "$pkg" && uv run pytest tests/ -m "not integration" --timeout=60 --tb=short -q)
+          done

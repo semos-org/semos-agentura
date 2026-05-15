@@ -28,7 +28,8 @@ class FileNotResolvedError(Exception):
 
 
 # Tool parameters known to accept files (fallback when x-file annotation absent).
-_KNOWN_FILE_PARAMS = {"source", "file_path"}
+# Removed: _KNOWN_FILE_PARAMS heuristic was too risky (matched
+# "source" in compose_document which accepts plain text)
 
 
 @dataclass
@@ -109,11 +110,8 @@ def human_size(nbytes: int) -> str:
 def _identify_file_params(tool: Tool) -> set[str]:
     """Find top-level parameters that accept file references.
 
-    Detection layers (first match wins):
-    1. x-file: true in JSON Schema property
-    2. Description contains "file path or base64"
-    3. Parameter name in _KNOWN_FILE_PARAMS
-    4. Array of objects where at least one object field has x-file
+    Only uses explicit x-file annotations in JSON Schema.
+    No heuristics - tool authors must mark file params with x-file.
     """
     schema = tool.inputSchema or {}
     props = schema.get("properties", {})
@@ -121,10 +119,6 @@ def _identify_file_params(tool: Tool) -> set[str]:
     file_params: set[str] = set()
     for name, prop in props.items():
         if prop.get("x-file"):
-            file_params.add(name)
-        elif "file path or base64" in (prop.get("description") or "").lower():
-            file_params.add(name)
-        elif name in _KNOWN_FILE_PARAMS:
             file_params.add(name)
         elif _has_nested_file_fields(prop, defs):
             file_params.add(name)

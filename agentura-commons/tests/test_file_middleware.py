@@ -226,7 +226,8 @@ class TestFileRegistry:
 
 
 class TestIdentifyFileParams:
-    def test_by_known_name(self, digest_tool):
+    def test_by_x_file_on_source(self, digest_tool):
+        """source has x-file: true in schema."""
         params = _identify_file_params(digest_tool)
         assert "source" in params
 
@@ -235,22 +236,20 @@ class TestIdentifyFileParams:
         assert "file_path" in params
         assert "data" not in params
 
-    def test_by_description_heuristic(self):
+    def test_no_heuristic_without_x_file(self):
+        """Params named 'source' are NOT detected without x-file annotation."""
         tool = MCPTool(
             name="test",
             description="test",
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "doc": {
-                        "type": "string",
-                        "description": ("Accepts an absolute file path or base64-encoded content."),
-                    },
+                    "source": {"type": "string", "description": "Markdown text or file path"},
                 },
             },
         )
         params = _identify_file_params(tool)
-        assert "doc" in params
+        assert "source" not in params
 
     def test_no_file_params(self, search_tool):
         assert len(_identify_file_params(search_tool)) == 0
