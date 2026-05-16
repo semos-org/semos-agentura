@@ -198,7 +198,10 @@ def _make_mcp_tool_class(
                 new_files = []
                 # Refresh tree after VFS modification
                 if _vfs_changed_callback:
-                    _vfs_changed_callback()
+                    try:
+                        _vfs_changed_callback()
+                    except Exception:
+                        pass  # broken root should not kill the tool call
             else:
                 text, new_files = await post_process_tool_result(
                     mcp_tool.name,

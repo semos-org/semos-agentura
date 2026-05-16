@@ -817,7 +817,10 @@ class VFSTreeBrowser:
 
     def _on_roots_changed(self):
         """Called by VFS when roots are added or removed."""
-        self.tree.set_source(self.build_source())
+        try:
+            self.tree.set_source(self.build_source())
+        except Exception:
+            pass  # broken root should not poison other VFS operations
         self.status.object = "**Roots updated**"
 
     def _do_refresh(self, event):

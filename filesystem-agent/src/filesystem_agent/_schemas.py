@@ -61,8 +61,10 @@ _PROTOCOL_SCHEMAS = [
         "type": "object",
         "title": "sharepoint",
         "description": (
-            "SharePoint Online. Connects via WebDAV with automatic cookie-based auth "
-            "(opens browser for smartcard/SSO if needed, caches session for reuse). "
+            "SharePoint Online or OneDrive for Business. Connects via WebDAV with "
+            "automatic cookie-based auth (opens browser, caches session for reuse). "
+            "browser triggers password, smartcard/SSO login or email verification - "
+            "user enters their email, receives a code, enters it, and checks 'stay signed in'. "
             "All connection details go in kwargs - do NOT use base_path for this protocol."
         ),
         "properties": {
@@ -74,12 +76,12 @@ _PROTOCOL_SCHEMAS = [
                     "site_url": {
                         "type": "string",
                         "description": (
-                            "SharePoint SITE URL only - must end at the site name, "
-                            "do NOT append the document library path. "
-                            "Correct: https://contoso.sharepoint.com/sites/MySite  "
-                            "Wrong:   https://contoso.sharepoint.com/sites/MySite/Shared%20Documents"
+                            "SharePoint or OneDrive URL. Accepts: "
+                            "team sites (https://tenant.sharepoint.com/sites/MySite), "
+                            "personal sites (https://tenant-my.sharepoint.com/personal/user_domain_com), "
+                            "or OneDrive sharing links (folder or single-file)."
                         ),
-                        "pattern": r"^https://[^/]+/sites/[^/]+$",
+                        "pattern": r"^https://[^/]+\.sharepoint\.com(/.*)?$",
                     },
                     "doc_library": {
                         "type": "string",

@@ -50,17 +50,23 @@ def acquire_sharepoint_token(tenant_id: str, client_id: str, client_secret: str,
 SESSION_PATH = Path(__file__).resolve().parent.parent.parent / ".tokens" / "sharepoint_session.json"
 
 
-async def _extract_cookies_via_browser(sharepoint_url: str, session_path: Path = SESSION_PATH) -> dict[str, str]:
+async def _extract_cookies_via_browser(
+    sharepoint_url: str, session_path: Path = SESSION_PATH
+) -> tuple[dict[str, str], str]:
     """Open a browser for SharePoint login (smartcard/SSO), then extract auth cookies.
 
     If a saved session exists, it is loaded first. After successful login the session
     is saved for reuse.
+
+    Returns (cookies, final_url) where final_url is the page URL after auth
+    (useful for extracting shared folder paths from sharing link redirects).
     """
     from playwright.async_api import async_playwright
 
     storage_state = str(session_path) if session_path.exists() else None
 
     pw = await async_playwright().start()
+    final_url = ""
     try:
         browser = await pw.chromium.launch(headless=False)
         context = await browser.new_context(
@@ -69,12 +75,12 @@ async def _extract_cookies_via_browser(sharepoint_url: str, session_path: Path =
         )
         page = await context.new_page()
 
-        # Navigate to SharePoint  - triggers SSO / smartcard prompt
+        # Navigate to SharePoint - triggers SSO / smartcard / email code prompt
         print("  Waiting for SharePoint login to complete...", flush=True)
         print("  (Complete smartcard/SSO login in the browser window)", flush=True)
         await page.goto(sharepoint_url, wait_until="domcontentloaded", timeout=120_000)
 
-        # Poll for FedAuth cookie  - the definitive sign that login succeeded
+        # Poll for FedAuth cookie - the definitive sign that login succeeded
         sp_cookies = {}
         for _ in range(600):  # up to 5 minutes
             all_cookies = await context.cookies()
@@ -89,6 +95,9 @@ async def _extract_cookies_via_browser(sharepoint_url: str, session_path: Path =
         if "FedAuth" not in sp_cookies:
             print("  [WARN] Timed out waiting for FedAuth cookie", flush=True)
 
+        # Capture final URL (after redirects) for shared folder extraction
+        final_url = page.url
+
         # Save session for reuse
         state = await context.storage_state()
         session_path.parent.mkdir(parents=True, exist_ok=True)
@@ -99,7 +108,7 @@ async def _extract_cookies_via_browser(sharepoint_url: str, session_path: Path =
     finally:
         await pw.stop()
 
-    return sp_cookies
+    return sp_cookies, final_url
 
 
 def _load_cached_cookies(session_path: Path) -> dict[str, str] | None:
@@ -132,6 +141,9 @@ def _validate_cookies(sharepoint_url: str, cookies: dict[str, str]) -> bool:
     if "/sites/" in parsed.path:
         idx = parts.index("sites")
         site_path = "/".join(parts[: idx + 2])
+    elif "/personal/" in parsed.path:
+        idx = parts.index("personal")
+        site_path = "/".join(parts[: idx + 2])
     site_root = f"{parsed.scheme}://{parsed.netloc}{site_path}"
 
     try:
@@ -147,25 +159,31 @@ def _validate_cookies(sharepoint_url: str, cookies: dict[str, str]) -> bool:
         return False
 
 
-def extract_sharepoint_cookies(sharepoint_url: str, session_path: Path = SESSION_PATH) -> dict[str, str]:
-    """Extract SharePoint cookies  - reuses cached session if available, otherwise opens browser.
+def extract_sharepoint_cookies(sharepoint_url: str, session_path: Path = SESSION_PATH) -> tuple[dict[str, str], str]:
+    """Extract SharePoint cookies - reuses cached session if available, otherwise opens browser.
 
     Validates cached cookies before returning them. If expired, opens browser for re-login.
     Works from both sync and async contexts.
+
+    Returns (cookies, redirect_url) where redirect_url is the final page URL
+    after auth (empty string when using cached session).
     """
     cached = _load_cached_cookies(session_path)
     if cached:
         if _validate_cookies(sharepoint_url, cached):
             print("  Using cached session (no browser needed)", flush=True)
-            return cached
+            return cached, ""
         print("  Cached session expired, re-authenticating...", flush=True)
+        # Remove expired session so the browser doesn't load stale FedAuth
+        # (which would cause the polling loop to exit immediately)
+        session_path.unlink(missing_ok=True)
     try:
         asyncio.get_running_loop()
-        # Already in an async context  - can't use asyncio.run().
+        # Already in an async context - can't use asyncio.run().
         # Use nest_asyncio to allow nested event loops.
         import nest_asyncio
 
         nest_asyncio.apply()
     except RuntimeError:
-        pass  # No running loop  - asyncio.run() will work fine
+        pass  # No running loop - asyncio.run() will work fine
     return asyncio.run(_extract_cookies_via_browser(sharepoint_url, session_path))

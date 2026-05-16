@@ -54,7 +54,7 @@ if not os.environ.get("SKIP_SHAREPOINT"):
             from filesystem_agent.auth import CookieAuth, extract_sharepoint_cookies
 
             print(f"[VFS] Authenticating to {_settings.sharepoint_site_url} ...", flush=True)
-            _cookies = extract_sharepoint_cookies(_settings.sharepoint_site_url)
+            _cookies, _ = extract_sharepoint_cookies(_settings.sharepoint_site_url)
             if _cookies.get("FedAuth"):
                 from webdav4.fsspec import WebdavFileSystem
 

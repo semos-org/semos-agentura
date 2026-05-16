@@ -1,12 +1,16 @@
 """Integration tests for SharePoint via WebDAV.
 
-Requires environment variables:
+Requires environment variables (SharePoint team sites):
     TEST_SHAREPOINT_SITE_URL   - e.g. https://org.sharepoint.com/sites/MySite
     TEST_SHAREPOINT_DOC_LIBRARY - e.g. Freigegebene Dokumente
     TEST_SHAREPOINT_SUBFOLDER  - e.g. General
 
+Optional (OneDrive sharing links):
+    TEST_ONEDRIVE_SHARING_FOLDER_LINK - e.g. https://tenant-my.sharepoint.com/:f:/g/personal/user/hash
+    TEST_ONEDRIVE_SHARING_FILE_LINK   - e.g. https://tenant-my.sharepoint.com/:w:/g/personal/user/hash
+
 These tests need a live SharePoint session (smartcard/SSO).
-They are skipped unless all three env vars are set.
+They are skipped unless the required env vars are set.
 Run with: pytest -m integration tests/test_sharepoint_integration.py -v -s
 """
 
@@ -14,14 +18,24 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 
 import pytest
-from filesystem_agent.service import FilesystemAgentService
-from filesystem_agent.vfs import VirtualFileSystem
+from dotenv import load_dotenv
+
+# Load .env from agent dir and workspace root (same as config.py)
+_agent_dir = Path(__file__).resolve().parent.parent
+load_dotenv(_agent_dir / ".env")
+load_dotenv(_agent_dir.parent / ".env")
+
+from filesystem_agent.service import FilesystemAgentService  # noqa: E402
+from filesystem_agent.vfs import VirtualFileSystem  # noqa: E402
 
 _SITE_URL = os.environ.get("TEST_SHAREPOINT_SITE_URL", "")
 _DOC_LIB = os.environ.get("TEST_SHAREPOINT_DOC_LIBRARY", "")
 _SUBFOLDER = os.environ.get("TEST_SHAREPOINT_SUBFOLDER", "")
+_ONEDRIVE_FOLDER_LINK = os.environ.get("TEST_ONEDRIVE_SHARING_FOLDER_LINK", "")
+_ONEDRIVE_FILE_LINK = os.environ.get("TEST_ONEDRIVE_SHARING_FILE_LINK", "")
 
 _SKIP_REASON = (
     "Set TEST_SHAREPOINT_SITE_URL, TEST_SHAREPOINT_DOC_LIBRARY, "
@@ -216,3 +230,66 @@ async def test_sp_copy_move(sp_service: FilesystemAgentService):
                 await sp_service._delete_file(uri)
             except Exception:
                 pass
+
+
+# OneDrive sharing links
+
+
+async def _mount_onedrive(name: str, sharing_url: str) -> tuple:
+    """Helper: mount a sharing link and return (service, result)."""
+    from pathlib import Path
+
+    Path(".tokens").mkdir(exist_ok=True)
+    svc = FilesystemAgentService(vfs=VirtualFileSystem())
+    result = json.loads(
+        await svc._add_root(
+            name=name,
+            protocol="sharepoint",
+            kwargs={"site_url": sharing_url},
+        )
+    )
+    return svc, result
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+@pytest.mark.skipif(
+    not _ONEDRIVE_FOLDER_LINK,
+    reason="Set TEST_ONEDRIVE_SHARING_FOLDER_LINK",
+)
+async def test_onedrive_folder_link():
+    """Mount a OneDrive folder sharing link and list files."""
+    svc, result = await _mount_onedrive("od_folder", _ONEDRIVE_FOLDER_LINK)
+    assert "mounted" in result, f"OneDrive folder mount failed: {result}"
+    assert result.get("subfolder"), "Expected subfolder from sharing link redirect"
+    print(f"\nMounted: {result}")
+
+    entries = json.loads(await svc._list_files("od_folder://"))
+    assert isinstance(entries, list)
+    assert len(entries) > 0, "Folder should not be empty"
+    print(f"OneDrive folder has {len(entries)} entries:")
+    for e in entries[:10]:
+        print(f"  {e.get('type') or '?':9s} {e.get('name') or '?'}")
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+@pytest.mark.skipif(
+    not _ONEDRIVE_FILE_LINK,
+    reason="Set TEST_ONEDRIVE_SHARING_FILE_LINK",
+)
+async def test_onedrive_file_link():
+    """Single-file sharing link: mounts if folder access is granted, otherwise returns clear error."""
+    svc, result = await _mount_onedrive("od_file", _ONEDRIVE_FILE_LINK)
+    if "error" in result:
+        # File-only sharing links don't grant folder access via WebDAV - expected
+        assert "403" in result["error"] or "Cannot access" in result["error"]
+        print(f"\nFile link correctly rejected (no folder access): {result['error']}")
+    else:
+        assert result.get("subfolder"), "Expected parent folder as subfolder"
+        entries = json.loads(await svc._list_files("od_file://"))
+        assert isinstance(entries, list)
+        print(f"\nMounted: {result}")
+        print(f"OneDrive file parent folder has {len(entries)} entries:")
+        for e in entries[:10]:
+            print(f"  {e.get('type') or '?':9s} {e.get('name') or '?'}")

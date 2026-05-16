@@ -78,6 +78,70 @@ class _HttpRangeFile:
         self.close()
 
 
+class SingleFileWebdavFS(AbstractFileSystem):
+    """Virtual filesystem exposing a single WebDAV file as a browsable directory.
+
+    Used for single-file sharing links where the parent folder is not accessible
+    but the individual file can be read/written via direct HTTP GET/PUT.
+    """
+
+    protocol = "single-webdav"
+
+    def __init__(self, file_url, filename, auth, **kwargs):
+        super().__init__(**kwargs)
+        self._file_url = file_url
+        self._filename = filename
+        self._auth = auth
+
+    def _get_client(self):
+        import httpx
+
+        return httpx.Client(auth=self._auth, follow_redirects=True, timeout=60)
+
+    def ls(self, path, detail=True, **kwargs):
+        path = path.strip("/")
+        if path in ("", self._filename):
+            info = self.info(self._filename)
+            if path == "":
+                return [info] if detail else [self._filename]
+            return info if detail else self._filename
+        raise FileNotFoundError(path)
+
+    def info(self, path, **kwargs):
+        path = path.strip("/")
+        if path == "":
+            return {"name": "", "type": "directory", "size": 0}
+        if path == self._filename:
+            size = 0
+            try:
+                with self._get_client() as c:
+                    r = c.head(self._file_url)
+                    if r.status_code == 200:
+                        size = int(r.headers.get("content-length", 0))
+            except Exception:
+                pass
+            return {"name": self._filename, "type": "file", "size": size}
+        raise FileNotFoundError(path)
+
+    def cat_file(self, path, **kwargs):
+        with self._get_client() as c:
+            r = c.get(self._file_url)
+            r.raise_for_status()
+            return r.content
+
+    def pipe_file(self, path, value, **kwargs):
+        with self._get_client() as c:
+            r = c.put(self._file_url, content=value)
+            r.raise_for_status()
+
+    def _open(self, path, mode="rb", **kwargs):
+        import io
+
+        if "r" in mode:
+            return io.BytesIO(self.cat_file(path))
+        raise NotImplementedError(f"Mode {mode} not supported for single-file WebDAV")
+
+
 @dataclass
 class Root:
     """A named mount point in the virtual filesystem."""
@@ -260,7 +324,10 @@ class VirtualFileSystem:
             node = {**entry, "children": None}
             if entry["type"] == "directory":
                 if depth > 0:
-                    node["children"] = self.tree(entry["uri"], depth=depth - 1)
+                    try:
+                        node["children"] = self.tree(entry["uri"], depth=depth - 1)
+                    except Exception:
+                        node["children"] = []  # failed - show as expandable placeholder
                 else:
                     node["children"] = []  # lazy-loadable placeholder
             nodes.append(node)

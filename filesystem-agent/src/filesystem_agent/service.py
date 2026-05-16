@@ -43,7 +43,7 @@ def _build_vfs(settings: Settings) -> VirtualFileSystem:
             from .auth import CookieAuth, extract_sharepoint_cookies
 
             logger.info("Authenticating to %s ...", settings.sharepoint_site_url)
-            cookies = extract_sharepoint_cookies(settings.sharepoint_site_url)
+            cookies, _ = extract_sharepoint_cookies(settings.sharepoint_site_url)
             if cookies.get("FedAuth"):
                 from webdav4.fsspec import WebdavFileSystem
 
@@ -189,12 +189,12 @@ class FilesystemAgentService(BaseAgentService):
     async def _list_files(self, uri: str = "") -> str:
         vfs = self._ensure_vfs()
         entries = vfs.ls(uri, detail=True)
-        return json.dumps(entries, ensure_ascii=False, indent=2)
+        return json.dumps(entries, ensure_ascii=False, indent=2, default=str)
 
     async def _file_info(self, uri: str = "") -> str:
         vfs = self._ensure_vfs()
         info = vfs.info(uri)
-        return json.dumps(info, ensure_ascii=False, indent=2)
+        return json.dumps(info, ensure_ascii=False, indent=2, default=str)
 
     async def _read_file(self, uri: str = "") -> str:
         if not uri or "://" not in uri:
@@ -225,7 +225,7 @@ class FilesystemAgentService(BaseAgentService):
     async def _file_tree(self, uri: str = "", depth: int = 2) -> str:
         vfs = self._ensure_vfs()
         tree = vfs.tree(uri, depth=depth)
-        return json.dumps(tree, ensure_ascii=False, indent=2)
+        return json.dumps(tree, ensure_ascii=False, indent=2, default=str)
 
     async def _write_file(self, uri: str = "", content: str = "") -> str:
         vfs = self._ensure_vfs()
@@ -409,7 +409,7 @@ class FilesystemAgentService(BaseAgentService):
         if not settings.sharepoint_site_url:
             return json.dumps({"error": "SHAREPOINT_SITE_URL not configured"})
 
-        cookies = extract_sharepoint_cookies(settings.sharepoint_site_url)
+        cookies, _ = extract_sharepoint_cookies(settings.sharepoint_site_url)
         site = settings.sharepoint_site_url
         props = "Title,Path,Filename,Size,LastModifiedTime,Author,FileExtension"
         url = f"{site}/_api/search/query?querytext='{quote(query)}'&rowlimit={limit}&selectproperties='{props}'"
@@ -465,43 +465,61 @@ class FilesystemAgentService(BaseAgentService):
 
     async def _add_sharepoint_root(self, name: str, base_path: str, opts: dict) -> str:
         """Mount a SharePoint root via WebDAV with automatic cookie auth."""
-        from urllib.parse import quote, urlparse
+        from urllib.parse import quote
 
+        from ._sharepoint import (
+            detect_doc_library,
+            is_sharing_link,
+            resolve_sharepoint_url,
+            resolve_sharing_link_folder,
+        )
         from .auth import CookieAuth, extract_sharepoint_cookies
 
-        site_url = opts.get("site_url", "")
-        if not site_url:
+        raw_url = opts.get("site_url", "")
+        if not raw_url:
             return json.dumps({"error": "kwargs.site_url is required for sharepoint protocol"})
 
-        # Normalize: strip trailing slash and any doc library path the LLM may have appended
-        parsed = urlparse(site_url.rstrip("/"))
-        parts = parsed.path.split("/")
-        if "/sites/" in parsed.path:
-            idx = parts.index("sites")
-            site_url = f"{parsed.scheme}://{parsed.netloc}{'/'.join(parts[: idx + 2])}"
+        sharing = is_sharing_link(raw_url)
+        site_url, resolved_subfolder = resolve_sharepoint_url(raw_url)
 
-        cookies = extract_sharepoint_cookies(site_url)
+        # For sharing links, authenticate via the original URL (triggers email
+        # code flow for external users). For direct URLs, use the site URL.
+        auth_url = raw_url if sharing else site_url
+        cookies, redirect_url = extract_sharepoint_cookies(auth_url)
         if not cookies.get("FedAuth"):
-            return json.dumps({"error": "SharePoint login failed  - no FedAuth cookie obtained"})
+            return json.dumps({"error": "SharePoint login failed - no FedAuth cookie obtained"})
 
         auth = CookieAuth(cookies)
 
+        # Extract shared folder path from sharing link redirect.
+        # Always resolve via HTTP (browser URL may not contain ?id= param).
+        if sharing and not opts.get("subfolder", ""):
+            resolved_subfolder = resolve_sharing_link_folder(raw_url, site_url, auth)
+
         # Auto-detect primary document library if not specified.
         # SharePoint's localized URL name (e.g. "Freigegebene Dokumente") differs
-        # from the English "Shared Documents"  - query the API to get the real path.
+        # from the English "Shared Documents" - query the API to get the real path.
         doc_library = opts.get("doc_library", "")
         if not doc_library:
-            doc_library = self._detect_doc_library(site_url, auth)
+            doc_library = detect_doc_library(site_url, auth)
 
-        subfolder = opts.get("subfolder", "")
+        subfolder = opts.get("subfolder", "") or resolved_subfolder
 
         webdav_url = f"{site_url}/{quote(doc_library)}"
-        # DirFileSystem needs a non-empty base_path for WebDAV  - "/" is the minimum
-        folder_path = quote(subfolder) if subfolder else "/"
+        # DirFileSystem base_path is a filesystem path, not a URL - don't encode it.
+        # "/" is the minimum non-empty value for WebDAV.
+        folder_path = subfolder if subfolder else "/"
 
         from webdav4.fsspec import WebdavFileSystem
 
         wfs = WebdavFileSystem(webdav_url, auth=auth)
+
+        # Validate connection before adding to VFS (prevents poisoning other roots)
+        try:
+            wfs.ls(folder_path if folder_path != "/" else "")
+        except Exception as exc:
+            return json.dumps({"error": f"Cannot access {webdav_url}: {exc}"})
+
         vfs = self._ensure_vfs()
         vfs.add_root(name, wfs, base_path=folder_path)
         return json.dumps(
@@ -513,37 +531,6 @@ class FilesystemAgentService(BaseAgentService):
                 "subfolder": subfolder,
             }
         )
-
-    @staticmethod
-    def _detect_doc_library(site_url: str, auth: Any) -> str:
-        """Auto-detect the primary document library name from SharePoint REST API.
-
-        Queries for document libraries (BaseTemplate=101) and returns the
-        server-relative folder name of the first one (usually the main library).
-        Falls back to 'Shared Documents' if detection fails.
-        """
-        import httpx
-
-        try:
-            r = httpx.get(
-                f"{site_url}/_api/web/lists"
-                "?$filter=BaseTemplate eq 101"
-                "&$select=Title,RootFolder/ServerRelativeUrl"
-                "&$expand=RootFolder",
-                auth=auth,
-                headers={"Accept": "application/json;odata=verbose"},
-                follow_redirects=True,
-                timeout=10,
-            )
-            if r.status_code == 200:
-                libs = r.json().get("d", {}).get("results", [])
-                if libs:
-                    # Use the server-relative URL's last segment as the library name
-                    rel_url = libs[0]["RootFolder"]["ServerRelativeUrl"]
-                    return rel_url.rsplit("/", 1)[-1]
-        except Exception:
-            pass
-        return "Shared Documents"
 
     async def _remove_root(self, name: str = "") -> str:
         """Unmount a filesystem root."""
