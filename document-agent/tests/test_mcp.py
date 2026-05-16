@@ -174,8 +174,8 @@ async def test_fill_form(service, sample_docx):
             },
         )
         data = parse_tool_result(result)
-        assert "download_url" in data
-        assert data["download_url"].startswith("http://")
+        assert "filename" in data
+        assert data["filename"].endswith(".docx")
         assert data["filename"].endswith(".docx")
         assert data["mime_type"] == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         assert isinstance(data["size_bytes"], int)
@@ -205,12 +205,12 @@ async def test_compose_docx(service):
             },
         )
         data = parse_tool_result(result)
-        assert "download_url" in data
+        assert "filename" in data
         assert data["filename"].endswith(".docx")
         assert data["mime_type"] is not None
         assert isinstance(data["size_bytes"], int) and data["size_bytes"] > 0
-        # download_url contains the actual on-disk filename (UUID-prefixed)
-        disk_name = data["download_url"].rsplit("/", 1)[-1]
+        # filename is the display name (not UUID-prefixed)
+        disk_name = data["filename"]
         assert (service.output_dir / disk_name).exists()
 
 
@@ -253,7 +253,7 @@ async def test_generate_diagram_mocked(service):
                 {"description": "A simple flowchart", "diagram_type": "mermaid"},
             )
             data = parse_tool_result(result)
-            assert "download_url" in data
+            assert "filename" in data
             assert data["filename"].endswith(".png")
             assert data["iterations"] == 1
 
@@ -269,7 +269,7 @@ async def test_generate_diagram_real(service):
             {"description": "A simple flowchart with 3 steps: Start, Process, End"},
         )
         data = parse_tool_result(result)
-        assert "download_url" in data
+        assert "filename" in data
         assert data["iterations"] >= 1
 
 
@@ -308,7 +308,7 @@ async def test_compose_html(service):
             },
         )
         data = parse_tool_result(result)
-        assert "download_url" in data
+        assert "filename" in data
         assert data["filename"].endswith(".html")
 
 
@@ -357,7 +357,7 @@ async def test_generate_image_real(service):
             },
         )
         data = parse_tool_result(result)
-        assert "download_url" in data
+        assert "filename" in data
         assert data["mode"] == "generate"
         assert data["size"][0] > 0
         assert data["size"][1] > 0
@@ -389,5 +389,5 @@ async def test_generate_image_edit_real(service, tmp_path):
             },
         )
         data = parse_tool_result(result)
-        assert "download_url" in data
+        assert "filename" in data
         assert data["mode"] == "edit"
