@@ -211,46 +211,43 @@ def _make_executor_callback(registry, pending_uploads):
     from agentura_commons.llm_executor import LLMExecutor
 
     def _clean_history(hist: list[dict]) -> list[dict]:
-        """Remove orphaned tool_use blocks from history.
+        """Remove orphaned trailing tool_use/tool_result from history.
 
-        After abort, the last assistant message may have
-        tool_use blocks without matching tool_result. The
-        Anthropic API rejects this. Truncate back to a
-        valid state.
+        After abort, the conversation may end with:
+        - assistant(tool_use) without a matching tool_result
+        - tool_result without a following assistant response
+
+        Only strips from the END. Valid completed tool call
+        sequences (assistant(tool_use) -> tool_result -> assistant)
+        are preserved.
         """
         if not hist:
             return hist
         cleaned = list(hist)
-        # If last message is assistant with tool_use content,
-        # check if it has matching tool_results after it.
-        while cleaned:
+        while len(cleaned) >= 2:
             last = cleaned[-1]
             role = last.get("role", "")
-            if role == "assistant":
-                content = last.get("content", [])
-                if isinstance(content, list):
-                    has_tool_use = any(isinstance(b, dict) and b.get("type") == "tool_use" for b in content)
-                    if has_tool_use:
-                        cleaned.pop()
-                        continue
-                break
-            elif role == "user":
-                # Check if it's a tool_result user message
-                content = last.get("content", [])
-                if isinstance(content, list) and all(
-                    isinstance(b, dict) and b.get("type") == "tool_result" for b in content
-                ):
-                    # Orphaned tool_result without prior
-                    # assistant tool_use - remove
+            content = last.get("content", "")
+
+            # Trailing assistant with tool_use but no tool_result
+            if role == "assistant" and isinstance(content, list):
+                has_tool_use = any(isinstance(b, dict) and b.get("type") == "tool_use" for b in content)
+                if has_tool_use:
                     cleaned.pop()
                     continue
-                break
-            else:
-                break
+
+            # Trailing tool_result without a following assistant
+            if role == "user" and isinstance(content, list) and content:
+                all_tool_result = all(isinstance(b, dict) and b.get("type") == "tool_result" for b in content)
+                if all_tool_result:
+                    cleaned.pop()
+                    continue
+
+            break
         return cleaned
 
-    # Per-session state for multi-turn continuation
-    _history: list[list[dict]] = [[]]
+    # Use module-level _session_history (survives create_app
+    # re-invocations from websocket reconnects).
 
     def _create_executor(frontend) -> LLMExecutor:
         """Create executor from panelini's current provider config."""
@@ -273,6 +270,7 @@ def _make_executor_callback(registry, pending_uploads):
         )
 
     async def callback(contents, user, instance):
+        global _session_history
         # Input guards
         if not isinstance(contents, str) or not contents.strip():
             yield "Please enter a message."
@@ -286,25 +284,27 @@ def _make_executor_callback(registry, pending_uploads):
         frontend = callback._frontend
         executor = _create_executor(frontend)
 
-        # Clean orphaned tool_use blocks from previous aborts.
-        # Anthropic requires every tool_use to have a matching
-        # tool_result in the next message. If the user hit Stop
-        # mid-tool-loop, truncate back to valid state.
-        history = _history[0] or None
-        if history:
-            history = _clean_history(history)
+        history = _session_history or None
 
-        logger.info("LLMExecutor.run: %s", contents[:100])
+        logger.info(
+            "LLMExecutor.run: %s (history: %d msgs)",
+            contents[:100],
+            len(history) if history else 0,
+        )
         try:
             result = await executor.run(
                 message=contents,
                 history=history,
             )
         except asyncio.CancelledError:
-            _history[0] = getattr(executor, "last_messages", [])
+            # TODO: cancel in-flight tool calls (currently they
+            # complete in background even after user hits Stop)
+            _session_history = _clean_history(
+                getattr(executor, "last_messages", []),
+            )
             logger.info(
-                "Executor cancelled, history saved (%d msgs)",
-                len(_history[0]),
+                "Executor cancelled, history cleaned (%d msgs)",
+                len(_session_history),
             )
             yield "Stopped. You can continue or start a new request."
             return
@@ -315,7 +315,12 @@ def _make_executor_callback(registry, pending_uploads):
             len(result.text),
             len(result.files),
         )
-        _history[0] = result.history
+        _session_history = result.history
+        logger.info(
+            "History saved: %d msgs (roles: %s)",
+            len(result.history),
+            [m.get("role", "?") for m in result.history[:10]],
+        )
 
         if result.status == "input_required":
             yield result.question or "The agent needs more information."
@@ -531,12 +536,15 @@ def _start_filesystem_agent_inprocess(
     )
 
 
-# Module-level state (single-user app)
+# Module-level state (single-user app).
+# Survives create_app() re-invocations (Panel calls it per
+# session / websocket reconnect).
 _hub: MCPHub | None = None
 _vfs = VirtualFileSystem()
 _vfs.add_root_from_protocol("session", "memory", base_path="/")
 _registry = VFSFileRegistry(_vfs, root="session")
 _fs_agent_port: int | None = None  # set in main()
+_session_history: list[dict] = []  # LLMExecutor conversation history
 
 
 def create_app() -> Panelini:
@@ -795,11 +803,21 @@ def create_app() -> Panelini:
         "value",
     )
 
+    # Preview + highlight: show preview pane AND activate tree node
+    def _preview_and_highlight(entry):
+        _preview_entry(entry)
+        # Highlight in VFS tree (session files)
+        uri = f"session://{entry.filename}"
+        try:
+            tree_browser.tree.set_active_node(uri)
+        except Exception:
+            pass
+
     # Real-time file notifications from tools
     def _on_file_produced(entry):
         widget = render_file_notification(
             entry,
-            on_preview=_preview_entry,
+            on_preview=_preview_and_highlight,
         )
         frontend.chat_interface.send(
             widget,

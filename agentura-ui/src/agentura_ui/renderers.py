@@ -103,6 +103,27 @@ def _download_button(entry: FileEntry) -> pn.widgets.FileDownload:
     )
 
 
+def _generate_thumbnail(
+    blob: bytes,
+    max_px: int = 800,
+    quality: int = 80,
+) -> bytes:
+    """Resize image to thumbnail JPEG. Returns JPEG bytes."""
+    try:
+        from PIL import Image
+
+        img = Image.open(io.BytesIO(blob))
+        img.thumbnail((max_px, max_px))
+        if img.mode in ("RGBA", "P"):
+            img = img.convert("RGB")
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=quality)
+        return buf.getvalue()
+    except Exception:
+        # Pillow not installed or unsupported format - return as-is
+        return blob
+
+
 # Matches markdown image ![alt](filename) and link [text](filename)
 _MD_REF_RE = re.compile(
     r"(!?\[(?P<alt>[^\]]*)\])\((?P<ref>[^)]+)\)",
@@ -137,17 +158,23 @@ def resolve_file_references(
 
         mime = entry.mime.split(";")[0].strip().lower()
 
-        # Only inline small images as thumbnails. Large files
-        # and non-images are left as text references (the file
-        # notification widget handles preview/download).
-        # TODO: generate JPEG thumbnails for large images,
-        # with click-to-preview + VFS tree highlight.
-        _MAX_INLINE = 200 * 1024  # 200 KB
-        if not mime.startswith("image/") or entry.size > _MAX_INLINE:
+        # Only inline images. Non-images are left as text
+        # references (the file notification widget handles them).
+        if not mime.startswith("image/"):
             return match.group(0)
 
-        b64 = base64.b64encode(entry.blob).decode()
-        data_uri = f"data:{entry.mime};base64,{b64}"
+        # Small images: inline as-is. Large images: generate
+        # a JPEG thumbnail to avoid freezing the websocket.
+        _MAX_INLINE = 200 * 1024  # 200 KB
+        if entry.size <= _MAX_INLINE:
+            img_bytes = entry.blob
+            img_mime = entry.mime
+        else:
+            img_bytes = _generate_thumbnail(entry.blob)
+            img_mime = "image/jpeg"
+
+        b64 = base64.b64encode(img_bytes).decode()
+        data_uri = f"data:{img_mime};base64,{b64}"
         alt = match.group("alt") or entry.filename
 
         if bracket.startswith("!"):

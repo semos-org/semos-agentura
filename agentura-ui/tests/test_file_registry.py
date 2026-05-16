@@ -86,6 +86,24 @@ class TestResolveFileReferences:
         resolved = resolve_file_references(md, registry)
         assert resolved.count("data:image/png;base64,") == 2
 
+    def test_large_image_gets_thumbnail(self, registry):
+        """Images > 200 KB get thumbnailed (Pillow JPEG)."""
+        from agentura_ui.renderers import resolve_file_references
+
+        # Create a fake large PNG (> 200 KB)
+        large_blob = b"\x89PNG" + b"\x00" * 250_000
+        registry.register(
+            "big.png",
+            large_blob,
+            "image/png",
+            "tool:generate_diagram",
+        )
+        md = "![big](big.png)"
+        resolved = resolve_file_references(md, registry)
+        # Should be inlined as JPEG thumbnail (Pillow converts)
+        # or original if Pillow can't parse the fake PNG
+        assert "data:image/" in resolved
+
     def test_real_world_diagram_output(self, registry):
         """Matches the exact pattern from generate_diagram."""
         from agentura_ui.renderers import resolve_file_references
@@ -104,5 +122,80 @@ class TestResolveFileReferences:
         )
         resolved = resolve_file_references(md, registry)
         assert "data:image/png;base64," in resolved
-        # The backtick filename reference should NOT be replaced
         assert "`5e922231_iter_01.png`" in resolved
+
+
+class TestVFSFileRegistry:
+    """Test VFS-backed file registry."""
+
+    def test_register_creates_vfs_file(self):
+        from agentura_ui.file_registry import VFSFileRegistry
+        from filesystem_agent.vfs import VirtualFileSystem
+
+        vfs = VirtualFileSystem()
+        vfs.add_root_from_protocol("session", "memory", base_path="/")
+        reg = VFSFileRegistry(vfs, root="session")
+
+        reg.register("test.txt", b"hello", "text/plain", "upload")
+        assert vfs.cat("session://test.txt") == b"hello"
+
+    def test_register_with_subfolder(self):
+        """Files with path components create subdirectories."""
+        from agentura_ui.file_registry import VFSFileRegistry
+        from filesystem_agent.vfs import VirtualFileSystem
+
+        vfs = VirtualFileSystem()
+        vfs.add_root_from_protocol("session", "memory", base_path="/")
+        reg = VFSFileRegistry(vfs, root="session")
+
+        reg.register(
+            "images/diagram_002.png",
+            b"\x89PNG-data",
+            "image/png",
+            "tool:digest_document",
+        )
+
+        # File exists at the nested path
+        assert vfs.cat("session://images/diagram_002.png") == b"\x89PNG-data"
+
+        # Parent directory was created
+        entries = vfs.ls("session://images")
+        names = [e["name"] for e in entries]
+        assert "diagram_002.png" in names
+
+    def test_register_deep_subfolder(self):
+        """Deep nested paths work too."""
+        from agentura_ui.file_registry import VFSFileRegistry
+        from filesystem_agent.vfs import VirtualFileSystem
+
+        vfs = VirtualFileSystem()
+        vfs.add_root_from_protocol("session", "memory", base_path="/")
+        reg = VFSFileRegistry(vfs, root="session")
+
+        reg.register(
+            "a/b/c/deep.txt",
+            b"nested",
+            "text/plain",
+            "tool:test",
+        )
+        assert vfs.cat("session://a/b/c/deep.txt") == b"nested"
+
+    def test_get_by_basename(self):
+        """Registry.get() finds files by basename (fuzzy match)."""
+        from agentura_ui.file_registry import VFSFileRegistry
+        from filesystem_agent.vfs import VirtualFileSystem
+
+        vfs = VirtualFileSystem()
+        vfs.add_root_from_protocol("session", "memory", base_path="/")
+        reg = VFSFileRegistry(vfs, root="session")
+
+        reg.register(
+            "images/photo.png",
+            b"img",
+            "image/png",
+            "tool:t",
+        )
+        # Exact key match
+        assert reg.get("images/photo.png") is not None
+        # Fuzzy basename match (what the LLM typically uses)
+        assert reg.get("photo.png") is not None

@@ -41,8 +41,21 @@ class VFSFileRegistry(FileRegistry):
         mime: str,
         source: str,
     ) -> FileEntry:
+        # Prefix with VFS root so the LLM sees full paths
+        # (e.g. "session://report.pdf" not just "report.pdf").
+        # Skip if already prefixed.
+        if "://" not in filename:
+            filename = self._vfs.make_uri(self._root, filename)
         entry = super().register(filename, blob, mime, source)
-        uri = self._vfs.make_uri(self._root, filename)
+        # Create parent directories if path has components
+        uri = filename
+        rel = uri.split("://", 1)[1] if "://" in uri else uri
+        if "/" in rel:
+            parent = uri.rsplit("/", 1)[0]
+            try:
+                self._vfs.mkdir(parent)
+            except Exception:
+                pass  # already exists or memory fs ignores
         self._vfs.put(uri, blob)
         return entry
 

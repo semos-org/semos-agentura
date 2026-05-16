@@ -243,6 +243,19 @@ All file-producing tools return a consistent response via `BaseAgentService.file
 
 Files on disk use UUID-prefixed names for security. The `filename` field carries the display name.
 
+When a tool produces multiple related files (e.g. a markdown file plus extracted images), `filename` SHOULD include the relative subfolder path so the client can replicate the directory structure:
+
+```json
+{
+  "download_url": "http://agent:8002/files/_att_048969ba/images/diagram_002.png",
+  "filename": "images/diagram_002.png",
+  "mime_type": "image/png",
+  "size_bytes": 133526
+}
+```
+
+The client's file registry creates parent directories as needed (e.g. `session://images/diagram_002.png`).
+
 #### 5.2 Client middleware registers the file
 
 1. Detects `download_url` in tool result
@@ -342,6 +355,7 @@ A2A `FilePart` is preferred over MCP `EmbeddedResource` for agent-to-agent becau
 - [x] `x-file: true` schema annotation on file parameters
 - [x] `file_params` on `ToolDef` to declare which params accept files
 - [x] Auto-cleanup of output files older than 24h on startup
+- [ ] `filename` includes relative subfolder for multi-file outputs (e.g. `images/diagram.png`)
 - [ ] Return `EmbeddedResource` for small files alongside download URL
 - [ ] A2A `FilePart` responses for agent-to-agent
 - [ ] Signed/expiring download URLs (production)
@@ -356,6 +370,7 @@ A2A `FilePart` is preferred over MCP `EmbeddedResource` for agent-to-agent becau
 - [x] Render files from registry as downloads/previews in UI
 - [x] File attachment UI with drag-and-drop
 - [x] Inline rendering for images and markdown references
+- [x] VFS-backed registry creates subdirectories for nested filenames
 - [ ] Signed URL support for large files (>10 MB)
 
 ### 10. Protocol Comparison

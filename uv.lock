@@ -79,6 +79,7 @@ dependencies = [
     { name = "litellm" },
     { name = "mcp" },
     { name = "panelini", extra = ["ai"] },
+    { name = "pillow" },
     { name = "python-dotenv" },
 ]
 
@@ -95,10 +96,11 @@ requires-dist = [
     { name = "a2a-sdk", specifier = ">=1.0.0a0" },
     { name = "filesystem-agent", editable = "filesystem-agent" },
     { name = "httpx", specifier = ">=0.28" },
-    { name = "langchain-community" },
+    { name = "langchain-community", specifier = ">=0.3" },
     { name = "litellm", specifier = ">=1.30.0,!=1.82.7,!=1.82.8" },
     { name = "mcp", specifier = ">=1.9" },
     { name = "panelini", extras = ["ai"], git = "https://github.com/opensemanticworld/panelini.git?branch=dev-agentura" },
+    { name = "pillow", specifier = ">=10.0" },
     { name = "python-dotenv", specifier = ">=1.0" },
 ]
 

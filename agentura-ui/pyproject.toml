@@ -7,11 +7,12 @@ dependencies = [
     "panelini[ai]",
     "filesystem-agent",
     "litellm>=1.30.0,!=1.82.7,!=1.82.8",
-    "langchain-community",
+    "langchain-community>=0.3",
     "mcp>=1.9",
     "a2a-sdk>=1.0.0a0",
     "httpx>=0.28",
     "python-dotenv>=1.0",
+    "Pillow>=10.0",
 ]
 
 [tool.uv.sources]

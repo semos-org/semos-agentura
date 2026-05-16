@@ -247,18 +247,19 @@ class VFSTreeBrowser:
 
             if is_dir:
                 raw = node.get("children")
-                if isinstance(raw, list):
-                    # Sort: directories first, then by modified desc
+                if isinstance(raw, list) and raw:
+                    # Sort by modified, newest first
                     sorted_children = sorted(
                         raw,
-                        key=lambda c: (
-                            c["type"] != "directory",
-                            -(c.get("modified") or 0) if isinstance(c.get("modified"), (int, float)) else "",
-                        ),
+                        key=lambda c: -(c.get("modified") or 0) if isinstance(c.get("modified"), (int, float)) else 0,
                     )
                     result["children"] = [_to_wb(c) for c in sorted_children]
+                elif isinstance(raw, list) and not raw:
+                    # Empty list = depth boundary, enable lazy load
+                    result["lazy"] = True
                 else:
-                    result["children"] = []
+                    # No children key at all - also lazy
+                    result["lazy"] = True
             elif is_archive:
                 result["lazy"] = True
                 result["size"] = _format_size(node.get("size", 0))
@@ -560,6 +561,16 @@ class VFSTreeBrowser:
         try:
             if key.startswith("url://"):
                 return self._list_url_archive(key)
+
+            # Regular VFS directory (depth boundary)
+            if ARCHIVE_SEPARATOR not in key and "://" in key:
+                try:
+                    if self.vfs.isdir(key):
+                        return self._list_vfs_dir(key)
+                except Exception:
+                    pass
+
+            # Archive contents
             entries = self.vfs.ls_archive(key)
             children = []
             for e in entries:
@@ -574,7 +585,7 @@ class VFSTreeBrowser:
                 children.append(node)
             return children
         except Exception as exc:
-            print(f"[lazy_load] Error loading {key}: {exc}", flush=True)
+            print(f"[lazy_load] Error loading {key}: {exc}", flush=True)  # noqa: T201
             return [
                 {
                     "title": f"Error: {exc}",
@@ -582,6 +593,34 @@ class VFSTreeBrowser:
                     "icon": "bi bi-exclamation-triangle",
                 }
             ]
+
+    def _list_vfs_dir(self, uri: str) -> list[dict]:
+        """List a VFS directory for lazy loading."""
+        entries = self.vfs.ls(uri)
+        # Sort by modified, newest first (same as build_source)
+        entries.sort(
+            key=lambda e: -(e.get("modified") or 0) if isinstance(e.get("modified"), (int, float)) else 0,
+        )
+        children = []
+        for e in entries:
+            is_dir = e["type"] == "directory"
+            is_archive = not is_dir and self.vfs.is_archive(e["uri"])
+            node: dict = {"title": e["name"], "key": e["uri"]}
+            if is_dir:
+                node["icon"] = "bi bi-folder-fill"
+                node["lazy"] = True
+            elif is_archive:
+                node["icon"] = "bi bi-file-earmark-zip"
+                node["lazy"] = True
+                node["size"] = _format_size(e.get("size", 0))
+            else:
+                node["icon"] = _icon_for_file(e["name"])
+                node["size"] = _format_size(e.get("size", 0))
+            mod = e.get("modified")
+            if mod:
+                node["modified"] = _format_modified(mod)
+            children.append(node)
+        return children
 
     def _list_url_archive(self, key: str) -> list[dict]:
         import io
