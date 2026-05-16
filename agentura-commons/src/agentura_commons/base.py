@@ -265,7 +265,9 @@ class BaseAgentService(ABC):
 
     def file_url(self, filename: str) -> str:
         """Return the download URL for a file in the output directory."""
-        return f"{self.base_url}/files/{filename}"
+        from urllib.parse import quote
+
+        return f"{self.base_url}/files/{quote(filename)}"
 
     # Legacy helper - kept for backwards compatibility during migration.
     # New tools should return Path or NamedFile directly.
@@ -361,6 +363,8 @@ class BaseAgentService(ABC):
             subdir = self.output_dir / f"_att_{uuid.uuid4().hex[:8]}"
             subdir.mkdir(exist_ok=True)
             tmp = subdir / filename
+            # Create parent dirs for nested names (e.g. "images/cat.png")
+            tmp.parent.mkdir(parents=True, exist_ok=True)
         else:
             tmp = self.output_dir / f"_upload_{uuid.uuid4().hex[:8]}{default_ext}"
         tmp.write_bytes(data)

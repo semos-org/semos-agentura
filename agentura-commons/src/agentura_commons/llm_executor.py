@@ -370,6 +370,8 @@ class LLMExecutor:
                 files = [f for f in self._produced_files if f.get("filename") in requested_files]
             else:
                 files = self._produced_files
+            # Append tool_result so history is API-valid for continuation
+            messages.append(self._tool_result_message(tc.id, "Result delivered."))
             return ExecutorResult(
                 text=text,
                 files=files,

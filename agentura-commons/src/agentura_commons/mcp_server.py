@@ -34,12 +34,24 @@ def _file_to_resource_link(
     path: Path,
     name: str,
     base_url: str,
+    output_dir: Path | None = None,
 ) -> tuple[ResourceLink, dict]:
     """Convert a file Path to a ResourceLink + metadata dict."""
+    from urllib.parse import quote
+
     mime, _ = mimetypes.guess_type(str(path))
     mime = mime or "application/octet-stream"
     size = path.stat().st_size if path.exists() else 0
-    url = f"{base_url}/files/{path.name}"
+    # Compute path relative to output_dir for subdirectory support
+    if output_dir and path.is_absolute():
+        try:
+            rel = path.relative_to(output_dir)
+        except ValueError:
+            rel = Path(path.name)
+    else:
+        rel = Path(path.name)
+    url_path = "/".join(quote(part) for part in rel.parts)
+    url = f"{base_url}/files/{url_path}"
     link = ResourceLink(
         type="resource_link",
         uri=url,
@@ -123,6 +135,7 @@ def _normalize_to_tool_result(
 def _tool_result_to_call_tool_result(
     result: ToolResult,
     base_url: str,
+    output_dir: Path | None = None,
 ) -> CallToolResult:
     """Convert a ToolResult to an MCP CallToolResult."""
     content: list = []
@@ -157,7 +170,7 @@ def _tool_result_to_call_tool_result(
             path, name = f.path, f.name
         else:
             path, name = f, f.name
-        link, meta = _file_to_resource_link(path, name, base_url)
+        link, meta = _file_to_resource_link(path, name, base_url, output_dir)
         content.append(link)
         if structured is None:
             structured = meta
@@ -207,6 +220,7 @@ def _make_normalized_wrapper(
             return _tool_result_to_call_tool_result(
                 result,
                 _base_url(),
+                service.output_dir,
             )
     else:
 
@@ -219,6 +233,7 @@ def _make_normalized_wrapper(
             return _tool_result_to_call_tool_result(
                 result,
                 _base_url(),
+                service.output_dir,
             )
 
     wrapper.__name__ = name

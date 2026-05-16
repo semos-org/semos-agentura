@@ -174,7 +174,7 @@ class TestDocumentAgent:
 
             digest = await client.call_tool(
                 "digest_document",
-                {"source": produced},
+                {"source": produced, "output_mode": "text"},
             )
             assert not digest.is_error, digest.text
             text = digest.text.lower()
