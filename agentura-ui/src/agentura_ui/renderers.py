@@ -181,4 +181,15 @@ def resolve_file_references(
             return f'<img src="{data_uri}" alt="{alt}" style="max-height:500px;max-width:100%;width:auto;height:auto;">'
         return f"{bracket}({data_uri})"
 
-    return _MD_REF_RE.sub(_replacer, text)
+    result = _MD_REF_RE.sub(_replacer, text)
+
+    # Prevent Panel auto-linkifying bare VFS URIs by breaking
+    # the :// with a zero-width space (invisible but stops URL
+    # detection). Only targets known VFS schemes.
+    _VFS_SCHEMES = {"session", "local", "webdav", "sharepoint", "memory", "temp"}
+    result = re.sub(
+        r"\b(\w+)://([^\s)\]]+)",
+        lambda m: f"{m.group(1)}:\u200b//{m.group(2)}" if m.group(1) in _VFS_SCHEMES else m.group(0),
+        result,
+    )
+    return result

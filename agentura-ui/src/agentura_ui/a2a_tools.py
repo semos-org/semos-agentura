@@ -7,10 +7,13 @@ download_url fetching for output).
 
 from __future__ import annotations
 
-import base64
 import logging
 from typing import Any
 
+from agentura_commons.file_middleware import (
+    _make_file_attachment,
+    strip_vfs_prefix,
+)
 from langchain_core.tools import BaseTool
 from mcp.types import Tool as MCPTool
 from pydantic import BaseModel, Field, create_model
@@ -69,28 +72,29 @@ async def _fetch_a2a_files(
 def _resolve_files_for_send(
     message: str,
     registry: FileRegistry,
-) -> list[dict] | None:
+) -> tuple[str, list[dict] | None]:
     """Find registered filenames in message text.
 
-    Returns list of FileAttachment dicts {name, content} with
-    base64 data URIs, or None if no matches.
+    Returns (cleaned_message, file_dicts) where:
+    - cleaned_message has VFS prefixes stripped
+    - file_dicts is list of FileAttachment dicts with base64 content
+
+    Reuses _make_file_attachment from commons (single strip point).
     """
     matched: list[dict] = []
+    cleaned = message
     for entry in registry.files.values():
         if entry.filename in message:
-            b64 = base64.b64encode(entry.blob).decode()
-            matched.append(
-                {
-                    "name": entry.filename,
-                    "content": f"data:{entry.mime};base64,{b64}",
-                }
-            )
+            matched.append(_make_file_attachment(entry))
+            # Replace VFS URI with bare name in message text
+            bare = strip_vfs_prefix(entry.filename)
+            cleaned = cleaned.replace(entry.filename, bare)
             logger.info(
                 "A2A delegate: attaching %s (%d bytes)",
-                entry.filename,
+                bare,
                 entry.size,
             )
-    return matched or None
+    return cleaned, matched or None
 
 
 def _make_a2a_tool_class(
@@ -234,8 +238,9 @@ def _make_a2a_delegate_tool(
                 f"{a2a_info.name}: {short_msg}",
             )
 
-            # Resolve files mentioned in message text
-            file_dicts = _resolve_files_for_send(
+            # Resolve files mentioned in message text and
+            # strip VFS prefixes (session:// is client-only)
+            message, file_dicts = _resolve_files_for_send(
                 message,
                 registry,
             )

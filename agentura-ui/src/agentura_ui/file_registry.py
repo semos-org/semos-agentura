@@ -16,6 +16,7 @@ from agentura_commons.file_middleware import (  # noqa: F401
     human_size,
     post_process_tool_result,
     pre_process_tool_call,
+    strip_vfs_prefix,
 )
 from agentura_commons.mcp_client import AgentConnection  # noqa: F401
 
@@ -27,6 +28,10 @@ class VFSFileRegistry(FileRegistry):
     VFSTreeBrowser shows them. The blob stays in the in-memory
     _files dict (for fast access by middleware) AND in the VFS
     (for the tree UI).
+
+    Filenames in the registry include VFS prefixes (session://...)
+    so the LLM can reference them unambiguously. Use
+    strip_vfs_prefix() when sending filenames over the wire.
     """
 
     def __init__(self, vfs, root: str = "session") -> None:
