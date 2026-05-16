@@ -256,6 +256,188 @@ async def test_executor_with_file_output(service, tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_executor_with_multiple_file_outputs(service, tmp_path):
+    """Tool returning ToolResult with multiple files emits all artifacts.
+
+    Regression test for read_email with PDF + XML attachments where
+    only one artifact was emitted.
+    """
+    from agentura_commons.base import NamedFile, ToolResult
+
+    service.output_dir = tmp_path
+    service.base_url = "http://test"
+
+    async def _multi_file_tool():
+        pdf = tmp_path / "invoice.pdf"
+        pdf.write_bytes(b"PDF-CONTENT")
+        xml = tmp_path / "e-invoice.xml"
+        xml.write_bytes(b"<xml>INVOICE</xml>")
+        return ToolResult(
+            data={
+                "subject": "Invoice",
+                "attachments": [
+                    {"file": "invoice.pdf"},
+                    {"file": "e-invoice.xml"},
+                ],
+            },
+            files=[
+                NamedFile(path=pdf, name="invoice.pdf"),
+                NamedFile(path=xml, name="e-invoice.xml"),
+            ],
+        )
+
+    class _MFT(AgentTool):
+        name: str = "read_email"
+        description: str = "Returns multiple files"
+
+        async def _arun(self, **kw):
+            return await _multi_file_tool()
+
+    service.get_tools = lambda: [_MFT()]
+    executor = _AgentExecutor(service)
+
+    from google.protobuf.struct_pb2 import Value
+
+    data = Value()
+    data.struct_value.fields["tool"].string_value = "read_email"
+    ctx = _make_context_with_data(data)
+    queue = EventQueue()
+
+    await executor.execute(ctx, queue)
+    events = await _drain_events(queue)
+
+    artifacts = [e for e in events if isinstance(e, TaskArtifactUpdateEvent)]
+    assert len(artifacts) == 2, f"Expected 2 artifacts, got {len(artifacts)}: {[a.artifact.name for a in artifacts]}"
+    names = {a.artifact.name for a in artifacts}
+    assert "invoice.pdf" in names
+    assert "e-invoice.xml" in names
+    # All URLs should be absolute
+    for a in artifacts:
+        url = a.artifact.parts[0].url
+        assert url.startswith("http://"), f"Relative URL: {url}"
+
+
+@pytest.mark.asyncio
+async def test_llm_executor_multi_file_via_nl(service, tmp_path):
+    """Multiple files from LLM executor path all appear as artifacts.
+
+    Same as above but via NL -> LLM executor -> tool, not explicit DataPart.
+    """
+    from unittest.mock import AsyncMock, patch
+
+    from agentura_commons.llm_executor import ExecutorResult
+
+    service.output_dir = tmp_path
+    service.base_url = "http://localhost:8001"
+    type(service).router_llm_model = property(lambda s: "mock")
+
+    class _FT(AgentTool):
+        name: str = "read_email"
+        description: str = "Read email"
+
+        async def _arun(self, **kw):
+            return "ok"
+
+    service.get_tools = lambda: [_FT()]
+    executor = _AgentExecutor(service)
+
+    mock_result = ExecutorResult(
+        text="Email with 2 attachments.",
+        files=[
+            {
+                "filename": "invoice.pdf",
+                "download_url": "files/abc_invoice.pdf",
+                "mime_type": "application/pdf",
+                "size_bytes": 5000,
+            },
+            {
+                "filename": "e-invoice.xml",
+                "download_url": "files/def_e-invoice.xml",
+                "mime_type": "application/xml",
+                "size_bytes": 1200,
+            },
+        ],
+        status="completed",
+    )
+    with patch.object(
+        executor,
+        "_run_llm_executor",
+        new=AsyncMock(return_value=mock_result),
+    ):
+        ctx = _make_context("read the latest invoice email with attachments")
+        queue = EventQueue()
+        await executor.execute(ctx, queue)
+        events = await _drain_events(queue)
+
+    artifacts = [e for e in events if isinstance(e, TaskArtifactUpdateEvent)]
+    assert len(artifacts) == 2, f"Expected 2 artifacts, got {len(artifacts)}: {[a.artifact.name for a in artifacts]}"
+    names = {a.artifact.name for a in artifacts}
+    assert "invoice.pdf" in names
+    assert "e-invoice.xml" in names
+    for a in artifacts:
+        assert a.artifact.parts[0].url.startswith("http://")
+
+
+@pytest.mark.asyncio
+async def test_llm_executor_file_artifact_has_absolute_url(service, tmp_path):
+    """Files from LLM executor path have absolute URLs in A2A artifacts.
+
+    The LLM executor builds relative URLs (files/xxx.png). The A2A server
+    must resolve them to absolute URLs before emitting artifacts.
+    Regression test for: httpx.UnsupportedProtocol on relative URL.
+    """
+    from unittest.mock import AsyncMock, patch
+
+    from agentura_commons.llm_executor import ExecutorResult
+
+    service.output_dir = tmp_path
+    service.base_url = "http://localhost:8002"
+    # Enable NL routing so _run_llm_executor is called
+    type(service).router_llm_model = property(lambda s: "mock-model")
+
+    class _FT(AgentTool):
+        name: str = "gen_image"
+        description: str = "Generate image"
+
+        async def _arun(self, **kw):
+            return "ok"
+
+    service.get_tools = lambda: [_FT()]
+    executor = _AgentExecutor(service)
+
+    # Mock _run_llm_executor to return result with relative file URL
+    # (this is what the real executor produces via _track_file)
+    mock_result = ExecutorResult(
+        text="Image generated.",
+        files=[
+            {
+                "filename": "fox.png",
+                "download_url": "files/abc_fox.png",
+                "mime_type": "image/png",
+                "size_bytes": 1234,
+            }
+        ],
+        status="completed",
+    )
+    with patch.object(
+        executor,
+        "_run_llm_executor",
+        new=AsyncMock(return_value=mock_result),
+    ):
+        # Send NL message (no DataPart -> goes to LLM executor)
+        ctx = _make_context("generate a fox image")
+        queue = EventQueue()
+        await executor.execute(ctx, queue)
+        events = await _drain_events(queue)
+
+    artifacts = [e for e in events if isinstance(e, TaskArtifactUpdateEvent)]
+    assert len(artifacts) == 1
+    url = artifacts[0].artifact.parts[0].url
+    assert url.startswith("http://"), f"Expected absolute URL, got: {url}"
+    assert "fox.png" in url
+
+
+@pytest.mark.asyncio
 async def test_executor_error_handling(service):
     """Failing tool emits FAILED status."""
 

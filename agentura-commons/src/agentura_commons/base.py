@@ -7,9 +7,7 @@ The transport module then wires everything into a single FastAPI app.
 from __future__ import annotations
 
 import base64
-import json
 import logging
-import mimetypes
 import os
 import uuid
 from abc import ABC, abstractmethod
@@ -268,22 +266,6 @@ class BaseAgentService(ABC):
         from urllib.parse import quote
 
         return f"{self.base_url}/files/{quote(filename)}"
-
-    # Legacy helper - kept for backwards compatibility during migration.
-    # New tools should return Path or NamedFile directly.
-    def file_response(self, path: Path, display_name: str | None = None) -> str:
-        """Build a JSON response for a file-producing tool."""
-        name = display_name or path.name
-        mime, _ = mimetypes.guess_type(str(path))
-        return json.dumps(
-            {
-                "download_url": self.file_url(path.name),
-                "filename": name,
-                "mime_type": mime or "application/octet-stream",
-                "size_bytes": path.stat().st_size,
-            },
-            ensure_ascii=False,
-        )
 
     def resolve_file(
         self,

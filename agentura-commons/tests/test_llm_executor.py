@@ -5,7 +5,6 @@ All tests mock the LLM API. No real API keys needed.
 
 from __future__ import annotations
 
-import json
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -41,15 +40,16 @@ async def fail() -> str:
 
 
 @agent_tool()
-async def file_tool() -> str:
+async def file_tool():
     """Produce a file."""
-    return json.dumps(
-        {
-            "download_url": "http://test/file.pdf",
-            "filename": "file.pdf",
-            "mime_type": "application/pdf",
-        }
-    )
+    import tempfile
+    from pathlib import Path
+
+    from agentura_commons.base import NamedFile
+
+    tmp = Path(tempfile.mktemp(suffix=".pdf"))
+    tmp.write_bytes(b"PDF-CONTENT")
+    return NamedFile(path=tmp, name="file.pdf")
 
 
 TOOLS = [echo, add, file_tool]

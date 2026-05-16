@@ -92,10 +92,10 @@ class TestNormalizeToToolResult:
         r = _normalize_to_tool_result("[1, 2, 3]")
         assert r.data == [1, 2, 3]
 
-    def test_json_string_download_url(self):
-        s = json.dumps({"download_url": "http://x", "filename": "f.pdf"})
+    def test_json_string_dict_with_metadata(self):
+        s = json.dumps({"filename": "f.pdf", "size": 100})
         r = _normalize_to_tool_result(s)
-        assert r.data["download_url"] == "http://x"
+        assert r.data["filename"] == "f.pdf"
 
     # dict / list
     def test_dict(self):
@@ -231,7 +231,7 @@ class TestToolResultToCallToolResult:
         assert links[0].name == "report.docx"
         assert "report.docx" in str(links[0].uri)
         assert ctr.structuredContent is not None
-        assert "download_url" in ctr.structuredContent
+        assert "filename" in ctr.structuredContent
 
     def test_named_file_uses_display_name(self, tmp_path):
         p = tmp_path / "abc123_report.docx"

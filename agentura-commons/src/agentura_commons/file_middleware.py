@@ -3,7 +3,7 @@
 Implements the client half of docs/file-handling-spec.md:
 - LLM never sees binary data or URLs, only filenames
 - Pre-middleware: resolve file references to base64 before sending to tools
-- Post-middleware: detect download_url in results, fetch files, register them
+- Post-middleware: scan ResourceLink blocks in results, fetch and register files
 
 Extracted from agentura-ui/file_registry.py (protocol-level parts only).
 """
@@ -174,17 +174,27 @@ def _has_file_attachment_schema(tool: Tool, param: str) -> bool:
     return False
 
 
-def _make_file_attachment(
-    filename: str,
-    entry: FileEntry,
-) -> dict:
-    """Build a FileAttachment dict {name, content} for MCP.
+def strip_vfs_prefix(name: str) -> str:
+    """Strip client-internal URI prefixes before sending over the wire.
 
-    Uses entry.filename (clean display name) rather than the
-    lookup key, which may contain VFS URI prefixes that break
-    on Windows (e.g., "session://file.png" -> Path error).
+    session://report.pdf -> report.pdf
+    local://docs/file.txt -> docs/file.txt
+    http://example.com/f -> http://example.com/f (unchanged)
+    report.pdf -> report.pdf (unchanged)
     """
-    name = entry.filename
+    if "://" in name and not name.startswith(
+        ("http://", "https://", "data:"),
+    ):
+        return name.split("://", 1)[1].lstrip("/")
+    return name
+
+
+def _make_file_attachment(entry: FileEntry) -> dict:
+    """Build a FileAttachment dict {name, content} for the wire.
+
+    Strips VFS URI prefixes so agents receive clean filenames.
+    """
+    name = strip_vfs_prefix(entry.filename)
     b64 = base64.b64encode(entry.blob).decode()
     return {
         "name": name,
@@ -207,7 +217,7 @@ def _resolve_attachment_item(
                 entry.filename,
                 human_size(entry.size),
             )
-            return _make_file_attachment(entry.filename, entry)
+            return _make_file_attachment(entry)
         return {"name": item, "content": item}
 
     if not isinstance(item, dict):
@@ -228,7 +238,7 @@ def _resolve_attachment_item(
             entry.filename,
             human_size(entry.size),
         )
-        return _make_file_attachment(entry.filename, entry)
+        return _make_file_attachment(entry)
     return item
 
 
@@ -297,7 +307,7 @@ def _resolve_item_deep(
                 entry.filename,
                 human_size(entry.size),
             )
-            return _make_file_attachment(entry.filename, entry)
+            return _make_file_attachment(entry)
         return item
 
     if not isinstance(item, dict):
@@ -401,10 +411,7 @@ def pre_process_tool_call(
         entry = registry.get(value)
         if entry:
             if uses_attachment:
-                processed[param_name] = _make_file_attachment(
-                    entry.filename,
-                    entry,
-                )
+                processed[param_name] = _make_file_attachment(entry)
             else:
                 b64 = base64.b64encode(entry.blob).decode()
                 processed[param_name] = f"data:{entry.mime};base64,{b64}"

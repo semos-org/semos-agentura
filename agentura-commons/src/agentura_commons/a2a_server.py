@@ -171,17 +171,27 @@ class _AgentExecutor(AgentExecutor):
                 )
             )
 
-        # Emit file artifacts
+        # Emit file artifacts (each needs unique artifact_id
+        # or the SDK's append_artifact_to_task replaces them)
+        import uuid as _uuid
+
+        base = self._service.base_url or ""
+        logger.info("A2A emitting %d file artifacts", len(result.files))
         for f in result.files:
+            url = f.get("download_url", "")
+            # Resolve relative URLs (e.g., "files/x.png" -> "http://host/files/x.png")
+            if url and not url.startswith(("http://", "https://")):
+                url = f"{base}/{url}" if base else url
             await event_queue.enqueue_event(
                 TaskArtifactUpdateEvent(
                     task_id=task_id,
                     context_id=ctx_id,
                     artifact=Artifact(
+                        artifact_id=_uuid.uuid4().hex,
                         name=f.get("filename", ""),
                         parts=[
                             Part(
-                                url=f.get("download_url", ""),
+                                url=url,
                                 filename=f.get("filename", ""),
                                 media_type=f.get("mime_type", ""),
                             )
@@ -345,6 +355,10 @@ class _AgentExecutor(AgentExecutor):
             content = f.get("content", "")
             if not name or not content:
                 continue
+            from .file_middleware import strip_vfs_prefix
+
+            name = strip_vfs_prefix(name)
+            f["name"] = name
             # Already on disk?
             path = output_dir / name
             if path.exists():
@@ -376,21 +390,13 @@ class _AgentExecutor(AgentExecutor):
         files: list[dict] | None = None,
     ) -> tuple[str, list[dict]]:
         """Call a tool by name, return (text, file_list)."""
-        from .base import AgentTool
-
-        tool_defs = {t.name: t for t in self._service.get_tools()}
-        td = tool_defs.get(name)
+        tools = {t.name: t for t in self._service.get_tools()}
+        td = tools.get(name)
         if not td:
             return f"Unknown tool: {name}", []
 
-        # Resolve file_params and callable
-        if isinstance(td, AgentTool):
-            file_params = td.resolved_file_params
-            tool_fn = td._arun
-        else:
-            file_params = td.file_params
-            tool_fn = td.fn
-
+        # Inject file content into file params
+        file_params = td.resolved_file_params
         if files and file_params:
             by_name = {f["name"]: f["content"] for f in files if f.get("name") and f.get("content")}
             for param in file_params:
@@ -401,7 +407,7 @@ class _AgentExecutor(AgentExecutor):
                         "content": by_name[val],
                     }
 
-        result = await tool_fn(**args)
+        result = await td._arun(**args)
         return self._parse_tool_result(result)
 
     def _parse_tool_result(

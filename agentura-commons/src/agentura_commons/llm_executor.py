@@ -12,12 +12,14 @@ Each instantiation differs only in the tools list and system_prompt.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
+from pydantic import BaseModel, Field
 
 from .base import AgentTool
 
@@ -98,106 +100,77 @@ def _tool_schema_openai(t: AgentTool) -> dict[str, Any]:
     }
 
 
+# Pydantic input models for synthetic tools
+
+
+class _RequestInputArgs(BaseModel):
+    question: str = Field(description="The question to ask")
+    options: list[str] = Field(default_factory=list, description="Suggested choices (optional)")
+
+
+class _ReturnResultArgs(BaseModel):
+    message: str = Field(description="Final answer text")
+    files: list[str] = Field(
+        default_factory=list,
+        description="Filenames to include (default: all produced files)",
+    )
+
+
+class _ReportProgressArgs(BaseModel):
+    message: str = Field(description="Progress update text")
+
+
+class _RejectTaskArgs(BaseModel):
+    reason: str = Field(description="Why the task is rejected")
+
+
+class _RequestAuthArgs(BaseModel):
+    scheme: str = Field(description="Auth scheme needed (e.g., 'bearer', 'api_key')")
+    message: str = Field(description="What credentials are needed and why")
+
+
+_SYNTHETIC_TOOL_DEFS: list[tuple[str, str, type[BaseModel]]] = [
+    (
+        TOOL_REQUEST_INPUT,
+        "Ask the requester for clarification or additional information. "
+        "Use when you cannot complete the task without more input.",
+        _RequestInputArgs,
+    ),
+    (
+        TOOL_RETURN_RESULT,
+        "Return the final result to the requester. "
+        "Optionally specify which files to include. "
+        "If not called, your last text response is used.",
+        _ReturnResultArgs,
+    ),
+    (
+        TOOL_REPORT_PROGRESS,
+        "Report progress to the requester during long operations. "
+        "Use between tool calls to keep the requester informed.",
+        _ReportProgressArgs,
+    ),
+    (
+        TOOL_REJECT_TASK,
+        "Reject the task if it is outside your scope or invalid. Use when you cannot and should not attempt the task.",
+        _RejectTaskArgs,
+    ),
+    (
+        TOOL_REQUEST_AUTH,
+        "Request authentication from the requester. Use when credentials are needed to proceed.",
+        _RequestAuthArgs,
+    ),
+]
+
+
 def _synthetic_tool_schemas_anthropic() -> list[dict]:
-    """Anthropic-format schemas for synthetic tools."""
+    """Anthropic-format schemas for synthetic tools (from Pydantic models)."""
     return [
         {
-            "name": TOOL_REQUEST_INPUT,
-            "description": (
-                "Ask the requester for clarification or additional information. "
-                "Use when you cannot complete the task without more input."
-            ),
-            "input_schema": {
-                "type": "object",
-                "properties": {
-                    "question": {
-                        "type": "string",
-                        "description": "The question to ask",
-                    },
-                    "options": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Suggested choices (optional)",
-                    },
-                },
-                "required": ["question"],
-            },
-        },
-        {
-            "name": TOOL_RETURN_RESULT,
-            "description": (
-                "Return the final result to the requester. "
-                "Optionally specify which files to include. "
-                "If not called, your last text response is used."
-            ),
-            "input_schema": {
-                "type": "object",
-                "properties": {
-                    "message": {
-                        "type": "string",
-                        "description": "Final answer text",
-                    },
-                    "files": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Filenames to include (default: all produced files)",
-                    },
-                },
-                "required": ["message"],
-            },
-        },
-        {
-            "name": TOOL_REPORT_PROGRESS,
-            "description": (
-                "Report progress to the requester during long operations. "
-                "Use between tool calls to keep the requester informed."
-            ),
-            "input_schema": {
-                "type": "object",
-                "properties": {
-                    "message": {
-                        "type": "string",
-                        "description": "Progress update text",
-                    },
-                },
-                "required": ["message"],
-            },
-        },
-        {
-            "name": TOOL_REJECT_TASK,
-            "description": (
-                "Reject the task if it is outside your scope or invalid. "
-                "Use when you cannot and should not attempt the task."
-            ),
-            "input_schema": {
-                "type": "object",
-                "properties": {
-                    "reason": {
-                        "type": "string",
-                        "description": "Why the task is rejected",
-                    },
-                },
-                "required": ["reason"],
-            },
-        },
-        {
-            "name": TOOL_REQUEST_AUTH,
-            "description": ("Request authentication from the requester. Use when credentials are needed to proceed."),
-            "input_schema": {
-                "type": "object",
-                "properties": {
-                    "scheme": {
-                        "type": "string",
-                        "description": "Auth scheme needed (e.g., 'bearer', 'api_key')",
-                    },
-                    "message": {
-                        "type": "string",
-                        "description": "What credentials are needed and why",
-                    },
-                },
-                "required": ["scheme", "message"],
-            },
-        },
+            "name": name,
+            "description": desc,
+            "input_schema": model.model_json_schema(),
+        }
+        for name, desc, model in _SYNTHETIC_TOOL_DEFS
     ]
 
 
@@ -322,26 +295,31 @@ class LLMExecutor:
             # Append assistant message with tool calls
             messages.append(self._assistant_message(text_parts, tool_calls))
 
-            # Execute each tool call
-            for tc in tool_calls:
-                if tc.name in _SYNTHETIC_TOOLS:
-                    result = self._handle_synthetic(
-                        tc,
-                        messages,
-                        progress_updates,
-                    )
-                    if result is not None:
-                        result.progress_updates = progress_updates
-                        return result
-                    # report_progress returns None - continue
-                    messages.append(self._tool_result_message(tc.id, "Progress noted."))
-                else:
-                    # Execute real tool
-                    tool_result = await self._execute_tool(
-                        tc.name,
-                        tc.arguments,
-                        files,
-                    )
+            # Split into synthetic (sequential) and real (parallel) tools
+            synthetic = [tc for tc in tool_calls if tc.name in _SYNTHETIC_TOOLS]
+            real = [tc for tc in tool_calls if tc.name not in _SYNTHETIC_TOOLS]
+
+            # Handle synthetic tools first (may return early)
+            for tc in synthetic:
+                result = self._handle_synthetic(
+                    tc,
+                    messages,
+                    progress_updates,
+                )
+                if result is not None:
+                    result.progress_updates = progress_updates
+                    return result
+                messages.append(self._tool_result_message(tc.id, "Progress noted."))
+
+            # Execute real tools in parallel
+            if real:
+                results = await asyncio.gather(
+                    *(self._execute_tool(tc.name, tc.arguments, files) for tc in real),
+                    return_exceptions=True,
+                )
+                for tc, tool_result in zip(real, results, strict=True):
+                    if isinstance(tool_result, Exception):
+                        tool_result = f"Error executing {tc.name}: {tool_result}"
                     messages.append(self._tool_result_message(tc.id, tool_result))
 
         # Max steps reached
@@ -438,20 +416,28 @@ class LLMExecutor:
 
         # Inject file content into file params.
         if file_params:
+            from .file_middleware import strip_vfs_prefix
+
             by_name: dict[str, str] = {}
             for f in files or []:
-                if f.get("name") and f.get("content"):
-                    by_name[f["name"]] = f["content"]
+                name = f.get("name", "")
+                content = f.get("content", "")
+                if name and content:
+                    by_name[strip_vfs_prefix(name)] = content
             for pf in self._produced_files:
                 fn = pf.get("filename", "")
                 url = pf.get("download_url", "")
                 if fn and url:
-                    by_name[fn] = url
+                    by_name[strip_vfs_prefix(fn)] = url
             for param in file_params:
                 val = arguments.get(param)
                 if isinstance(val, str):
-                    if val in by_name:
-                        fa = {"name": val, "content": by_name[val]}
+                    key = strip_vfs_prefix(val)
+                    # Also try basename for path-like values
+                    bare = key.rsplit("/", 1)[-1]
+                    match_key = key if key in by_name else bare if bare in by_name else None
+                    if match_key:
+                        fa = {"name": match_key, "content": by_name[match_key]}
                         if td.args_schema:
                             fi = td.args_schema.model_fields.get(param)
                             if fi and "list" in str(fi.annotation).lower():
@@ -481,16 +467,72 @@ class LLMExecutor:
             logger.warning("Tool %s failed: %s", name, e)
             return f"Error executing {name}: {e}"
 
-        # Track file outputs
-        result_str = str(result) if result is not None else ""
+        return self._process_tool_output(result)
+
+    def _process_tool_output(self, result: Any) -> str:
+        """Convert tool output to string and track produced files."""
+        from pathlib import Path as PathType
+
+        from .base import NamedFile, ToolResult
+
+        if result is None:
+            return ""
+
+        # ToolResult: text + data + files
+        if isinstance(result, ToolResult):
+            parts = []
+            if result.text:
+                parts.append(result.text)
+            if result.data:
+                parts.append(json.dumps(result.data, ensure_ascii=False))
+            for f in result.files:
+                meta = self._track_file(f)
+                if meta:
+                    parts.append(json.dumps(meta, ensure_ascii=False))
+            return "\n".join(parts) if parts else ""
+
+        # NamedFile
+        if isinstance(result, NamedFile):
+            meta = self._track_file(result)
+            return json.dumps(meta, ensure_ascii=False) if meta else result.name
+
+        # Path
+        if isinstance(result, PathType) and result.exists():
+            meta = self._track_file(result)
+            return json.dumps(meta, ensure_ascii=False) if meta else result.name
+
+        # String (may be JSON with legacy download_url)
+        text = str(result)
         try:
-            data = json.loads(result_str)
+            data = json.loads(text)
             if isinstance(data, dict) and "download_url" in data:
                 self._produced_files.append(data)
         except (json.JSONDecodeError, TypeError):
             pass
+        return text
 
-        return result_str
+    def _track_file(self, f: Any) -> dict | None:
+        """Track a produced file and return metadata dict."""
+        import mimetypes
+        from pathlib import Path as PathType
+
+        from .base import NamedFile
+
+        if isinstance(f, NamedFile):
+            path, name = f.path, f.name
+        elif isinstance(f, PathType):
+            path, name = f, f.name
+        else:
+            return None
+        mime, _ = mimetypes.guess_type(str(path))
+        meta = {
+            "filename": name,
+            "download_url": f"files/{path.name}",
+            "mime_type": mime or "application/octet-stream",
+            "size_bytes": path.stat().st_size if path.exists() else 0,
+        }
+        self._produced_files.append(meta)
+        return meta
 
     # LLM API calls
 

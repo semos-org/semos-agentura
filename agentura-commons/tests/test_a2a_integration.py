@@ -104,19 +104,14 @@ async def _send_and_collect(
     file_artifacts = []
     final_task = None
 
-    async for _stream_resp, task in client.send_message(request):
+    # Collect artifacts from stream events AND final task
+    async for stream_resp, task in client.send_message(request):
         if task:
             final_task = task
-
-    if final_task:
-        # Extract text from status message (Message with parts)
-        if final_task.status and final_task.status.message:
-            msg = final_task.status.message
-            for p in msg.parts:
-                if p.HasField("text"):
-                    text_parts.append(p.text)
-        # Extract file artifacts
-        for art in final_task.artifacts:
+        # Collect from artifact_update stream events
+        art_update = getattr(stream_resp, "artifact_update", None)
+        if art_update and getattr(art_update, "artifact", None):
+            art = art_update.artifact
             for p in art.parts:
                 if p.HasField("url"):
                     file_artifacts.append(
@@ -126,6 +121,27 @@ async def _send_and_collect(
                             "mime_type": p.media_type,
                         }
                     )
+
+    if final_task:
+        # Extract text from status message
+        if final_task.status and final_task.status.message:
+            msg = final_task.status.message
+            for p in msg.parts:
+                if p.HasField("text"):
+                    text_parts.append(p.text)
+        # Deduplicate: also check task.artifacts
+        seen = {f["url"] for f in file_artifacts}
+        for art in final_task.artifacts:
+            for p in art.parts:
+                if p.HasField("url") and p.url not in seen:
+                    file_artifacts.append(
+                        {
+                            "url": p.url,
+                            "filename": p.filename,
+                            "mime_type": p.media_type,
+                        }
+                    )
+                    seen.add(p.url)
 
     return "\n".join(text_parts), file_artifacts
 
@@ -537,3 +553,99 @@ class TestAskAgent:
             )
             assert result.is_error
             assert "not found" in result.text.lower()
+
+
+# Multi-file A2A round-trip
+
+
+class TestA2AMultiFileRoundTrip:
+    """Verify multiple files from a single tool call survive
+    the full SDK round-trip: server -> HTTP -> client.
+
+    Regression test for: only first file returned via A2A.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _agent(self, monkeypatch, tmp_path):
+        self.port = free_port()
+        self.base_url = f"http://127.0.0.1:{self.port}"
+
+        import agentura_commons.a2a_server as a2a_mod
+        from agentura_commons.llm_executor import ExecutorResult
+
+        # Create real files on disk so the URLs resolve
+        pdf = tmp_path / "invoice.pdf"
+        pdf.write_bytes(b"PDF-CONTENT")
+        xml = tmp_path / "e-invoice.xml"
+        xml.write_bytes(b"<xml>INVOICE</xml>")
+        self._tmp_path = tmp_path
+
+        class _MultiFileExecutor(a2a_mod._AgentExecutor):
+            _pdf = pdf
+            _xml = xml
+
+            async def _run_llm_executor(
+                self_inner,
+                text,
+                files,
+                task_id,
+                **kw,
+            ):
+                return ExecutorResult(
+                    text="Email with 2 attachments.",
+                    files=[
+                        {
+                            "filename": "invoice.pdf",
+                            "download_url": f"files/{pdf.name}",
+                            "mime_type": "application/pdf",
+                            "size_bytes": pdf.stat().st_size,
+                        },
+                        {
+                            "filename": "e-invoice.xml",
+                            "download_url": f"files/{xml.name}",
+                            "mime_type": "application/xml",
+                            "size_bytes": xml.stat().st_size,
+                        },
+                    ],
+                    status="completed",
+                )
+
+        monkeypatch.setattr(a2a_mod, "_AgentExecutor", _MultiFileExecutor)
+
+        # Enable NL routing
+        from document_agent.service import _service
+
+        monkeypatch.setattr(
+            type(_service),
+            "router_llm_model",
+            property(lambda s: "mock-model"),
+        )
+        # Point output_dir to tmp_path so /files/ serves from there
+        _service.output_dir = tmp_path
+
+        self.server, self.thread = start_agent(
+            "document_agent",
+            self.port,
+        )
+        yield
+        self.server.should_exit = True
+        self.thread.join(timeout=5)
+
+    @pytest.mark.asyncio
+    async def test_multiple_files_via_sdk(self):
+        """Both files appear as artifacts after full HTTP round-trip."""
+        client = await _connect(self.base_url)
+        msg = Message(
+            message_id=str(uuid4()),
+            role=Role.ROLE_USER,
+            parts=[Part(text="read the invoice email with attachments")],
+        )
+        text, files = await _send_and_collect(client, msg)
+        assert len(files) == 2, f"Expected 2 files, got {len(files)}: {files}"
+        names = {f["filename"] for f in files}
+        assert "invoice.pdf" in names
+        assert "e-invoice.xml" in names
+        # All URLs absolute
+        for f in files:
+            assert f["url"].startswith("http://"), f"Relative URL: {f['url']}"
+        await client.close()

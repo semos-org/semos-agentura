@@ -59,8 +59,8 @@ def _file_to_resource_link(
         mimeType=mime,
         size=size,
     )
+    # structuredContent metadata (no URLs - those are in ResourceLink)
     meta = {
-        "download_url": url,
         "filename": name,
         "mime_type": mime,
         "size_bytes": size,
@@ -117,11 +117,8 @@ def _normalize_to_tool_result(
     if isinstance(raw, dict):
         return ToolResult(data=raw)
     if isinstance(raw, str):
-        # Try to detect legacy JSON file responses
         try:
             parsed = json.loads(raw)
-            if isinstance(parsed, dict) and "download_url" in parsed:
-                return ToolResult(data=parsed)
             if isinstance(parsed, (dict, list)):
                 return ToolResult(data=parsed)
         except (json.JSONDecodeError, TypeError):
@@ -164,7 +161,8 @@ def _tool_result_to_call_tool_result(
         text = json.dumps(result.data, ensure_ascii=False, indent=2)
         content.append(TextContent(type="text", text=text))
 
-    # Files
+    # Files: each gets a ResourceLink in content + metadata in structuredContent
+    file_metas = []
     for f in result.files:
         if isinstance(f, NamedFile):
             path, name = f.path, f.name
@@ -172,18 +170,19 @@ def _tool_result_to_call_tool_result(
             path, name = f, f.name
         link, meta = _file_to_resource_link(path, name, base_url, output_dir)
         content.append(link)
+        file_metas.append(meta)
+
+    if file_metas:
+        # Add file summaries as text for LLMs
+        summary = ", ".join(f"{m['filename']} ({m['size_bytes']} bytes)" for m in file_metas)
+        content.insert(0, TextContent(type="text", text=f"Produced: {summary}"))
+        # Merge into structuredContent
         if structured is None:
-            structured = meta
+            structured = {}
+        if len(file_metas) == 1:
+            structured.update(file_metas[0])
         else:
-            structured.update(meta)
-        # Add text summary for LLMs
-        content.insert(
-            0,
-            TextContent(
-                type="text",
-                text=json.dumps(meta, ensure_ascii=False),
-            ),
-        )
+            structured["files"] = file_metas
 
     # Ensure at least one content block
     if not content:
