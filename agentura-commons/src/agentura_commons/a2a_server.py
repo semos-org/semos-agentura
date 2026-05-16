@@ -408,16 +408,57 @@ class _AgentExecutor(AgentExecutor):
         self,
         result: Any,
     ) -> tuple[str, list[dict]]:
+        """Parse tool return value into (text, file_metadata_list).
+
+        Handles: NamedFile, Path, ToolResult, dict, str, None.
+        File metadata dicts have {filename, download_url, mime_type}.
+        """
+        from pathlib import Path as PathType
+
+        from .base import NamedFile, ToolResult
+
         if result is None:
             return "", []
+
+        # ToolResult with text/data/files
+        if isinstance(result, ToolResult):
+            parts = []
+            if result.text:
+                parts.append(result.text)
+            if result.data:
+                parts.append(json.dumps(result.data, ensure_ascii=False))
+            files = []
+            for f in result.files:
+                if isinstance(f, NamedFile):
+                    files.append(self._file_meta(f.path, f.name))
+                elif isinstance(f, PathType):
+                    files.append(self._file_meta(f, f.name))
+            return "\n".join(parts) if parts else "Done.", files
+
+        # NamedFile
+        if isinstance(result, NamedFile):
+            return result.name, [self._file_meta(result.path, result.name)]
+
+        # Path
+        if isinstance(result, PathType):
+            return result.name, [self._file_meta(result, result.name)]
+
+        # String (plain text or JSON)
         text = str(result)
-        try:
-            data = json.loads(text)
-        except (json.JSONDecodeError, TypeError):
-            return text, []
-        if isinstance(data, dict) and "download_url" in data:
-            return text, [data]
         return text, []
+
+    def _file_meta(self, path, name: str) -> dict:
+        """Build file metadata dict for A2A artifacts."""
+        import mimetypes
+
+        mime, _ = mimetypes.guess_type(str(path))
+        svc = self._service
+        return {
+            "filename": name,
+            "download_url": svc.file_url(path.name) if svc.base_url else "",
+            "mime_type": mime or "application/octet-stream",
+            "size_bytes": path.stat().st_size if path.exists() else 0,
+        }
 
     async def cancel(
         self,

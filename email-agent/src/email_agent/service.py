@@ -271,9 +271,14 @@ class EmailAgentService(BaseAgentService):
             },
         )
 
-        # Post-process: convert saved_path to download_url
+        # Post-process: move saved attachments to output_dir.
+        # Return ToolResult with data + files so the normalizer
+        # creates proper ResourceLink blocks (MCP spec).
+        from agentura_commons.base import NamedFile, ToolResult
+
+        result = _json.loads(raw)
+        files: list[NamedFile] = []
         if include_attachments and self.output_dir:
-            result = _json.loads(raw)
             for att in result.get("attachments", []):
                 saved = att.pop("saved_path", None)
                 if saved:
@@ -281,11 +286,11 @@ class EmailAgentService(BaseAgentService):
                     safe_name = f"{_uuid.uuid4().hex[:8]}_{saved_p.name}"
                     dest = self.output_dir / safe_name
                     shutil.move(str(saved_p), str(dest))
-                    att["download_url"] = self.file_url(safe_name)
+                    att["file"] = saved_p.name
                     att["size_bytes"] = dest.stat().st_size
-            raw = _json.dumps(result, ensure_ascii=False)
+                    files.append(NamedFile(path=dest, name=saved_p.name))
 
-        return raw
+        return ToolResult(data=result, files=files)
 
     async def _list_events(self, start: str = "", end: str = "", days: int = 14) -> str:
         """List calendar events in a date range.

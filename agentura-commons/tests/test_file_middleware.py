@@ -446,22 +446,23 @@ class TestPreProcess:
 
 class TestPostProcess:
     @pytest.mark.asyncio
-    async def test_fetches_download_url(self, registry, httpx_mock):
+    async def test_fetches_resource_link(self, registry, httpx_mock):
+        """ResourceLink in content is fetched and registered."""
         httpx_mock.add_response(
             url="http://localhost:8002/files/out.pdf",
             content=b"GENERATED-PDF",
             headers={"content-type": "application/pdf"},
         )
+        from mcp.types import ResourceLink
+
         result = CallToolResult(
             content=[
-                TextContent(
-                    type="text",
-                    text=json.dumps(
-                        {
-                            "download_url": "http://localhost:8002/files/out.pdf",
-                            "filename": "out.pdf",
-                        }
-                    ),
+                TextContent(type="text", text='{"iterations": 1}'),
+                ResourceLink(
+                    type="resource_link",
+                    uri="http://localhost:8002/files/out.pdf",
+                    name="out.pdf",
+                    mimeType="application/pdf",
                 ),
             ],
         )
@@ -481,8 +482,55 @@ class TestPostProcess:
         assert files[0].blob == b"GENERATED-PDF"
         assert registry.get("out.pdf") is not None
         parsed = json.loads(text)
-        assert "download_url" not in parsed
         assert "produced_file" in parsed
+
+    @pytest.mark.asyncio
+    async def test_multiple_resource_links(self, registry, httpx_mock):
+        """Multiple ResourceLinks are all fetched."""
+        httpx_mock.add_response(
+            url="http://localhost:8002/files/a.pdf",
+            content=b"PDF-A",
+            headers={"content-type": "application/pdf"},
+        )
+        httpx_mock.add_response(
+            url="http://localhost:8002/files/b.png",
+            content=b"PNG-B",
+            headers={"content-type": "image/png"},
+        )
+        from mcp.types import ResourceLink
+
+        result = CallToolResult(
+            content=[
+                TextContent(type="text", text='{"info": "two files"}'),
+                ResourceLink(
+                    type="resource_link",
+                    uri="http://localhost:8002/files/a.pdf",
+                    name="a.pdf",
+                ),
+                ResourceLink(
+                    type="resource_link",
+                    uri="http://localhost:8002/files/b.png",
+                    name="b.png",
+                ),
+            ],
+        )
+        agent = AgentConnection(
+            "doc",
+            "http://localhost:8002/mcp/sse",
+            "http://localhost:8002",
+        )
+        text, files = await post_process_tool_result(
+            "tool",
+            result,
+            agent,
+            registry,
+        )
+        assert len(files) == 2
+        assert registry.get("a.pdf") is not None
+        assert registry.get("b.png") is not None
+        parsed = json.loads(text)
+        assert "produced_files" in parsed
+        assert len(parsed["produced_files"]) == 2
 
     @pytest.mark.asyncio
     async def test_non_json_passthrough(self, registry):
@@ -500,7 +548,7 @@ class TestPostProcess:
         assert files == []
 
     @pytest.mark.asyncio
-    async def test_json_without_download_url(self, registry):
+    async def test_json_without_files(self, registry):
         result = CallToolResult(
             content=[
                 TextContent(
@@ -533,84 +581,31 @@ class TestPostProcess:
         assert files == []
 
     @pytest.mark.asyncio
-    async def test_nested_attachment_download_urls(
+    async def test_structuredcontent_metadata(
         self,
         registry,
         httpx_mock,
     ):
-        httpx_mock.add_response(
-            url="http://localhost:8001/files/abc_report.pdf",
-            content=b"PDF-ATTACHMENT",
-            headers={"content-type": "application/pdf"},
-        )
-        httpx_mock.add_response(
-            url="http://localhost:8001/files/def_image.png",
-            content=b"PNG-ATTACHMENT",
-            headers={"content-type": "image/png"},
-        )
-        result = CallToolResult(
-            content=[
-                TextContent(
-                    type="text",
-                    text=json.dumps(
-                        {
-                            "subject": "Meeting notes",
-                            "body": "See attached.",
-                            "attachments": [
-                                {
-                                    "filename": "report.pdf",
-                                    "download_url": ("http://localhost:8001/files/abc_report.pdf"),
-                                },
-                                {
-                                    "filename": "image.png",
-                                    "download_url": ("http://localhost:8001/files/def_image.png"),
-                                },
-                            ],
-                        }
-                    ),
-                ),
-            ],
-        )
-        agent = AgentConnection(
-            "email",
-            "http://localhost:8001/mcp/sse",
-            "http://localhost:8001",
-        )
-        text, files = await post_process_tool_result(
-            "read_email",
-            result,
-            agent,
-            registry,
-        )
-        assert len(files) == 2
-        assert registry.get("report.pdf") is not None
-        assert registry.get("image.png") is not None
-        parsed = json.loads(text)
-        for att in parsed["attachments"]:
-            assert "download_url" not in att
-            assert "registered_file" in att
-
-    @pytest.mark.asyncio
-    async def test_structuredcontent_preferred(
-        self,
-        registry,
-        httpx_mock,
-    ):
-        """When structuredContent is present, use it instead of text."""
+        """structuredContent metadata cleaned when ResourceLinks present."""
         httpx_mock.add_response(
             url="http://localhost:8002/files/out.docx",
             content=b"DOCX",
             headers={"content-type": "application/octet-stream"},
         )
+        from mcp.types import ResourceLink
+
         result = CallToolResult(
             content=[
-                TextContent(type="text", text="raw json"),
+                TextContent(type="text", text="{}"),
+                ResourceLink(
+                    type="resource_link",
+                    uri="http://localhost:8002/files/out.docx",
+                    name="report.docx",
+                ),
             ],
             structuredContent={
-                "download_url": "http://localhost:8002/files/out.docx",
                 "filename": "report.docx",
-                "mime_type": "application/vnd.openxmlformats",
-                "size_bytes": 4,
+                "iterations": 1,
             },
         )
         agent = AgentConnection(
@@ -627,4 +622,5 @@ class TestPostProcess:
         assert len(files) == 1
         assert files[0].filename == "report.docx"
         parsed = json.loads(text)
-        assert "download_url" not in parsed
+        assert "produced_file" in parsed
+        assert "iterations" in parsed

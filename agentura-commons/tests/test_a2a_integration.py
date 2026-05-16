@@ -348,18 +348,10 @@ class TestA2AFileRoundTrip:
         )
         assert compose_text or compose_files
 
-        # Extract download URL
-        import json as _json
-
-        download_url = ""
-        try:
-            data = _json.loads(compose_text)
-            download_url = data.get("download_url", "")
-        except (ValueError, TypeError):
-            pass
-        if compose_files:
-            download_url = compose_files[0].get("url", download_url)
-        assert download_url
+        # Extract download URL from A2A artifact
+        assert compose_files, f"No files produced. text={compose_text!r}"
+        download_url = compose_files[0].get("url", "")
+        assert download_url, f"No URL in artifact: {compose_files}"
 
         # Step 2: Fetch file
         async with httpx.AsyncClient() as http:

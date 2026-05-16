@@ -217,18 +217,17 @@ async def test_executor_explicit_tool_call(executor):
 
 
 @pytest.mark.asyncio
-async def test_executor_with_file_output(service):
-    """Tool returning download_url JSON emits artifact events."""
-    import json as _json
+async def test_executor_with_file_output(service, tmp_path):
+    """Tool returning NamedFile emits artifact events."""
+    service.output_dir = tmp_path
+    service.base_url = "http://test"
 
-    async def _file_tool() -> str:
-        return _json.dumps(
-            {
-                "download_url": "http://test/f.pdf",
-                "filename": "f.pdf",
-                "mime_type": "application/pdf",
-            }
-        )
+    async def _file_tool():
+        from agentura_commons.base import NamedFile
+
+        tmp = service.output_dir / "f.pdf"
+        tmp.write_bytes(b"PDF-CONTENT")
+        return NamedFile(path=tmp, name="f.pdf")
 
     class _FT(AgentTool):
         name: str = "file_tool"
@@ -253,7 +252,7 @@ async def test_executor_with_file_output(service):
     artifacts = [e for e in events if isinstance(e, TaskArtifactUpdateEvent)]
     assert len(artifacts) == 1
     assert artifacts[0].artifact.name == "f.pdf"
-    assert "test/f.pdf" in artifacts[0].artifact.parts[0].url
+    assert "f.pdf" in artifacts[0].artifact.parts[0].url
 
 
 @pytest.mark.asyncio

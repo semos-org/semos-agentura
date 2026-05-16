@@ -10,10 +10,11 @@ import asyncio
 import json
 import shutil
 import uuid
+from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from agentura_commons import AgentTool, FileAttachment
+from agentura_commons import AgentTool, FileAttachment, NamedFile, ToolResult
 from pydantic import BaseModel, Field
 
 from . import (
@@ -28,28 +29,52 @@ from . import (
 )
 from .models import OutputFormat, OutputMode
 
+# Input enums
+
+
+class DigestOutputMode(str, Enum):
+    TEXT = "text"
+    FILE = "file"
+
+
+class DigestMode(str, Enum):
+    AUTO = "auto"
+    OCR = "ocr"
+    PANDOC = "pandoc"
+
+
+class TrackChanges(str, Enum):
+    ACCEPT = "accept"
+    REJECT = "reject"
+    ALL = "all"
+
+
 # Input models
 
 
 class DigestInput(BaseModel):
     source: FileAttachment | str = Field(
-        description=("Document to digest (file path, base64, or data URI). Supports PDF, images, Office formats."),
+        description="Document to digest (file path, base64, or data URI). Supports PDF, images, Office formats.",
         json_schema_extra={"x-file": True},
     )
-    output_mode: str = Field(
-        default="text",
-        description="'text' returns inline markdown, 'file' writes to disk.",
+    output_mode: DigestOutputMode = Field(
+        default=DigestOutputMode.FILE,
+        description=(
+            "'text' returns markdown inline (best for small docs without images). "
+            "'file' writes .md + images to disk (best for docs with images or large content). "
+            "Auto-switches to 'file' when images are present or content exceeds 50 KB."
+        ),
     )
     max_pages: int | None = Field(
         default=None,
         description="Maximum number of pages to OCR.",
     )
-    digest_mode: str = Field(
-        default="auto",
+    digest_mode: DigestMode = Field(
+        default=DigestMode.AUTO,
         description="'auto' (pandoc for DOCX/ODT, OCR otherwise), 'ocr', or 'pandoc'.",
     )
-    track_changes: str = Field(
-        default="accept",
+    track_changes: TrackChanges = Field(
+        default=TrackChanges.ACCEPT,
         description="'accept' (final text), 'reject' (original), or 'all' (with author/date).",
     )
     describe_images: bool = Field(
@@ -254,24 +279,45 @@ class DigestDocumentTool(AgentTool):
     read_only: bool = True
     idempotent: bool = True
 
-    async def _arun(self, **kwargs: Any) -> str:
+    async def _arun(self, **kwargs: Any) -> ToolResult | str:
         svc = self._service
-        mode = OutputMode.INLINE if kwargs.get("output_mode") == "text" else OutputMode.FILE
+        output_mode = kwargs.get("output_mode", DigestOutputMode.FILE)
         src = svc.resolve_file_attachment(kwargs["source"], ".pdf")
 
+        # Always run FILE mode internally so images land on disk
         def _run():
             return digest(
                 source=src,
-                output_mode=mode,
+                output_mode=OutputMode.FILE,
                 max_pages=kwargs.get("max_pages"),
-                digest_mode=kwargs.get("digest_mode", "auto"),
-                track_changes=kwargs.get("track_changes", "accept"),
+                digest_mode=DigestMode(kwargs.get("digest_mode", DigestMode.AUTO)).value,
+                track_changes=TrackChanges(kwargs.get("track_changes", TrackChanges.ACCEPT)).value,
                 describe_images=kwargs.get("describe_images", False),
                 settings=svc._settings,
             )
 
         result = await asyncio.to_thread(_run)
-        return json.dumps({"markdown": result.markdown or ""}, ensure_ascii=False)
+        md = result.markdown or ""
+
+        # Collect extracted image files with relative subdirectory names
+        image_files: list[NamedFile] = []
+        if result.images_dir and result.images_dir.exists():
+            dir_name = result.images_dir.name
+            for img in sorted(result.images_dir.iterdir()):
+                image_files.append(NamedFile(path=img, name=f"{dir_name}/{img.name}"))
+
+        # Auto-switch to file mode when content has images or is large
+        _MAX_INLINE_BYTES = 50_000
+        use_file = output_mode == DigestOutputMode.FILE or image_files or len(md.encode()) > _MAX_INLINE_BYTES
+
+        if use_file:
+            files: list[Path | NamedFile] = []
+            if result.output_path:
+                files.append(result.output_path)
+            files.extend(image_files)
+            return ToolResult(text=md, files=files)
+
+        return md
 
 
 class ComposeDocumentTool(AgentTool):
@@ -324,7 +370,7 @@ class ComposeDocumentTool(AgentTool):
             )
 
         result = await asyncio.to_thread(_run)
-        return svc.file_response(result.output_path, display_name=filename)
+        return NamedFile(path=result.output_path, name=filename)
 
 
 class GenerateDiagramTool(AgentTool):
@@ -373,14 +419,14 @@ class GenerateDiagramTool(AgentTool):
             settings=svc._settings,
         )
         resp: dict = {"iterations": result.iterations}
+        files: list = []
         if result.image_path:
             img = Path(result.image_path)
             safe_name = f"{uuid.uuid4().hex[:8]}_{img.name}"
             dest = svc.output_dir / safe_name
             shutil.copy2(img, dest)
-            file_meta = json.loads(svc.file_response(dest, display_name=img.name))
-            resp.update(file_meta)
-        return json.dumps(resp, ensure_ascii=False)
+            files.append(NamedFile(path=dest, name=img.name))
+        return ToolResult(data=resp, files=files)
 
 
 class GenerateImageTool(AgentTool):
@@ -416,10 +462,10 @@ class GenerateImageTool(AgentTool):
         safe_name = f"{uuid.uuid4().hex[:8]}_{img.name}"
         dest = svc.output_dir / safe_name
         shutil.copy2(img, dest)
-        resp = json.loads(svc.file_response(dest, display_name=img.name))
-        resp["mode"] = result.mode
-        resp["size"] = list(result.size)
-        return json.dumps(resp, ensure_ascii=False)
+        return ToolResult(
+            data={"mode": result.mode, "size": list(result.size)},
+            files=[NamedFile(path=dest, name=img.name)],
+        )
 
 
 class InspectFormTool(AgentTool):
@@ -462,7 +508,7 @@ class FillFormTool(AgentTool):
             return fill_form(file_path=fp, output_path=out_path, data=field_data)
 
         result_path = await asyncio.to_thread(_run)
-        return svc.file_response(Path(result_path), display_name=filename)
+        return NamedFile(path=Path(result_path), name=filename)
 
 
 class MergeSlidesTool(AgentTool):
@@ -521,7 +567,7 @@ class MergeSlidesTool(AgentTool):
             return merge_slides(config, out, backend=kwargs.get("backend", "auto"))
 
         result = await asyncio.to_thread(_run)
-        return svc.file_response(result.output_path, display_name=output_filename)
+        return NamedFile(path=result.output_path, name=output_filename)
 
 
 class GetExamplesTool(AgentTool):

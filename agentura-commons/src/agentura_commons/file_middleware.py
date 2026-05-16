@@ -178,10 +178,16 @@ def _make_file_attachment(
     filename: str,
     entry: FileEntry,
 ) -> dict:
-    """Build a FileAttachment dict {name, content} for MCP."""
+    """Build a FileAttachment dict {name, content} for MCP.
+
+    Uses entry.filename (clean display name) rather than the
+    lookup key, which may contain VFS URI prefixes that break
+    on Windows (e.g., "session://file.png" -> Path error).
+    """
+    name = entry.filename
     b64 = base64.b64encode(entry.blob).decode()
     return {
-        "name": filename,
+        "name": name,
         "content": f"data:{entry.mime};base64,{b64}",
     }
 
@@ -521,86 +527,82 @@ async def _fetch_and_register(
         return None
 
 
+def _rewrite_url(url: str | object, base_url: str) -> str:
+    """Normalize a file URL to the agent's actual base_url."""
+    url = str(url)
+    if url.startswith("/"):
+        return f"{base_url}{url}"
+    if url.startswith("http"):
+        path = "/" + url.split("/", 3)[-1]
+        return f"{base_url}{path}"
+    return url
+
+
 async def post_process_tool_result(
     tool_name: str,
     result: CallToolResult,
     agent: AgentConnection,
     registry: FileRegistry,
 ) -> tuple[str, list[FileEntry]]:
-    """Process tool result: fetch files, register them, strip URLs.
+    """Process tool result: fetch files from ResourceLinks, register them.
 
     Returns (text_for_llm, new_file_entries).
-    The text has download_url replaced with symbolic filename.
+
+    Scans result.content for ResourceLink blocks (MCP spec).
+    Each ResourceLink is fetched and registered in the file registry.
+    The LLM sees symbolic filenames, never URLs.
     """
     if not result.content:
         return "", []
 
     base_url = agent.base_url
-
-    # Prefer structuredContent if available
-    sc = getattr(result, "structuredContent", None)
-    if sc and isinstance(sc, dict):
-        data = sc
-    else:
-        text = result.content[0].text if hasattr(result.content[0], "text") else str(result.content[0])
-        try:
-            data = json.loads(text)
-        except (json.JSONDecodeError, TypeError):
-            return text, []
-
-    if not isinstance(data, dict):
-        return json.dumps(data, ensure_ascii=False), []
-
     new_files: list[FileEntry] = []
+    text_parts: list[str] = []
 
-    # Top-level download_url
-    if "download_url" in data:
-        url = data["download_url"]
-        # Resolve relative URLs
-        if url.startswith("/"):
-            url = f"{base_url}{url}"
-        # Rewrite to agent's actual base_url (server may
-        # report a different port than what client connects to)
-        elif url.startswith("http"):
-            path = "/" + url.split("/", 3)[-1]
-            url = f"{base_url}{path}"
-        entry = await _fetch_and_register(
-            url,
-            data.get("filename"),
-            tool_name,
-            registry,
-        )
-        if entry:
-            new_files.append(entry)
-            data.pop("download_url", None)
-            data.pop("mime_type", None)
-            data.pop("size_bytes", None)
-            data["produced_file"] = f"{entry.filename} ({human_size(entry.size)})"
-
-    # Nested download_url in attachments list (read_email)
-    for att in data.get("attachments", []):
-        if isinstance(att, dict) and "download_url" in att:
-            url = att["download_url"]
-            if url.startswith("/"):
-                url = f"{base_url}{url}"
-            elif url.startswith("http"):
-                path = "/" + url.split("/", 3)[-1]
-                url = f"{base_url}{path}"
+    # Scan content blocks
+    for block in result.content:
+        if hasattr(block, "uri") and block.uri:
+            # ResourceLink: fetch and register
+            url = _rewrite_url(block.uri, base_url)
             entry = await _fetch_and_register(
                 url,
-                att.get("filename"),
+                getattr(block, "name", None),
                 tool_name,
                 registry,
             )
             if entry:
                 new_files.append(entry)
-                att.pop("download_url", None)
-                att.pop("saved_path", None)
-                att["registered_file"] = f"{entry.filename} ({human_size(entry.size)})"
+        elif hasattr(block, "text"):
+            text_parts.append(block.text)
 
+    # Build LLM-facing text
     if new_files:
+        # Get structured metadata if available
+        sc = getattr(result, "structuredContent", None)
+        if sc and isinstance(sc, dict):
+            data = dict(sc)
+            # Remove file URLs from structured data
+            data.pop("download_url", None)
+            data.pop("mime_type", None)
+            data.pop("size_bytes", None)
+        elif text_parts:
+            try:
+                data = json.loads(text_parts[0])
+                if not isinstance(data, dict):
+                    data = {}
+            except (json.JSONDecodeError, TypeError):
+                data = {}
+        else:
+            data = {}
+
+        # Add file summaries for the LLM
+        summaries = [f"{e.filename} ({human_size(e.size)})" for e in new_files]
+        if len(summaries) == 1:
+            data["produced_file"] = summaries[0]
+        else:
+            data["produced_files"] = summaries
+
         return json.dumps(data, ensure_ascii=False), new_files
 
-    # No files - return original text
-    text = result.content[0].text if hasattr(result.content[0], "text") else str(result.content[0])
-    return text, []
+    # No files - return text as-is
+    return "\n".join(text_parts), []
