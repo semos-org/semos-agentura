@@ -469,8 +469,10 @@ class FilesystemAgentService(BaseAgentService):
 
         from ._sharepoint import (
             detect_doc_library,
+            is_file_sharing_link,
             is_sharing_link,
             resolve_sharepoint_url,
+            resolve_sharing_link_file,
             resolve_sharing_link_folder,
         )
         from .auth import CookieAuth, extract_sharepoint_cookies
@@ -518,6 +520,35 @@ class FilesystemAgentService(BaseAgentService):
         try:
             wfs.ls(folder_path if folder_path != "/" else "")
         except Exception as exc:
+            # For file sharing links, fall back to single-file virtual mount.
+            # File-only shares don't grant folder access via WebDAV.
+            if sharing and is_file_sharing_link(raw_url):
+                filename = resolve_sharing_link_file(raw_url, site_url, auth)
+                if filename:
+                    from .vfs import SingleFileWebdavFS
+
+                    file_url = (
+                        f"{webdav_url}/{quote(subfolder)}/{quote(filename)}"
+                        if subfolder
+                        else f"{webdav_url}/{quote(filename)}"
+                    )
+                    sfs = SingleFileWebdavFS(file_url, filename, auth)
+                    # Validate the single file is accessible
+                    try:
+                        sfs.info(filename)
+                    except Exception:
+                        return json.dumps({"error": f"Cannot access shared file: {filename}"})
+                    vfs = self._ensure_vfs()
+                    vfs.add_root(name, sfs)
+                    return json.dumps(
+                        {
+                            "mounted": name,
+                            "protocol": "sharepoint",
+                            "mode": "single-file",
+                            "site_url": site_url,
+                            "file": filename,
+                        }
+                    )
             return json.dumps({"error": f"Cannot access {webdav_url}: {exc}"})
 
         vfs = self._ensure_vfs()

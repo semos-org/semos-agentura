@@ -221,10 +221,13 @@ class VirtualFileSystem:
 
     # -- internal resolution --
 
-    def _get_scoped_fs(self, root_name: str) -> DirFileSystem:
+    def _get_scoped_fs(self, root_name: str) -> AbstractFileSystem:
         if root_name not in self._roots:
             raise FileNotFoundError(f"No root named {root_name!r}")
         root = self._roots[root_name]
+        # Self-scoped filesystems (e.g. SingleFileWebdavFS) don't need DirFileSystem
+        if isinstance(root.fs, SingleFileWebdavFS) or not root.base_path:
+            return root.fs
         return DirFileSystem(path=root.base_path, fs=root.fs, skip_instance_cache=True)
 
     def _resolve(self, uri: str) -> tuple[str, DirFileSystem, str]:

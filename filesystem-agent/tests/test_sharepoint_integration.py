@@ -279,17 +279,20 @@ async def test_onedrive_folder_link():
     reason="Set TEST_ONEDRIVE_SHARING_FILE_LINK",
 )
 async def test_onedrive_file_link():
-    """Single-file sharing link: mounts if folder access is granted, otherwise returns clear error."""
+    """Single-file sharing link: mounts as virtual single-file folder."""
     svc, result = await _mount_onedrive("od_file", _ONEDRIVE_FILE_LINK)
-    if "error" in result:
-        # File-only sharing links don't grant folder access via WebDAV - expected
-        assert "403" in result["error"] or "Cannot access" in result["error"]
-        print(f"\nFile link correctly rejected (no folder access): {result['error']}")
+    assert "mounted" in result, f"OneDrive file mount failed: {result}"
+    print(f"\nMounted: {result}")
+
+    if result.get("mode") == "single-file":
+        # Single-file mount - virtual folder with one file
+        assert result.get("file"), "Expected filename in result"
+        entries = json.loads(await svc._list_files("od_file://"))
+        assert len(entries) == 1, f"Expected 1 file, got {len(entries)}"
+        assert entries[0]["name"] == result["file"]
+        print(f"Single-file mount: {entries[0]['name']} ({entries[0].get('size', '?')} bytes)")
     else:
-        assert result.get("subfolder"), "Expected parent folder as subfolder"
+        # Full folder mount (if folder access is available)
         entries = json.loads(await svc._list_files("od_file://"))
         assert isinstance(entries, list)
-        print(f"\nMounted: {result}")
-        print(f"OneDrive file parent folder has {len(entries)} entries:")
-        for e in entries[:10]:
-            print(f"  {e.get('type') or '?':9s} {e.get('name') or '?'}")
+        print(f"Folder has {len(entries)} entries")

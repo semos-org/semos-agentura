@@ -152,6 +152,45 @@ def _resolve_via_html_metadata(html: str, site_url: str) -> str:
     return ""
 
 
+def _extract_rel_path_from_html(html: str, site_url: str) -> str:
+    """Extract the full relative path (including filename) from HTML metadata.
+
+    Returns the path relative to the doc library, e.g. 'Folder/Sub/file.docx'.
+    """
+    site_path = urlparse(site_url).path.rstrip("/")
+    pattern = re.escape(site_path) + r"/Documents/[^\"'&<>\\]+"
+    matches = re.findall(pattern, html)
+    if not matches:
+        return ""
+    server_path = unquote(max(matches, key=len))
+    if server_path.startswith(site_path):
+        remainder = server_path[len(site_path) :].strip("/")
+        parts = remainder.split("/", 1)
+        if len(parts) > 1:
+            return parts[1]
+    return ""
+
+
+def resolve_sharing_link_file(sharing_url: str, site_url: str, auth: Any) -> str:
+    """Resolve a file sharing link to the filename."""
+    from posixpath import basename
+
+    import httpx
+
+    try:
+        r = httpx.get(sharing_url, auth=auth, follow_redirects=True, timeout=15)
+        if r.status_code == 200 and r.headers.get("content-type", "").startswith("text/html"):
+            rel_path = _extract_rel_path_from_html(r.text, site_url)
+            if rel_path:
+                name = basename(rel_path)
+                if "." in name:
+                    logger.info("Resolved shared file: %s", name)
+                    return name
+    except Exception:
+        logger.debug("Failed to resolve sharing link file", exc_info=True)
+    return ""
+
+
 def detect_doc_library(site_url: str, auth: Any) -> str:
     """Auto-detect the primary document library name from SharePoint REST API.
 
