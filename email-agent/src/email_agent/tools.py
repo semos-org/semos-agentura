@@ -24,6 +24,8 @@ logger = logging.getLogger(__name__)
 
 # Basic email validation: local@domain.tld
 _EMAIL_RE = re.compile(r"^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$")
+# RFC 5322: "Display Name" <email> or bare email
+_RFC5322_RE = re.compile(r'^"?([^"<]*)"?\s*<([^>]+)>$')
 
 
 def _parse_date_range(args: dict) -> tuple[datetime, datetime]:
@@ -42,7 +44,8 @@ def _parse_date_range(args: dict) -> tuple[datetime, datetime]:
 def _validate_email_list(raw: str) -> tuple[str, list[str]]:
     """Parse and validate a list of email addresses.
 
-    Accepts semicolon- or comma-separated addresses.
+    Accepts semicolon- or comma-separated addresses in RFC 5322 format
+    ("Display Name" <email>) or bare email. Preserves display names.
     Returns (cleaned semicolon-separated string, list of errors).
     """
     if not raw or not raw.strip():
@@ -51,19 +54,25 @@ def _validate_email_list(raw: str) -> tuple[str, list[str]]:
     clean = []
     errors = []
     for p in parts:
-        addr = p.strip()
-        if not addr:
+        entry = p.strip()
+        if not entry:
             continue
-        # Extract email from "Name <email>" format
-        m = re.search(r"<([^>]+)>", addr)
+        m = _RFC5322_RE.match(entry)
         if m:
-            addr = m.group(1).strip()
+            name, addr = m.group(1).strip(), m.group(2).strip()
+            if _EMAIL_RE.match(addr):
+                if name:
+                    clean.append(f'"{name}" <{addr}>')
+                else:
+                    clean.append(addr)
+            else:
+                errors.append(f"Invalid email: '{addr}'")
         else:
-            addr = addr.strip("<>").strip()
-        if _EMAIL_RE.match(addr):
-            clean.append(addr)
-        else:
-            errors.append(f"Invalid email: '{addr}'")
+            addr = entry.strip("<>").strip()
+            if _EMAIL_RE.match(addr):
+                clean.append(addr)
+            else:
+                errors.append(f"Invalid email: '{entry}'")
     return "; ".join(clean), errors
 
 
@@ -132,10 +141,17 @@ TOOL_DEFINITIONS = [
                 "type": "object",
                 "required": ["to", "subject", "body"],
                 "properties": {
-                    "to": {"type": "string", "description": "Recipient email address(es)"},
+                    "to": {
+                        "type": "string",
+                        "description": ('Recipients as "Display Name" <email>; semicolon-separated for multiple'),
+                    },
                     "subject": {"type": "string", "description": "Email subject line"},
                     "body": {"type": "string", "description": "Email body text"},
-                    "cc": {"type": "string", "description": "CC recipients", "default": ""},
+                    "cc": {
+                        "type": "string",
+                        "description": ('CC as "Display Name" <email>; semicolon-separated for multiple'),
+                        "default": "",
+                    },
                 },
             },
         },
@@ -158,7 +174,9 @@ TOOL_DEFINITIONS = [
                     "body": {"type": "string", "description": "Meeting body/agenda text", "default": ""},
                     "attendees": {
                         "type": "string",
-                        "description": "Required attendees (semicolon-separated emails)",
+                        "description": (
+                            'Required attendees as "Display Name" <email>; semicolon-separated for multiple'
+                        ),
                         "default": "",
                     },
                 },
@@ -179,7 +197,12 @@ TOOL_DEFINITIONS = [
                     "end": {"type": "string", "description": "End time as 'YYYY-MM-DD HH:MM'"},
                     "location": {"type": "string", "description": "Event location", "default": ""},
                     "body": {"type": "string", "description": "Meeting body/agenda text", "default": ""},
-                    "attendees": {"type": "string", "description": "Required attendees (semicolon-separated emails)"},
+                    "attendees": {
+                        "type": "string",
+                        "description": (
+                            'Required attendees as "Display Name" <email>; semicolon-separated for multiple'
+                        ),
+                    },
                 },
             },
         },
