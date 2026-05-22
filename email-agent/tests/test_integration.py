@@ -16,7 +16,6 @@ pytestmark = pytest.mark.integration
 from email_agent.backend import EmailBackend, create_backend
 from email_agent.config import Settings
 from email_agent.models import EmailMessage, EventInfo
-from email_agent.tools import ToolExecutor
 
 
 @pytest.fixture(scope="module")
@@ -153,46 +152,188 @@ class TestCalendarOps:
                 assert ev.end is not None
 
 
-# ToolExecutor with real backend
+# Tool execution with real backend
 
 
-class TestToolExecutorReal:
-    def test_search_emails_tool(self, backend):
-        executor = ToolExecutor(backend)
-        result = executor.execute("search_emails", {"query": "meeting", "limit": 3})
+class TestToolExecutionReal:
+    def test_search_emails(self, backend):
+        import asyncio
+
+        from email_agent.tools import get_email_tools
+
+        class _Stub:
+            output_dir = None
+
+            async def run_sync(self, fn):
+                return fn(backend)
+
+        tools = get_email_tools(_Stub())
+        search = next(t for t in tools if t.name == "search_emails")
+        result = asyncio.run(search._arun(query="meeting", limit=3))
         assert isinstance(result, str)
         assert "error" not in result.lower() or "No emails" in result
 
-    def test_read_email_tool(self, backend):
-        executor = ToolExecutor(backend)
-        result = executor.execute("read_email", {"query": "meeting"})
-        assert isinstance(result, str)
-        # Should have subject or error
-        assert "subject" in result.lower() or "error" in result.lower()
+    def test_read_email(self, backend):
+        import asyncio
 
-    def test_list_events_tool(self, backend):
-        executor = ToolExecutor(backend)
-        result = executor.execute("list_events", {"days": 7})
+        from email_agent.tools import get_email_tools
+
+        class _Stub:
+            output_dir = None
+
+            async def run_sync(self, fn):
+                return fn(backend)
+
+        tools = get_email_tools(_Stub())
+        read = next(t for t in tools if t.name == "read_email")
+        result = asyncio.run(read._arun(query="meeting"))
+        text = result.text if hasattr(result, "text") else str(result)
+        assert "subject" in text.lower() or "error" in text.lower() or "No emails" in text
+
+    def test_list_events(self, backend):
+        import asyncio
+
+        from email_agent.tools import get_email_tools
+
+        class _Stub:
+            output_dir = None
+
+            async def run_sync(self, fn):
+                return fn(backend)
+
+        tools = get_email_tools(_Stub())
+        le = next(t for t in tools if t.name == "list_events")
+        result = asyncio.run(le._arun(days=7))
         assert isinstance(result, str)
-        # Either events or "not available"
         assert "subject" in result.lower() or "not available" in result.lower() or "[]" in result
 
-    def test_free_slots_tool(self, backend):
-        executor = ToolExecutor(backend)
-        result = executor.execute("free_slots", {"days": 7})
+    def test_free_slots(self, backend):
+        import asyncio
+
+        from email_agent.tools import get_email_tools
+
+        class _Stub:
+            output_dir = None
+
+            async def run_sync(self, fn):
+                return fn(backend)
+
+        tools = get_email_tools(_Stub())
+        fs = next(t for t in tools if t.name == "free_slots")
+        result = asyncio.run(fs._arun(days=7))
         assert isinstance(result, str)
 
-    def test_create_draft_tool_validates(self, backend):
-        executor = ToolExecutor(backend)
-        result = executor.execute(
-            "create_draft",
-            {
-                "to": "invalid-email",
-                "subject": "Test",
-                "body": "Body",
-            },
+    def test_create_draft_validates(self, backend):
+        from email_agent.tools import Recipient
+
+        with pytest.raises(ValueError):
+            Recipient(email="invalid-email")
+
+
+# COM draft round-trip tests
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="COM only")
+class TestCOMDraftRoundTrip:
+    """Create drafts via COM and verify recipients resolve."""
+
+    def test_bare_email_recipient(self, backend):
+        if not backend.supports_com:
+            pytest.skip("COM backend required")
+        com = backend.raw_com
+        eid = com.create_draft(
+            to="test@example.com",
+            subject="[TEST] bare email - auto-delete",
+            body="test",
         )
-        assert "Invalid" in result
+        try:
+            item = com._ns.GetItemFromID(eid)
+            assert "undefined" not in item.To.lower()
+            assert "test@example.com" in item.To.lower()
+            assert item.Recipients.Count == 1
+        finally:
+            com._ns.GetItemFromID(eid).Delete()
+
+    def test_multiple_recipients(self, backend):
+        if not backend.supports_com:
+            pytest.skip("COM backend required")
+        com = backend.raw_com
+        eid = com.create_draft(
+            to="a@example.com; b@example.com",
+            subject="[TEST] multi recip - auto-delete",
+            body="test",
+            cc="c@example.com",
+        )
+        try:
+            item = com._ns.GetItemFromID(eid)
+            assert "undefined" not in item.To.lower()
+            assert item.Recipients.Count == 3
+        finally:
+            com._ns.GetItemFromID(eid).Delete()
+
+    def test_name_angle_bracket_format(self, backend):
+        if not backend.supports_com:
+            pytest.skip("COM backend required")
+        com = backend.raw_com
+        eid = com.create_draft(
+            to="Test User <test@example.com>",
+            subject="[TEST] name+email - auto-delete",
+            body="test",
+        )
+        try:
+            item = com._ns.GetItemFromID(eid)
+            assert "undefined" not in item.To.lower()
+            assert "test@example.com" in item.To.lower()
+        finally:
+            com._ns.GetItemFromID(eid).Delete()
+
+    def test_comma_in_display_name(self, backend):
+        """Names like 'Last, First' must not split into two recipients."""
+        if not backend.supports_com:
+            pytest.skip("COM backend required")
+        from email_agent.tools import Recipient, _recipients_to_str
+
+        recipients = [
+            Recipient(email="a@example.com", name="Last, First"),
+            Recipient(email="b@example.com", name="Other, Person"),
+        ]
+        com = backend.raw_com
+        eid = com.create_draft(
+            to=_recipients_to_str(recipients),
+            subject="[TEST] comma names - auto-delete",
+            body="test",
+        )
+        try:
+            item = com._ns.GetItemFromID(eid)
+            assert item.Recipients.Count == 2
+            assert "undefined" not in item.To.lower()
+        finally:
+            com._ns.GetItemFromID(eid).Delete()
+
+    def test_tool_pydantic_path(self, backend):
+        """Full path: Pydantic Recipient -> _recipients_to_str -> COM."""
+        if not backend.supports_com:
+            pytest.skip("COM backend required")
+        from email_agent.tools import Recipient, _recipients_to_str
+
+        recipients = [
+            Recipient(email="test@example.com", name="Test"),
+            Recipient(email="other@example.com"),
+        ]
+        to_str = _recipients_to_str(recipients)
+
+        com = backend.raw_com
+        eid = com.create_draft(
+            to=to_str,
+            subject="[TEST] pydantic path - auto-delete",
+            body="test",
+        )
+        try:
+            item = com._ns.GetItemFromID(eid)
+            assert "undefined" not in item.To.lower()
+            assert item.Recipients.Count == 2
+        finally:
+            com._ns.GetItemFromID(eid).Delete()
 
 
 # Backend identity

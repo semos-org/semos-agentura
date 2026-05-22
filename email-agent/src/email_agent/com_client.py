@@ -30,6 +30,31 @@ OL_FOLDER_CALENDAR = 9
 OL_FOLDER_JUNK = 23
 
 
+import re
+
+_ANGLE_EMAIL_RE = re.compile(r"<([^>]+)>")
+
+
+def _add_recipients(mail, raw: str, recipient_type: int = 1) -> None:
+    """Add recipients to a MailItem via Recipients.Add().
+
+    Parses 'Name <email>' or bare email from a semicolon-separated
+    string. Calls Resolve() on each recipient so the SMTP address
+    is fully set - required for new Outlook / Outlook online.
+    """
+    if not raw or not raw.strip():
+        return
+    for part in raw.split(";"):
+        part = part.strip()
+        if not part:
+            continue
+        m = _ANGLE_EMAIL_RE.search(part)
+        email = m.group(1).strip() if m else part
+        recip = mail.Recipients.Add(email)
+        recip.Type = recipient_type
+        recip.Resolve()
+
+
 class OutlookCOM:
     """Wrapper around Outlook COM automation."""
 
@@ -160,14 +185,15 @@ class OutlookCOM:
     ):
         """Create a MailItem with the given fields."""
         mail = self._app.CreateItem(0)
-        mail.To = to.replace(",", ";")
+        # Use Recipients.Add() instead of .To = ... so Outlook
+        # resolves display names for external addresses.
+        _add_recipients(mail, to, recipient_type=1)  # olTo
+        _add_recipients(mail, cc, recipient_type=2)  # olCC
         mail.Subject = subject
         if html:
             mail.HTMLBody = body
         else:
             mail.Body = body
-        if cc:
-            mail.CC = cc.replace(",", ";")
         for path in attachments or []:
             mail.Attachments.Add(str(Path(path).resolve()))
         return mail

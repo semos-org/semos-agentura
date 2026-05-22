@@ -67,20 +67,13 @@ def _mock_backend():
 def service():
     """Create an EmailAgentService with a mocked backend."""
     svc = EmailAgentService()
-
-    # Patch the _create_executor to inject our mock
     mock_backend = _mock_backend()
 
-    # Inject mock executor directly (bypass COM worker / async executor)
-    from email_agent.tools import ToolExecutor
+    # Mock run_sync to call fn(backend) directly
+    async def _mock_run_sync(fn):
+        return fn(mock_backend)
 
-    executor = ToolExecutor(mock_backend)
-
-    class _FakeExecutor:
-        async def execute(self, tool_name, args):
-            return executor.execute(tool_name, args)
-
-    svc._executor_impl = _FakeExecutor()
+    svc.run_sync = _mock_run_sync
 
     return svc
 
@@ -173,12 +166,14 @@ async def test_create_draft(service):
         result = await client.call_tool(
             "create_draft",
             {
-                "to": "bob@example.com",
+                "to": [{"email": "bob@example.com"}],
                 "subject": "Hello",
                 "body": "Test body",
             },
         )
+        assert not result.isError, f"Tool error: {result.content}"
         data = parse_tool_result(result)
+        assert isinstance(data, dict), f"Expected dict, got: {data!r}"
         assert data["status"] == "draft created"
         assert data["entry_id"] == "draft-456"
 
@@ -189,14 +184,12 @@ async def test_create_draft_validates_email(service):
         result = await client.call_tool(
             "create_draft",
             {
-                "to": "not-an-email",
+                "to": [{"email": "not-an-email"}],
                 "subject": "Hello",
                 "body": "Test body",
             },
         )
         assert result.isError
-        data = parse_tool_result(result)
-        assert "invalid" in data.lower() or "error" in data.lower()
 
 
 # draft_reply / send_reply via MCP

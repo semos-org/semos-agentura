@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-import json
+import asyncio
 import logging
 import os
 import re
 import secrets
 import time
 from datetime import datetime
-
-import litellm
 
 from .backend import create_backend
 from .config import Settings
@@ -20,7 +18,7 @@ from .formatting import (
     md_to_html,
     md_to_plain,
 )
-from .tools import TOOL_DEFINITIONS, ToolExecutor
+from .tools import get_email_tools
 
 logger = logging.getLogger(__name__)
 
@@ -142,6 +140,30 @@ def _strip_subject_prefixes(subject: str) -> str:
     return _SUBJECT_PREFIX.sub("", subject).strip()
 
 
+# Minimal service stub for mailgent (sync, same thread as backend)
+
+
+class _MailgentServiceStub:
+    """Provides the run_sync interface that tools expect.
+
+    Since the mailgent already runs on the thread that owns the
+    backend, run_sync just calls fn(backend) directly.
+    """
+
+    def __init__(self, backend) -> None:
+        self._backend = backend
+
+    async def run_sync(self, fn):
+        return fn(self._backend)
+
+    @property
+    def output_dir(self):
+        return None
+
+    def resolve_file(self, content, **kwargs):
+        raise NotImplementedError("Mailgent does not handle file attachments")
+
+
 # Mailgent class
 
 
@@ -152,7 +174,10 @@ class Mailgent:
         self._settings = settings or Settings()
         self.backend = backend or create_backend(self._settings)
         self.backend.connect()
-        self.executor = ToolExecutor(self.backend)
+
+        # Minimal service stub for tools (sync, same thread)
+        self._service = _MailgentServiceStub(self.backend)
+        self._tools = get_email_tools(self._service)
 
         self.tag = self._settings.mailgent_tag
         self.model = self._settings.effective_mailgent_model
@@ -179,23 +204,11 @@ class Mailgent:
         return any(fnmatch.fnmatch(email_lower, p) for p in trusted_list)
 
     def _setup_llm_env(self) -> None:
-        m = self.model.lower()
-        is_anthropic = m.startswith("claude") or m.startswith("anthropic/")
+        """Resolve API credentials for the LLMExecutor."""
         azure_key = self._settings.azure_api_key or os.environ.get("AZURE_API_KEY", "")
         azure_base = self._settings.azure_api_base or os.environ.get("AZURE_API_BASE", "")
-        if is_anthropic and not os.environ.get("ANTHROPIC_API_KEY") and azure_key:
-            os.environ["ANTHROPIC_API_KEY"] = azure_key
-            if azure_base:
-                base = azure_base.rstrip("/")
-                if not base.endswith("/anthropic"):
-                    base += "/anthropic"
-                os.environ["ANTHROPIC_API_BASE"] = base
-
-    def _litellm_model(self) -> str:
-        m = self.model
-        if m.lower().startswith("claude") and "/" not in m:
-            return f"anthropic/{m}"
-        return m
+        self._api_key = azure_key
+        self._api_base = azure_base
 
     # Polling
 
@@ -458,62 +471,32 @@ class Mailgent:
         prompt: str,
         thread_context: str = "",
         email_body: str = "",
-        max_rounds: int = 25,
     ) -> str:
+        from agentura_commons.llm_executor import LLMExecutor
+
         system = SYSTEM_PROMPT.format(today=datetime.now().strftime("%A, %d.%m.%Y"))
         parts = []
         if thread_context:
             parts.append(f"EMAIL THREAD CONTEXT (related emails, oldest first):\n\n{thread_context}")
         if email_body:
             parts.append(
-                f"CURRENT EMAIL BODY "
-                f"(~~text~~ = strikethrough/cancelled, "
-                f"[HIGHLIGHT: text] = highlighted):\n\n{email_body}"
+                "CURRENT EMAIL BODY "
+                "(~~text~~ = strikethrough/cancelled, "
+                "[HIGHLIGHT: text] = highlighted):"
+                f"\n\n{email_body}"
             )
         parts.append(f"USER REQUEST:\n{prompt}")
         user_content = "\n\n---\n\n".join(parts)
-        messages = [
-            {"role": "system", "content": system},
-            {"role": "user", "content": user_content},
-        ]
 
-        for _ in range(max_rounds):
-            response = litellm.completion(
-                model=self._litellm_model(),
-                messages=messages,
-                tools=TOOL_DEFINITIONS,
-                tool_choice="auto",
-                temperature=0,
-            )
-
-            msg = response.choices[0].message
-
-            if not msg.tool_calls:
-                return msg.content or ""
-
-            messages.append(
-                {
-                    "role": "assistant",
-                    "content": msg.content,
-                    "tool_calls": msg.tool_calls,
-                }
-            )
-
-            for tc in msg.tool_calls:
-                args = tc.function.arguments
-                if isinstance(args, str):
-                    args = json.loads(args)
-                logger.info("  Tool: %s(%s)", tc.function.name, json.dumps(args, ensure_ascii=False)[:100])
-                result = self.executor.execute(tc.function.name, args)
-                messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": tc.id,
-                        "content": result,
-                    }
-                )
-
-        raise RuntimeError("max tool rounds exceeded")
+        executor = LLMExecutor(
+            tools=self._tools,
+            model=self.model,
+            api_key=self._api_key,
+            api_base=self._api_base,
+            system_prompt=system,
+        )
+        result = asyncio.run(executor.run(user_content))
+        return result.text or ""
 
     # Draft update
 

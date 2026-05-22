@@ -21,7 +21,11 @@ from email_agent.config import Settings
 from email_agent.exceptions import BackendNotAvailable
 from email_agent.formatting import html_to_annotated_text, md_to_html, md_to_plain
 from email_agent.models import EmailMessage, EventInfo
-from email_agent.tools import TOOL_DEFINITIONS, ToolExecutor, _validate_email_list
+from email_agent.tools import (
+    Recipient,
+    _recipients_to_str,
+    get_email_tools,
+)
 
 # Model tests
 
@@ -186,47 +190,50 @@ class TestFormatting:
         assert "[HIGHLIGHT: important]" in result
 
 
-# Email validation tests
+# Recipient validation tests
 
 
-class TestEmailValidation:
-    def test_valid_emails(self):
-        clean, errors = _validate_email_list("alice@example.com; bob@test.org")
-        assert clean == "alice@example.com; bob@test.org"
-        assert errors == []
+class TestRecipientValidation:
+    def test_valid_email(self):
+        r = Recipient(email="alice@example.com")
+        assert str(r) == "alice@example.com"
 
-    def test_display_name_stripped(self):
-        clean, errors = _validate_email_list("Alice <alice@example.com>")
-        assert clean == "alice@example.com"
+    def test_with_display_name(self):
+        r = Recipient(name="Alice", email="alice@example.com")
+        assert str(r) == "Alice <alice@example.com>"
 
-    def test_invalid_email_reported(self):
-        clean, errors = _validate_email_list("not-an-email")
-        assert clean == ""
-        assert len(errors) == 1
+    def test_invalid_email_rejected(self):
+        with pytest.raises(ValueError):
+            Recipient(email="not-an-email")
 
-    def test_empty_input(self):
-        clean, errors = _validate_email_list("")
-        assert clean == ""
-        assert errors == []
+    def test_empty_name_omitted(self):
+        r = Recipient(name="", email="a@b.com")
+        assert str(r) == "a@b.com"
 
-    def test_mixed_separators(self):
-        clean, errors = _validate_email_list("a@b.com, c@d.com; e@f.com")
-        assert clean == "a@b.com; c@d.com; e@f.com"
+    def test_multiple_recipients_to_str(self):
+        recipients = [
+            Recipient(name="Alice", email="alice@example.com"),
+            Recipient(email="bob@test.org"),
+        ]
+        result = _recipients_to_str(recipients)
+        assert result == "Alice <alice@example.com>; bob@test.org"
+
+    def test_display_name_preserved(self):
+        r = Recipient(name="Alice Smith", email="alice@example.com")
+        assert "Alice Smith" in str(r)
+        assert "alice@example.com" in str(r)
 
 
-# Tool definitions test
+# Tool schema tests
 
 
-class TestToolDefinitions:
-    def test_all_tools_have_required_fields(self):
-        for tool in TOOL_DEFINITIONS:
-            assert tool["type"] == "function"
-            assert "name" in tool["function"]
-            assert "description" in tool["function"]
-            assert "parameters" in tool["function"]
-
+class TestToolSchemas:
     def test_expected_tool_names(self):
-        names = {t["function"]["name"] for t in TOOL_DEFINITIONS}
+        stub = MagicMock()
+        stub.run_sync = MagicMock()
+        stub.output_dir = None
+        tools = get_email_tools(stub)
+        names = {t.name for t in tools}
         expected = {
             "search_emails",
             "read_email",
@@ -240,19 +247,39 @@ class TestToolDefinitions:
         }
         assert names == expected
 
+    def test_all_tools_have_schemas(self):
+        stub = MagicMock()
+        tools = get_email_tools(stub)
+        for t in tools:
+            schema = t.get_input_schema()
+            assert schema is not None
 
-# ToolExecutor with mock backend
+
+# Tool execution with mock backend
 
 
-class TestToolExecutor:
-    def _mock_backend(self):
-        backend = MagicMock()
-        backend.supports_com = False
-        backend.calendar = None
-        return backend
+def _mock_service():
+    """Create a mock service with run_sync that calls fn(backend) directly."""
+    backend = MagicMock()
+    backend.supports_com = False
+    backend.calendar = None
 
+    service = MagicMock()
+
+    async def mock_run_sync(fn):
+        return fn(backend)
+
+    service.run_sync = mock_run_sync
+    service.output_dir = None
+    service.resolve_file = MagicMock()
+    return service, backend
+
+
+class TestToolExecution:
     def test_search_emails(self):
-        backend = self._mock_backend()
+        import asyncio
+
+        service, backend = _mock_service()
         msg = EmailMessage(
             uid="1",
             subject="Hello",
@@ -262,52 +289,62 @@ class TestToolExecutor:
         )
         backend.search_emails.return_value = [msg]
 
-        executor = ToolExecutor(backend)
-        result = executor.execute("search_emails", {"query": "Hello"})
+        tools = get_email_tools(service)
+        search = next(t for t in tools if t.name == "search_emails")
+        result = asyncio.run(search._arun(query="Hello"))
         assert "Hello" in result
         assert "alice@example.com" in result
 
     def test_list_events_no_calendar(self):
-        backend = self._mock_backend()
-        executor = ToolExecutor(backend)
-        result = executor.execute("list_events", {"days": 7})
+        import asyncio
+
+        service, backend = _mock_service()
+        tools = get_email_tools(service)
+        le = next(t for t in tools if t.name == "list_events")
+        result = asyncio.run(le._arun(days=7))
         assert "not available" in result
 
     def test_create_draft_validates_email(self):
-        backend = self._mock_backend()
-        executor = ToolExecutor(backend)
-        result = executor.execute(
-            "create_draft",
-            {
-                "to": "not-an-email",
-                "subject": "Test",
-                "body": "Body",
-            },
-        )
-        assert "Invalid" in result
+        with pytest.raises(ValueError):
+            Recipient(email="not-an-email")
 
     def test_create_draft_success(self):
-        backend = self._mock_backend()
+        import asyncio
+
+        service, backend = _mock_service()
         backend.create_draft.return_value = "ENTRY123"
-        executor = ToolExecutor(backend)
-        result = executor.execute(
-            "create_draft",
-            {
-                "to": "alice@example.com",
-                "subject": "Test",
-                "body": "Hello **world**",
-            },
+        tools = get_email_tools(service)
+        draft = next(t for t in tools if t.name == "create_draft")
+        result = asyncio.run(
+            draft._arun(
+                to=[{"email": "alice@example.com"}],
+                subject="Test",
+                body="Hello **world**",
+            )
         )
         assert "draft created" in result
-        # Verify markdown was converted
+        # Verify markdown was converted to plain text
         call_args = backend.create_draft.call_args
-        assert "**" not in call_args.kwargs.get("body", call_args[1].get("body", ""))
+        body = call_args.kwargs.get("body", "")
+        assert "**" not in body
 
-    def test_unknown_tool(self):
-        backend = self._mock_backend()
-        executor = ToolExecutor(backend)
-        result = executor.execute("nonexistent_tool", {})
-        assert "Unknown tool" in result
+    def test_draft_reply(self):
+        import asyncio
+
+        service, backend = _mock_service()
+        msg = EmailMessage(
+            uid="1",
+            subject="Re: Hello",
+            sender="bob@test.org",
+            sender_name="Bob",
+        )
+        backend.search_emails.return_value = [msg]
+        backend.draft_reply.return_value = "reply-123"
+
+        tools = get_email_tools(service)
+        reply = next(t for t in tools if t.name == "draft_reply")
+        result = asyncio.run(reply._arun(query="Hello", body="Thanks!"))
+        assert "reply draft created" in result
 
 
 # Factory tests
