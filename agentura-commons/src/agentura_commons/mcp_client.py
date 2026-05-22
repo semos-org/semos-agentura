@@ -7,6 +7,7 @@ Extracted from agentura-ui/mcp_hub.py (protocol-level, no UI deps).
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
@@ -41,6 +42,7 @@ class MCPHub:
         self._agents = {a.name: a for a in agents}
         self._tool_to_agent: dict[str, str] = {}
         self._exit_stack: AsyncExitStack | None = None
+        self._connect_lock: asyncio.Lock | None = None
 
     @property
     def agents(self) -> dict[str, AgentConnection]:
@@ -82,10 +84,26 @@ class MCPHub:
             self._exit_stack = None
 
     async def ensure_connected(self) -> None:
-        """Reconnect if not currently connected."""
-        any_disconnected = any(a.session is None for a in self._agents.values())
-        if any_disconnected:
+        """Reconnect if not currently connected.
+
+        Uses a lock to prevent parallel tool calls from
+        triggering concurrent reconnections.
+        """
+        if self._connect_lock is None:
+            self._connect_lock = asyncio.Lock()
+        async with self._connect_lock:
+            any_disconnected = any(a.session is None for a in self._agents.values())
+            if not any_disconnected:
+                return
             logger.info("Reconnecting to MCP agents...")
+            # Suppress RuntimeError from SSE cancel scope
+            # cleanup in a different task (anyio/mcp-sdk issue).
+            try:
+                if self._exit_stack:
+                    await self._exit_stack.aclose()
+                    self._exit_stack = None
+            except (RuntimeError, BaseExceptionGroup):
+                self._exit_stack = None
             await self.connect_all()
 
     async def discover(self) -> list[Tool]:
