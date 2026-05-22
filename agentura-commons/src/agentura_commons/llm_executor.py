@@ -318,8 +318,10 @@ class LLMExecutor:
                     return_exceptions=True,
                 )
                 for tc, tool_result in zip(real, results, strict=True):
-                    if isinstance(tool_result, Exception):
+                    if isinstance(tool_result, BaseException):
                         tool_result = f"Error executing {tc.name}: {tool_result}"
+                    elif not isinstance(tool_result, str):
+                        tool_result = str(tool_result)
                     messages.append(self._tool_result_message(tc.id, tool_result))
 
         # Max steps reached

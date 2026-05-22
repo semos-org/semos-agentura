@@ -30,8 +30,12 @@ def _copy_referenced_images(
 ) -> None:
     """Copy image files referenced in markdown to work_dir.
 
-    Checks the source file's directory and common output locations
-    for images referenced as ![alt](filename.png).
+    Preserves relative directory structure (e.g. ``diagrams/fig.png``
+    is copied to ``work_dir/diagrams/fig.png``) so that pandoc can
+    resolve the paths with ``--resource-path=work_dir``.
+
+    Falls back to a flat copy (filename only) when the relative path
+    does not exist but the bare filename is found in a search directory.
     """
     md_text = md_path.read_text(encoding="utf-8")
     source_path = Path(source) if isinstance(source, (str, Path)) else None
@@ -51,19 +55,25 @@ def _copy_referenced_images(
         if ref.startswith(("http://", "https://", "data:")):
             continue
         ref_path = Path(ref)
-        # Skip if already in work_dir
-        if (work_dir / ref_path.name).exists():
+        # Skip if already in work_dir (check both relative path and flat name)
+        if (work_dir / ref_path).exists() or (work_dir / ref_path.name).exists():
             continue
-        # Search for the file
+        # Search for the file - try full relative path first, then flat name
         for d in search_dirs:
+            candidate = d / ref_path
+            if candidate.exists():
+                dest = work_dir / ref_path
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(candidate, dest)
+                logger.info("Copied image %s to work_dir", ref_path)
+                break
             candidate = d / ref_path.name
             if candidate.exists():
                 dest = work_dir / ref_path.name
                 shutil.copy2(candidate, dest)
-                # Update markdown reference if path differs
                 if ref != ref_path.name:
                     md_text = md_text.replace(ref, ref_path.name)
-                logger.info("Copied image %s to work_dir", ref_path.name)
+                logger.info("Copied image %s to work_dir (flat)", ref_path.name)
                 break
 
     md_path.write_text(md_text, encoding="utf-8")
