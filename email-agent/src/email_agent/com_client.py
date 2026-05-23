@@ -143,10 +143,28 @@ class OutlookCOM:
         if save_attachments_to and item.Attachments.Count > 0:
             att_dir = Path(save_attachments_to)
             att_dir.mkdir(parents=True, exist_ok=True)
+            seen_names: dict[str, int] = {}
             for i in range(item.Attachments.Count):
                 att = item.Attachments.Item(i + 1)
-                save_path = att_dir / att.FileName
-                att.SaveAsFile(str(save_path))
+                name = att.FileName
+                # Deduplicate filenames (inline images often repeat)
+                count = seen_names.get(name, 0)
+                seen_names[name] = count + 1
+                if count > 0:
+                    stem = Path(name).stem
+                    suffix = Path(name).suffix
+                    name = f"{stem}_{count}{suffix}"
+                save_path = att_dir / name
+                try:
+                    att.SaveAsFile(str(save_path))
+                except OSError as e:
+                    logger.warning(
+                        "Cannot save attachment %s: %s (cloud/linked?)",
+                        att.FileName,
+                        e,
+                    )
+                    result["attachments"][i]["error"] = str(e)
+                    continue
                 result["attachments"][i]["saved_path"] = str(save_path)
                 logger.info("Saved attachment: %s", save_path)
 
@@ -165,12 +183,18 @@ class OutlookCOM:
             "attachment_count": item.Attachments.Count,
             "attachments": [],
         }
+        PR_ATTACH_FLAGS = "http://schemas.microsoft.com/mapi/proptag/0x37140003"
         for i in range(item.Attachments.Count):
             att = item.Attachments.Item(i + 1)
+            try:
+                inline = att.PropertyAccessor.GetProperty(PR_ATTACH_FLAGS) == 4
+            except Exception:
+                inline = False
             d["attachments"].append(
                 {
                     "filename": att.FileName,
                     "size": att.Size,
+                    "inline": inline,
                     "saved_path": None,
                 }
             )
