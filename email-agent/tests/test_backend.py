@@ -343,7 +343,7 @@ class TestToolExecution:
 
         tools = get_email_tools(service)
         reply = next(t for t in tools if t.name == "draft_reply")
-        result = asyncio.run(reply._arun(query="Hello", body="Thanks!"))
+        result = asyncio.run(reply._arun(uid="msg-123", body="Thanks!"))
         assert "reply draft created" in result
 
 

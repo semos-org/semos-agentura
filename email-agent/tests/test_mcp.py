@@ -200,7 +200,7 @@ async def test_draft_reply(service):
     async with mcp_client_for(service) as client:
         result = await client.call_tool(
             "draft_reply",
-            {"query": "test", "body": "Thanks!"},
+            {"uid": "msg-123", "body": "Thanks!"},
         )
         data = parse_tool_result(result)
         assert data["status"] == "reply draft created"
@@ -211,7 +211,7 @@ async def test_send_reply(service):
     async with mcp_client_for(service) as client:
         result = await client.call_tool(
             "send_reply",
-            {"query": "test", "body": "Thanks!"},
+            {"uid": "msg-123", "body": "Thanks!"},
         )
         data = parse_tool_result(result)
         assert data["status"] == "reply sent"

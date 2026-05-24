@@ -87,8 +87,8 @@ class EmailBackend(Protocol):
     def list_drafts(self, limit: int = 25) -> list[EmailMessage]: ...
 
     # Reply
-    def draft_reply(self, uid: str, body: str) -> str: ...
-    def send_reply(self, uid: str, body: str) -> None: ...
+    def draft_reply(self, uid: str, body: str, reply_all: bool = True) -> str: ...
+    def send_reply(self, uid: str, body: str, reply_all: bool = True) -> None: ...
 
     # Flags
     def mark_as_read(self, uid: str) -> None: ...
@@ -284,7 +284,7 @@ class IMAPBackend:
 
     # Reply
 
-    def draft_reply(self, uid: str, body: str) -> str:
+    def draft_reply(self, uid: str, body: str, reply_all: bool = True) -> str:
         """Create a reply draft via IMAP - compose new message with In-Reply-To."""
         client = self._ensure_client()
         original = client.get_message(uid)
@@ -303,6 +303,8 @@ class IMAPBackend:
         msg = MIMEMultipart("mixed")
         msg["From"] = self._settings.email_address or ""
         msg["To"] = original.sender
+        if reply_all and original.cc:
+            msg["Cc"] = original.cc
         msg["Subject"] = subject
         if original.message_id:
             msg["In-Reply-To"] = original.message_id
@@ -316,7 +318,7 @@ class IMAPBackend:
         status, _ = imap._imap.append(drafts_folder, "\\Draft", None, raw)
         return ""
 
-    def send_reply(self, uid: str, body: str) -> None:
+    def send_reply(self, uid: str, body: str, reply_all: bool = True) -> None:
         """Send a reply via SMTP."""
         client = self._ensure_client()
         original = client.get_message(uid)
@@ -326,7 +328,11 @@ class IMAPBackend:
 
         quoted = "\n".join(f"> {line}" for line in original.body.splitlines())
         reply_body = f"{body}\n\n{quoted}"
-        client.send(to=[original.sender], subject=subject, body=reply_body, body_type="plain")
+        recipients = [original.sender]
+        cc = []
+        if reply_all and original.cc:
+            cc = [addr.strip() for addr in original.cc.split(",") if addr.strip()]
+        client.send(to=recipients, subject=subject, body=reply_body, body_type="plain", cc=cc)
 
     # Flags
 
@@ -508,17 +514,17 @@ if sys.platform == "win32":
 
         # Reply
 
-        def draft_reply(self, uid: str, body: str) -> str:
+        def draft_reply(self, uid: str, body: str, reply_all: bool = True) -> str:
             item = self._com._ns.GetItemFromID(uid)
-            reply = item.Reply()
+            reply = item.ReplyAll() if reply_all else item.Reply()
             existing = str(reply.Body or "")
             reply.Body = body + "\n\n" + existing
             reply.Save()
             return reply.EntryID
 
-        def send_reply(self, uid: str, body: str) -> None:
+        def send_reply(self, uid: str, body: str, reply_all: bool = True) -> None:
             item = self._com._ns.GetItemFromID(uid)
-            reply = item.Reply()
+            reply = item.ReplyAll() if reply_all else item.Reply()
             existing = str(reply.Body or "")
             reply.Body = body + "\n\n" + existing
             reply.Send()

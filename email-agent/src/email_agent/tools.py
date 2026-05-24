@@ -141,8 +141,9 @@ class SendEventInput(EventInput):
 
 
 class ReplyInput(BaseModel):
-    query: str = Field(description="Search term to find the email to reply to.")
+    uid: str = Field(description="UID of the email to reply to (from search_emails/read_email results).")
     body: str = Field(description="Reply body text.")
+    reply_all: bool = Field(default=True, description="Reply to all recipients including CC (default: true).")
 
 
 # Date range helper
@@ -485,7 +486,7 @@ class SendEventTool(AgentTool):
 
 class DraftReplyTool(AgentTool):
     name: str = "draft_reply"
-    description: str = "Create a reply draft to the most recent email matching a query."
+    description: str = "Create a reply draft to a specific email by UID."
     args_schema: type[BaseModel] = ReplyInput
 
     async def _arun(self, **kwargs: Any) -> str:
@@ -493,23 +494,15 @@ class DraftReplyTool(AgentTool):
         body = md_to_plain(inp.body)
 
         def do(backend):
-            msgs = backend.search_emails(inp.query, limit=1)
-            if not msgs:
-                return {"error": "No emails found"}
-            uid = msgs[0].uid
-            backend.draft_reply(uid, body)
-            return {
-                "status": "reply draft created",
-                "to": msgs[0].sender_name or msgs[0].sender,
-                "subject": msgs[0].subject,
-            }
+            backend.draft_reply(inp.uid, body, reply_all=inp.reply_all)
+            return {"status": "reply draft created", "uid": inp.uid}
 
         return json.dumps(await self._service.run_sync(do))
 
 
 class SendReplyTool(AgentTool):
     name: str = "send_reply"
-    description: str = "Reply to the most recent email matching a query and send immediately."
+    description: str = "Reply to a specific email by UID and send immediately."
     args_schema: type[BaseModel] = ReplyInput
     destructive: bool = True
 
@@ -518,16 +511,8 @@ class SendReplyTool(AgentTool):
         body = md_to_plain(inp.body)
 
         def do(backend):
-            msgs = backend.search_emails(inp.query, limit=1)
-            if not msgs:
-                return {"error": "No emails found"}
-            uid = msgs[0].uid
-            backend.send_reply(uid, body)
-            return {
-                "status": "reply sent",
-                "to": msgs[0].sender_name or msgs[0].sender,
-                "subject": msgs[0].subject,
-            }
+            backend.send_reply(inp.uid, body, reply_all=inp.reply_all)
+            return {"status": "reply sent", "uid": inp.uid}
 
         return json.dumps(await self._service.run_sync(do))
 
