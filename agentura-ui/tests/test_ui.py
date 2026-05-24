@@ -96,7 +96,7 @@ import pytest  # noqa: E402
 @pytest.fixture()
 def full_app(page: Page):
     """Launch full Panelini app with fake tools, VFS tree, no agents."""
-    from agentura_ui.__main__ import _wrap_chat_callback
+    from agentura_ui.__main__ import _wrap_chat_callback, setup_chat_interface
     from agentura_ui.file_registry import VFSFileRegistry
     from filesystem_agent.panel_tree import VFSTreeBrowser
     from filesystem_agent.vfs import VirtualFileSystem
@@ -156,6 +156,7 @@ def full_app(page: Page):
         registry,
         pending,
     )
+    setup_chat_interface(frontend.chat_interface)
 
     # VFS tree browser for sidebar
     tree_browser = VFSTreeBrowser(vfs, preload_depth=2)
@@ -519,6 +520,33 @@ def test_vfs_tree_multiple_files(full_app):
     ).to_be_visible(timeout=5000)
 
 
+def test_vfs_uri_in_chat_renders_as_text(full_app):
+    """VFS URIs in user messages render as text, not broken images.
+
+    Panel's auto-pane detects .png/.jpg extensions and renders
+    strings as Image panes. The renderers=[Markdown] fix prevents
+    this so 'edit session://cat.png' stays as text.
+    """
+    page = full_app["page"]
+
+    expect(
+        page.locator("text=session"),
+    ).to_be_visible(timeout=15000)
+
+    # Type a message containing a VFS URI with .png extension
+    chat_input = page.locator("textarea").first
+    chat_input.fill("add a tiger to session://cat_image.png")
+    chat_input.press("Enter")
+
+    # The user message should appear as text, not as a broken image
+    user_msg = page.locator("text=add a tiger to session://cat_image.png")
+    expect(user_msg).to_be_visible(timeout=10000)
+
+    # Verify no <img> tag was created from the user message
+    broken_img = page.locator('img[src*="session://"]')
+    expect(broken_img).to_have_count(0)
+
+
 # VFS + MCP roundtrip test (in-process filesystem-agent)
 
 
@@ -536,7 +564,7 @@ def vfs_mcp_app(page: Page):
 
     import uvicorn
     from agentura_commons import create_app as create_agent_app
-    from agentura_ui.__main__ import _wrap_chat_callback
+    from agentura_ui.__main__ import _wrap_chat_callback, setup_chat_interface
     from agentura_ui.file_registry import VFSFileRegistry
     from filesystem_agent.panel_tree import VFSTreeBrowser
     from filesystem_agent.service import FilesystemAgentService
@@ -600,6 +628,7 @@ def vfs_mcp_app(page: Page):
         registry,
         pending,
     )
+    setup_chat_interface(frontend.chat_interface)
 
     tree_browser = VFSTreeBrowser(vfs, preload_depth=2)
 

@@ -160,6 +160,17 @@ def _build_agents() -> list[AgentConnection]:
     return agents
 
 
+def setup_chat_interface(chat_interface):
+    """Configure ChatInterface rendering. Call after creating Frontend.
+
+    Prevents Panel from auto-detecting .png/.jpg in text and
+    rendering user messages as broken Image panes.
+    """
+    from panel.pane import Markdown
+
+    chat_interface.renderers = [Markdown]
+
+
 def _wrap_chat_callback(original_callback, registry, pending_uploads, _unused=None):
     """Lightweight callback wrapper for input guards + file context.
 
@@ -599,6 +610,8 @@ def create_app() -> Panelini:
     if frontend.chat_interface.objects:
         welcome = frontend.chat_interface.objects[0]
         frontend.chat_interface.objects = [welcome]
+
+    setup_chat_interface(frontend.chat_interface)
 
     # VFS tree browser (sidebar file manager)
     pending_uploads: list[str] = []
