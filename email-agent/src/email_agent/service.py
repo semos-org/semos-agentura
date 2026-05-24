@@ -102,22 +102,23 @@ class EmailAgentService(BaseAgentService):
         """Run fn(backend) on the appropriate thread.
 
         COM: dedicated worker thread (apartment-threaded).
-        IMAP: asyncio.to_thread (thread-safe).
+        IMAP/Graph: asyncio.to_thread (thread-safe).
+        Pre-injected mock: used directly (tests).
         """
+        # If backend already injected (mock or previous init), use it
+        if self._backend_instance is not None:
+            return await asyncio.to_thread(fn, self._backend_instance)
         if self._settings.detected_backend == "com":
             if self._com_worker is None:
                 self._com_worker = _COMWorker(self._settings)
             return await self._com_worker.run(fn)
-        else:
-            if self._backend_instance is None:
-                self._backend_instance = create_backend(self._settings)
-                self._backend_instance.connect()
-                logger.info(
-                    "Backend connected: %s",
-                    self._settings.detected_backend,
-                )
-            backend = self._backend_instance
-            return await asyncio.to_thread(fn, backend)
+        self._backend_instance = create_backend(self._settings)
+        self._backend_instance.connect()
+        logger.info(
+            "Backend connected: %s",
+            self._settings.detected_backend,
+        )
+        return await asyncio.to_thread(fn, self._backend_instance)
 
     @property
     def agent_name(self) -> str:
