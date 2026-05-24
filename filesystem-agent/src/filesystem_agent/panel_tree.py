@@ -281,6 +281,15 @@ class VFSTreeBrowser:
         return source
 
     def _tree_add_node(self, parent_key: str, name: str, uri: str, size: int = 0):
+        data: dict[str, str] = {"size": _format_size(size)}
+        try:
+            info = self.vfs.info(uri)
+            mod = info.get("modified")
+            if mod:
+                data["modified"] = _format_modified(mod)
+        except Exception:
+            pass
+
         if self.vfs.is_archive(uri):
             self.tree.add_node(
                 parent_key,
@@ -289,11 +298,12 @@ class VFSTreeBrowser:
                     "key": uri,
                     "icon": "bi bi-file-earmark-zip",
                     "lazy": True,
-                    "size": _format_size(size),
+                    **data,
                 },
             )
         else:
-            self.tree.add_file(parent_key, name, data={"size": _format_size(size)}, key=uri)
+            data["icon"] = _icon_for_file(name)
+            self.tree.add_file(parent_key, name, data=data, key=uri)
 
     # Event handling
 
@@ -502,9 +512,11 @@ class VFSTreeBrowser:
                     self.vfs.rm_archive(src_key)
                 else:
                     self.vfs.rm(src_key)
-                self.tree.update_node(src_key, {"key": dst})
-                if tgt_redirected:
-                    self.tree.move_node(dst, tgt_key, "child")
+                # update_node can't change keys in Wunderbaum JS, so
+                # remove + re-add to get the correct URI on the node.
+                self.tree.remove_node(src_key)
+                self._tree_add_node(tgt_key, basename, dst, len(data))
+                self.tree.expand_node(tgt_key, True)
                 self.status.object = f"**Moved** `{basename}` to `{dst}`"
         except Exception as e:
             self.status.object = f"**Error:** {e}"
@@ -519,10 +531,20 @@ class VFSTreeBrowser:
         new_title = params.get("newValue", "")
         if key and new_title:
             parent = key.rstrip("/").rsplit("/", 1)[0]
-            new_uri = f"{parent}/{new_title}"
+            if "://" not in parent:
+                parent = key.split("://")[0] + "://"
+            new_uri = f"{parent}/{new_title}" if not parent.endswith("://") else f"{parent}{new_title}"
             try:
+                is_dir = self.vfs.isdir(key)
                 self.vfs.mv(key, new_uri)
-                self.tree.update_node(key, {"key": new_uri})
+                # update_node can't change keys in Wunderbaum JS, so
+                # remove + re-add to get the correct URI on the node.
+                self.tree.remove_node(key)
+                if is_dir:
+                    self.tree.add_folder(parent, new_title, key=new_uri)
+                else:
+                    size = self.vfs.info(new_uri).get("size", 0)
+                    self._tree_add_node(parent, new_title, new_uri, size)
                 self.status.object = f"**Renamed** `{key}` to `{new_uri}`"
             except Exception as e:
                 self.status.object = f"**Rename error:** {e}"

@@ -16,7 +16,7 @@ import panel as pn
 import pytest
 from playwright.sync_api import Page, expect
 
-pytestmark = pytest.mark.integration
+pytestmark = pytest.mark.playwright
 
 
 @pytest.fixture(scope="module")
@@ -41,7 +41,7 @@ def _server_cleanup():
 
 
 def _serve_app(port: int):
-    """Import app_tree module fresh, serve it, return (server, tree, vfs)."""
+    """Import demo_tree module fresh, serve it, return (server, tree, vfs)."""
     import importlib
     import os
     import sys
@@ -50,17 +50,17 @@ def _serve_app(port: int):
     # Disable SharePoint during tests
     os.environ["SKIP_SHAREPOINT"] = "1"
 
-    project_root = str(Path(__file__).parent.parent)
-    if project_root not in sys.path:
-        sys.path.insert(0, project_root)
+    examples_dir = str(Path(__file__).parent.parent / "examples")
+    if examples_dir not in sys.path:
+        sys.path.insert(0, examples_dir)
 
-    import app_tree
+    import demo_tree
 
-    importlib.reload(app_tree)
-    app = app_tree.template
+    importlib.reload(demo_tree)
+    app = demo_tree.template
     server = pn.serve(app, port=port, threaded=True, show=False)
     time.sleep(0.3)
-    return server, app_tree.tree, app_tree.vfs
+    return server, demo_tree.browser.tree, demo_tree.vfs
 
 
 def _open_app(page: Page, port: int):
@@ -244,10 +244,10 @@ def test_drop_move(page: Page, port: int):
     server, tree, vfs = _serve_app(port)
     try:
         _open_app(page, port)
-        import app_tree
+        import demo_tree
 
         # Simulate moving README.md into images/
-        app_tree.on_tree_event(
+        demo_tree.browser.on_tree_event(
             "drop",
             {
                 "sourceKey": "local://README.md",
@@ -275,13 +275,13 @@ def test_drop_copy(page: Page, port: int):
     server, tree, vfs = _serve_app(port)
     try:
         _open_app(page, port)
-        import app_tree
+        import demo_tree
 
         initial_texts = _get_row_texts(page)
         readme_count_before = initial_texts.count("README.md")
 
         # Simulate Ctrl+drop of README.md into images/
-        app_tree.on_tree_event(
+        demo_tree.browser.on_tree_event(
             "drop",
             {
                 "sourceKey": "local://README.md",
@@ -301,6 +301,77 @@ def test_drop_copy(page: Page, port: int):
         texts = _get_row_texts(page)
         readme_count_after = texts.count("README.md")
         assert readme_count_after == readme_count_before + 1
+    finally:
+        server.stop()
+
+
+def test_rename_updates_node_key(page: Page, port: int):
+    """After inline rename, clicking the node should report the NEW URI."""
+    server, tree, vfs = _serve_app(port)
+    try:
+        _open_app(page, port)
+        import demo_tree
+
+        # Simulate renaming README.md to CHANGELOG.md
+        demo_tree.browser.on_tree_event(
+            "edit.apply",
+            {"key": "local://README.md", "newValue": "CHANGELOG.md"},
+        )
+        time.sleep(1)
+
+        # VFS: file should exist at new name
+        info = vfs.info("local://CHANGELOG.md")
+        assert info["type"] == "file"
+
+        # Tree: click renamed node and verify URI
+        renamed_row = page.locator("css=.wb-row .wb-title", has_text="CHANGELOG.md").first
+        renamed_row.click()
+        time.sleep(1)
+
+        uri_input = page.locator("input[type='text']").first
+        value = uri_input.input_value()
+        assert "local://CHANGELOG.md" in value, f"Node key not updated after rename: got {value!r}"
+    finally:
+        server.stop()
+
+
+def test_drop_move_updates_node_key(page: Page, port: int):
+    """After move, clicking the moved node should report the NEW URI, not the old."""
+    server, tree, vfs = _serve_app(port)
+    try:
+        _open_app(page, port)
+        import demo_tree
+
+        src = "local://documents/budget.csv"
+        dst_folder = "local://images"
+
+        # Verify source exists before move
+        assert vfs.info(src)["type"] == "file"
+
+        demo_tree.browser.on_tree_event(
+            "drop",
+            {
+                "sourceKey": src,
+                "targetKey": dst_folder,
+                "region": "over",
+            },
+        )
+        time.sleep(1)
+
+        # VFS: file should be at new location
+        entries = [e["name"] for e in vfs.ls(dst_folder)]
+        assert "budget.csv" in entries
+
+        # Tree: click the moved node and verify the activate event reports new key
+        moved_row = page.locator("css=.wb-row .wb-title", has_text="budget.csv").first
+        moved_row.click()
+        time.sleep(1)
+
+        uri_input = page.locator("input[type='text']").first
+        value = uri_input.input_value()
+        assert "local://images/budget.csv" in value, (
+            f"Node key not updated after move: got {value!r}, expected 'local://images/budget.csv'"
+        )
     finally:
         server.stop()
 
