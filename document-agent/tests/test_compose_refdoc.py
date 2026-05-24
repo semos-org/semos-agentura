@@ -6,12 +6,15 @@ from pathlib import Path
 from zipfile import ZipFile
 
 import pytest
+from document_agent._utils import find_tool
 from document_agent.models import OutputFormat
 
+needs_pandoc = pytest.mark.skipif(find_tool("pandoc") is None, reason="pandoc not installed")
 
-@pytest.mark.integration
+
+@needs_pandoc
 class TestComposeReferenceDoc:
-    """Integration tests - require pandoc."""
+    """Tests for compose with reference doc - require pandoc."""
 
     def test_compose_docx_with_reference_doc(self, sample_reference_docx: Path, tmp_path: Path):
         from document_agent.composition.compose import compose

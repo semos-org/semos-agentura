@@ -51,8 +51,11 @@ jobs:
       - name: Install Python dependencies
         run: uv sync --all-packages
 
+      - name: Install Playwright browsers
+        run: uv run playwright install --with-deps chromium
+
       - name: Run tests (CI tier)
-        timeout-minutes: 5
+        timeout-minutes: 8
         run: |
           for pkg in agentura-commons email-agent document-agent filesystem-agent; do
             echo "=== $pkg ==="

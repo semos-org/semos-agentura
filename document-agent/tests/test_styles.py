@@ -6,6 +6,7 @@ from pathlib import Path
 from zipfile import ZipFile
 
 import pytest
+from document_agent._utils import find_tool
 from document_agent.composition._reference_doc import (
     generate_reference_doc,
     parse_styles_from_markdown,
@@ -194,10 +195,10 @@ class TestGenerateReferenceDoc:
             assert "264" in xml
 
 
-# Integration tests - require pandoc
+# Tests requiring pandoc
 
 
-@pytest.mark.integration
+@pytest.mark.skipif(find_tool("pandoc") is None, reason="pandoc not installed")
 class TestStyleRoundTrip:
     def test_digest_extracts_styles_as_frontmatter(self, sample_reference_docx: Path, tmp_path: Path):
         from document_agent.digestion._docx_digest import digest_docx_with_pandoc

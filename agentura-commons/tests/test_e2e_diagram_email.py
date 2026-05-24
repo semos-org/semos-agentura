@@ -98,7 +98,7 @@ class TestDiagramToEmailDraft:
             draft_result = await client.call_tool(
                 "create_draft",
                 {
-                    "to": "test@example.com",
+                    "to": [{"name": "Test", "email": "test@example.com"}],
                     "subject": "Diagram Report",
                     "body": "Please find the report attached.",
                     "attachments": [

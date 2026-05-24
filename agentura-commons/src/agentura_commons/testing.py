@@ -10,7 +10,7 @@ import threading
 import time
 from datetime import datetime
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 from zipfile import ZipFile
 
 import uvicorn
@@ -30,7 +30,6 @@ def _patch_email_service_mock_backend():
     Works on both Windows (has COM) and Linux (no COM).
     """
     from email_agent.models import EmailMessage
-    from email_agent.tools import ToolExecutor
 
     backend = MagicMock()
     backend.search_emails.return_value = [
@@ -47,27 +46,22 @@ def _patch_email_service_mock_backend():
     backend.read_email.return_value = backend.search_emails.return_value[0]
     backend.create_draft.return_value = "DRAFT-001"
     backend.calendar = None
+    backend.connect = MagicMock()
 
     # Patch create_backend to return our mock before any import
     # of email_agent.service (which creates _service at module level).
     import email_agent.backend as backend_mod
 
     backend_mod.create_backend = lambda *a, **k: backend
-    backend.connect = MagicMock()
 
     # Import service - on first import _service is created, but
-    # _ensure_executor() is lazy so it hasn't called create_backend yet.
+    # _run_on_backend() is lazy so it hasn't called create_backend yet.
     import email_agent.service as svc_mod
 
     service = svc_mod._service
 
-    # Inject a mock _AsyncExecutor that uses our mock backend directly.
-    mock_exec = MagicMock()
-    mock_exec.execute = AsyncMock(
-        side_effect=lambda name, args: ToolExecutor(backend).execute(name, args),
-    )
-    service._executor_impl = mock_exec
-    service._backend = backend
+    # Inject mock backend directly so _run_on_backend uses it.
+    service._backend_instance = backend
 
 
 def start_agent(agent_module: str, port: int):

@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from document_agent._utils import find_tool
 from document_agent.digestion._docx_digest import (
     _inline_images_as_base64,
     _normalize_pandoc_images,
@@ -119,10 +120,10 @@ class TestMarkdownPostProcessing:
         assert "| A | B |" in md
 
 
-# Integration tests - require pandoc
+# Tests requiring pandoc
 
 
-@pytest.mark.integration
+@pytest.mark.skipif(find_tool("pandoc") is None, reason="pandoc not installed")
 class TestDigestDocxPandoc:
     def test_basic_text_extraction(self, sample_docx_rich: Path, tmp_path: Path):
         result = digest_docx_with_pandoc(
@@ -223,7 +224,7 @@ class TestDigestDocxPandoc:
             )
 
 
-@pytest.mark.integration
+@pytest.mark.skipif(find_tool("pandoc") is None, reason="pandoc not installed")
 class TestDigestRoutingDocx:
     """Test that digest() routes DOCX to pandoc path."""
 

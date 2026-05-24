@@ -6,6 +6,7 @@ import textwrap
 from pathlib import Path
 
 import pytest
+from document_agent._utils import find_tool
 from document_agent.composition._editable_slides import (
     _convert_html_columns,
     _is_marp,
@@ -404,7 +405,7 @@ class TestSlideToPandoc:
 # ------------------------------------------------------------------
 
 
-@pytest.mark.integration
+@pytest.mark.skipif(find_tool("pandoc") is None, reason="pandoc not installed")
 class TestComposeEditableSlides:
     def test_marp_to_pptx(self, marp_file: Path, tmp_path: Path) -> None:
         from document_agent.composition._editable_slides import (

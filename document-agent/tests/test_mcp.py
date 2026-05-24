@@ -188,10 +188,8 @@ _needs_pandoc = pytest.mark.skipif(
     not find_tool("pandoc"),
     reason="pandoc not installed",
 )
-_integration = pytest.mark.integration
 
 
-@_integration
 @_needs_pandoc
 @pytest.mark.asyncio
 async def test_compose_docx(service):
@@ -209,12 +207,12 @@ async def test_compose_docx(service):
         assert data["filename"].endswith(".docx")
         assert data["mime_type"] is not None
         assert isinstance(data["size_bytes"], int) and data["size_bytes"] > 0
-        # filename is the display name (not UUID-prefixed)
-        disk_name = data["filename"]
-        assert (service.output_dir / disk_name).exists()
+        # filename is the display name; disk file has UUID prefix
+        display_name = data["filename"]
+        matches = list(service.output_dir.glob(f"*{display_name}"))
+        assert matches, f"No file matching *{display_name} in {service.output_dir}"
 
 
-@_integration
 @_needs_pandoc
 @pytest.mark.asyncio
 async def test_compose_with_explicit_filename(service):
@@ -258,7 +256,7 @@ async def test_generate_diagram_mocked(service):
             assert data["iterations"] == 1
 
 
-@_integration
+@pytest.mark.integration
 @needs_llm
 @pytest.mark.asyncio
 async def test_generate_diagram_real(service):
@@ -276,7 +274,7 @@ async def test_generate_diagram_real(service):
 # digest_document via MCP
 
 
-@_integration
+@pytest.mark.integration
 @needs_llm
 @pytest.mark.asyncio
 async def test_digest_document_real(service, sample_png):
@@ -294,7 +292,6 @@ async def test_digest_document_real(service, sample_png):
 # compose_document format=html (no external tools needed)
 
 
-@_integration
 @_needs_pandoc
 @pytest.mark.asyncio
 async def test_compose_html(service):
@@ -342,7 +339,7 @@ async def test_compose_missing_format(service):
 # generate_image integration tests
 
 
-@_integration
+@pytest.mark.integration
 @needs_image_gen
 @pytest.mark.asyncio
 async def test_generate_image_real(service):
@@ -363,7 +360,7 @@ async def test_generate_image_real(service):
         assert data["size"][1] > 0
 
 
-@_integration
+@pytest.mark.integration
 @needs_image_gen
 @pytest.mark.asyncio
 async def test_generate_image_edit_real(service, tmp_path):

@@ -9,6 +9,40 @@ from zipfile import ZipFile
 
 import pytest
 
+# Tool availability markers (shared across test files).
+# Tests using these run in CI if the tool is installed.
+
+
+def _has_tool(name: str) -> bool:
+    from document_agent._utils import find_tool
+
+    return find_tool(name) is not None
+
+
+def _has_libre_office() -> bool:
+    from document_agent.digestion._office import _find_libreoffice
+    from document_agent.exceptions import ToolNotFoundError
+
+    try:
+        _find_libreoffice(None)
+        return True
+    except ToolNotFoundError:
+        return False
+
+
+def _find_browser():
+    from document_agent.composition._slides import _find_browser
+
+    return _find_browser()
+
+
+needs_marp = pytest.mark.skipif(not _has_tool("marp"), reason="marp not installed")
+needs_mmdc = pytest.mark.skipif(not _has_tool("mmdc"), reason="mmdc not installed")
+needs_pandoc = pytest.mark.skipif(not _has_tool("pandoc"), reason="pandoc not installed")
+needs_drawio = pytest.mark.skipif(not _has_tool("drawio"), reason="drawio not installed")
+needs_libreoffice = pytest.mark.skipif(not _has_libre_office(), reason="LibreOffice not found")
+needs_browser = pytest.mark.skipif(_find_browser() is None, reason="No browser for Marp PDF/PPTX")
+
 
 @pytest.fixture
 def tmp_dir(tmp_path: Path) -> Path:

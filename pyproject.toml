@@ -33,7 +33,8 @@ asyncio_mode = "strict"
 # Each package runs tests from its own dir (cd pkg && uv run pytest tests/)
 # to pick up its own pyproject.toml [tool.pytest] config and conftest.py.
 markers = [
-    "integration: requires external deps (COM, IMAP, pandoc, LLM API) - run with -m integration",
+    "integration: requires real backend credentials (COM, IMAP, SharePoint, LLM API keys) - excluded in CI",
+    "playwright: uses Playwright browser automation (chromium installed in CI)",
 ]
 
 [tool.ruff]
