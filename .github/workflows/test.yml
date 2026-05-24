@@ -46,7 +46,7 @@ jobs:
       - run: uv python install 3.13
 
       - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y pandoc
+        run: sudo apt-get update && sudo apt-get install -y pandoc libmagic1
 
       - name: Install Python dependencies
         run: uv sync --all-packages
