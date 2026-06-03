@@ -140,9 +140,11 @@ async def test_file_params_have_x_file_annotation(service):
         fill = tools_by_name["fill_form"]
         assert fill.inputSchema["properties"]["file_path"].get("x-file") is True
 
-        # compose_document should NOT have x-file (source is markdown text)
+        # compose_document.source_file should have x-file
         compose = tools_by_name["compose_document"]
-        assert compose.inputSchema["properties"]["source"].get("x-file") is None
+        assert compose.inputSchema["properties"]["source_file"].get("x-file") is True
+        # compose_document.source_markdown should NOT have x-file
+        assert compose.inputSchema["properties"]["source_markdown"].get("x-file") is None
 
 
 # inspect_form via MCP

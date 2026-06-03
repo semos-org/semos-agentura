@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from agentura_commons import AgentTool, FileAttachment, NamedFile, ToolResult
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from . import (
     MergeConfig,
@@ -84,9 +84,26 @@ class DigestInput(BaseModel):
 
 
 class ComposeInput(BaseModel):
-    source: str = Field(
-        description="Path to a .md file, or raw Markdown content.",
+    source_file: FileAttachment | str = Field(
+        default="",
+        description="Markdown file to compose (file path or upload). Provide this OR source_markdown.",
+        json_schema_extra={"x-file": True},
     )
+    source_markdown: str = Field(
+        default="",
+        description="Raw Markdown text to compose. Provide this OR source_file.",
+    )
+
+    @model_validator(mode="after")
+    def _exactly_one_source(self) -> ComposeInput:
+        has_file = bool(self.source_file)
+        has_md = bool(self.source_markdown)
+        if not has_file and not has_md:
+            raise ValueError("Provide either source_file or source_markdown")
+        if has_file and has_md:
+            raise ValueError("Provide source_file or source_markdown, not both")
+        return self
+
     format: str = Field(
         description="Output format: 'pdf', 'pptx', 'docx', or 'html'.",
     )
@@ -338,11 +355,11 @@ class ComposeDocumentTool(AgentTool):
         safe_name = f"{uuid.uuid4().hex[:8]}_{filename}"
         out_path = svc.output_dir / safe_name
 
-        source = kwargs["source"]
-        source_path = Path(source)
-        if not source_path.exists():
+        if kwargs.get("source_file"):
+            source_path = svc.resolve_file_attachment(kwargs["source_file"], ".md")
+        else:
             tmp_md = svc.output_dir / f"_source_{filename}.md"
-            tmp_md.write_text(source, encoding="utf-8")
+            tmp_md.write_text(kwargs["source_markdown"], encoding="utf-8")
             source_path = tmp_md
 
         ref_path = None
