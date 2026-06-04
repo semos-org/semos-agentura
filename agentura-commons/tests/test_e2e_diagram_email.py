@@ -86,7 +86,7 @@ class TestDiagramToEmailDraft:
             result = await client.call_tool(
                 "compose_document",
                 {
-                    "source": "# Test Diagram\n\nA to Z flow.",
+                    "source_markdown": "# Test Diagram\n\nA to Z flow.",
                     "format": "html",
                 },
             )
@@ -128,7 +128,7 @@ class TestDiagramToEmailDraft:
             r1 = await client.call_tool(
                 "compose_document",
                 {
-                    "source": "# Hello\n\nWorld.",
+                    "source_markdown": "# Hello\n\nWorld.",
                     "format": "docx",
                 },
             )

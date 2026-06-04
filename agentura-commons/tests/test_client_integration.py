@@ -124,7 +124,7 @@ class TestDocumentAgent:
         ) as client:
             result = await client.call_tool(
                 "compose_document",
-                {"source": "# Test\n\nHello.", "format": "html"},
+                {"source_markdown": "# Test\n\nHello.", "format": "html"},
             )
             assert not result.is_error, result.text
             assert len(result.files) == 1
@@ -147,7 +147,7 @@ class TestDocumentAgent:
             result = await client.call_tool(
                 "compose_document",
                 {
-                    "source": "# Report\n\nContent.",
+                    "source_markdown": "# Report\n\nContent.",
                     "format": "docx",
                     "filename": "report.docx",
                 },
@@ -165,7 +165,7 @@ class TestDocumentAgent:
             compose = await client.call_tool(
                 "compose_document",
                 {
-                    "source": "# Round Trip\n\nVerify content.",
+                    "source_markdown": "# Round Trip\n\nVerify content.",
                     "format": "docx",
                 },
             )

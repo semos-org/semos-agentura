@@ -202,7 +202,7 @@ class TestA2AToolCalls:
         client = await _connect(self.base_url)
         msg = _tool_call_message(
             "compose_document",
-            {"source": "# A2A Test\n\nHello.", "format": "html"},
+            {"source_markdown": "# A2A Test\n\nHello.", "format": "html"},
         )
         text, files = await _send_and_collect(client, msg)
         # Should produce a result
@@ -286,7 +286,7 @@ class TestA2ANaturalLanguage:
         self._mock_responses.append(
             (
                 "compose_document",
-                {"source": "# NL Test\n\nGenerated.", "format": "html"},
+                {"source_markdown": "# NL Test\n\nGenerated.", "format": "html"},
             )
         )
         client = await _connect(self.base_url)
@@ -356,7 +356,7 @@ class TestA2AFileRoundTrip:
         # Step 1: Compose
         compose_msg = _tool_call_message(
             "compose_document",
-            {"source": "# Round Trip\n\nContent.", "format": "docx"},
+            {"source_markdown": "# Round Trip\n\nContent.", "format": "docx"},
         )
         compose_text, compose_files = await _send_and_collect(
             client,
@@ -460,7 +460,7 @@ class TestA2AJsonRpc:
         client = await ClientFactory.connect(self.base_url)
         msg = _tool_call_message(
             "compose_document",
-            {"source": "# RPC Test\n\nHello.", "format": "html"},
+            {"source_markdown": "# RPC Test\n\nHello.", "format": "html"},
         )
         text, files = await _send_and_collect(client, msg)
         assert text or files
