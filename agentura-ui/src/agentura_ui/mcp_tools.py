@@ -151,10 +151,17 @@ def _make_mcp_tool_class(
         f"{safe_name}_Input",
     )
 
+    # Preserve the original MCP inputSchema so the LLM sees the full
+    # schema (oneOf, const, enum, etc.) instead of the flattened Pydantic model.
+    _raw_input_schema = schema
+
     class _Tool(BaseTool):
         name: str = prefixed
         description: str = mcp_tool.description or f"MCP tool: {mcp_tool.name}"
         args_schema: type[BaseModel] = input_model
+        # Raw MCP schema with full structure (oneOf, const, enum, pattern, etc.)
+        # Read by llm_executor._tool_schema() for Anthropic/OpenAI tool definitions.
+        mcp_input_schema: dict = _raw_input_schema
 
         class Config:
             arbitrary_types_allowed = True

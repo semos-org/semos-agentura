@@ -15,6 +15,7 @@ from agentura_ui.mcp_tools import (
 )
 from langchain_core.utils.function_calling import convert_to_openai_tool
 from mcp.types import CallToolResult, TextContent
+from mcp.types import Tool as MCPTool
 from pydantic import BaseModel
 
 # _json_schema_to_pydantic
@@ -78,12 +79,72 @@ class TestJsonSchemaToPydantic:
 
 class TestMakeMcpToolClass:
     @staticmethod
-    def _hub():
+    def _hub(agent_name="document-agent"):
         hub = MagicMock()
         agent = MagicMock()
-        agent.name = "document-agent"
+        agent.name = agent_name
         hub.agent_for_tool.return_value = agent
         return hub
+
+    def test_get_input_schema_preserves_original(self):
+        """get_input_schema must return the original MCP inputSchema,
+        not the flattened Pydantic schema. This is critical for LLMs
+        to see oneOf, const, enum, pattern, etc."""
+        rich_schema = {
+            "type": "object",
+            "required": ["name", "protocol"],
+            "oneOf": [
+                {
+                    "title": "local",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "protocol": {"const": "local"},
+                        "base_path": {"type": "string"},
+                    },
+                    "required": ["name", "protocol", "base_path"],
+                },
+                {
+                    "title": "google_drive",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "protocol": {"const": "google_drive"},
+                        "kwargs": {
+                            "type": "object",
+                            "additionalProperties": False,
+                            "properties": {
+                                "share_url": {
+                                    "type": "string",
+                                    "pattern": r"^https://(drive|docs)\.google\.com/.*$",
+                                },
+                            },
+                            "required": ["share_url"],
+                        },
+                    },
+                    "required": ["name", "protocol", "kwargs"],
+                },
+            ],
+        }
+        mcp_tool = MCPTool(
+            name="add_root",
+            description="Mount a filesystem root",
+            inputSchema=rich_schema,
+        )
+        hub = self._hub("filesystem-agent")
+        registry = FileRegistry()
+        tool = _make_mcp_tool_class(mcp_tool, hub, registry)
+
+        # mcp_input_schema must preserve the original, not flattened
+        result = tool.mcp_input_schema
+        assert "oneOf" in result, "oneOf lost - LLM won't see protocol options"
+        assert len(result["oneOf"]) == 2
+        # Check const values are preserved
+        protos = [e["properties"]["protocol"]["const"] for e in result["oneOf"]]
+        assert "local" in protos
+        assert "google_drive" in protos
+        # Check nested kwargs schema preserved
+        gd = [e for e in result["oneOf"] if e["title"] == "google_drive"][0]
+        assert gd["properties"]["kwargs"]["additionalProperties"] is False
+        assert "share_url" in gd["properties"]["kwargs"]["properties"]
 
     def test_has_correct_name(self, digest_tool):
         hub = self._hub()

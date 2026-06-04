@@ -74,7 +74,11 @@ def _detect_provider(endpoint: str) -> str:
 
 def _tool_schema(t: AgentTool) -> dict[str, Any]:
     """Convert AgentTool/BaseTool to Anthropic tool schema."""
-    schema = t.get_input_schema()
+    # Prefer the raw MCP inputSchema (preserves oneOf, const, enum, etc.)
+    # over the flattened Pydantic schema from get_input_schema().
+    schema = getattr(t, "mcp_input_schema", None)
+    if schema is None:
+        schema = t.get_input_schema()
     # BaseTool.get_input_schema() may return a Pydantic model class
     # (ModelMetaclass) instead of a dict. Convert it.
     if isinstance(schema, type):

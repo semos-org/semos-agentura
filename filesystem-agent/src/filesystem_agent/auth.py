@@ -338,23 +338,34 @@ class GoogleDriveAuth(httpx.Auth):
 
     All GDriveFolderFS / SingleFileGDriveFS instances should share a single
     instance so token refresh in one mount is visible to all others.
+    Validates at most once per 5 minutes to avoid excessive API calls.
     """
 
     def __init__(self) -> None:
         self._token: str = ""
+        self._validated_at: float = 0
 
     @property
     def token(self) -> str:
         """Return a valid token, refreshing if needed."""
+        import time
+
+        now = time.time()
+        # Skip validation if checked recently (5 min TTL)
+        if self._token and (now - self._validated_at) < 300:
+            return self._token
         if self._token and _validate_google_token(self._token):
+            self._validated_at = now
             return self._token
         # Try loading/refreshing from disk
         refreshed = _load_cached_google_token()
         if refreshed:
             self._token = refreshed
+            self._validated_at = now
             return self._token
         # Need fresh login
         self._token = _run_google_oauth_flow()
+        self._validated_at = now
         return self._token
 
     def auth_flow(self, request: httpx.Request):

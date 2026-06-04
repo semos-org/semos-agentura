@@ -457,8 +457,12 @@ class FilesystemAgentService(BaseAgentService):
         if not name:
             return json.dumps({"error": "name is required"})
 
-        # Validate protocol against schema enum
-        valid_protocols = ADD_ROOT_SCHEMA["properties"]["protocol"].get("enum", [])
+        # Validate protocol against oneOf const values
+        valid_protocols = [
+            s["properties"]["protocol"]["const"]
+            for s in ADD_ROOT_SCHEMA.get("oneOf", [])
+            if "properties" in s and "protocol" in s["properties"]
+        ]
         if valid_protocols and protocol not in valid_protocols:
             return json.dumps({"error": f"Unknown protocol '{protocol}'. Must be one of: {valid_protocols}"})
 
