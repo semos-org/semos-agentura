@@ -241,6 +241,44 @@ for _s in [
             "required": ["account_name"],
         },
     ),
+    # Google Drive - uses OAuth2 with GOOGLE_DRIVE_CLIENT_ID from .env.
+    # No extra Python packages needed (uses Drive REST API directly via httpx).
+    {
+        "type": "object",
+        "title": "google_drive",
+        "description": (
+            "Google Drive. Connects via OAuth2 (opens browser for Google login on first use, "
+            "then caches and auto-refreshes the token). No extra packages needed. "
+            "Requires GOOGLE_DRIVE_CLIENT_ID and GOOGLE_DRIVE_CLIENT_SECRET in .env "
+            "(create at console.cloud.google.com). "
+            "Supports personal Drive, shared folders, and Google Docs/Sheets/Slides export. "
+            "All connection details go in kwargs - do NOT use base_path for this protocol."
+        ),
+        "properties": {
+            "protocol": {"const": "google_drive"},
+            "kwargs": {
+                "type": "object",
+                "description": "Google Drive connection details. Only share_url is required.",
+                "additionalProperties": False,
+                "properties": {
+                    "share_url": {
+                        "type": "string",
+                        "description": (
+                            "Google Drive URL. Accepts: "
+                            "folder links (https://drive.google.com/drive/folders/ID?usp=sharing), "
+                            "file links (https://drive.google.com/file/d/ID/view?usp=sharing), "
+                            "Google Docs/Sheets/Slides links, "
+                            "or https://drive.google.com/drive/my-drive for the user's own Drive, "
+                            "or https://drive.google.com/drive/shared-with-me for all shared items."
+                        ),
+                        "pattern": r"^https://(drive|docs)\.google\.com/.*$",
+                    },
+                },
+                "required": ["share_url"],
+            },
+        },
+        "required": ["protocol", "kwargs"],
+    },
 ]:
     if _s is not None:
         _PROTOCOL_SCHEMAS.append(_s)

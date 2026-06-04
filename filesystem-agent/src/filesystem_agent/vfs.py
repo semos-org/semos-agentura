@@ -142,6 +142,329 @@ class SingleFileWebdavFS(AbstractFileSystem):
         raise NotImplementedError(f"Mode {mode} not supported for single-file WebDAV")
 
 
+class SingleFileGDriveFS(AbstractFileSystem):
+    """Virtual filesystem exposing a single Google Drive file as a browsable directory.
+
+    For regular files: download via Drive API (?alt=media).
+    For Google Docs/Sheets/Slides: export to Office format (DOCX/XLSX/PPTX).
+    """
+
+    protocol = "single-gdrive"
+
+    def __init__(self, file_id, filename, auth, item_type="file", **kwargs):
+        super().__init__(**kwargs)
+        self._file_id = file_id
+        self._filename = filename
+        self._auth = auth
+        self._item_type = item_type
+
+    def _get_client(self):
+        import httpx
+
+        return httpx.Client(auth=self._auth, follow_redirects=True, timeout=60)
+
+    def ls(self, path, detail=True, **kwargs):
+        path = path.strip("/")
+        if path in ("", self._filename):
+            info = self.info(self._filename)
+            if path == "":
+                return [info] if detail else [self._filename]
+            return info if detail else self._filename
+        raise FileNotFoundError(path)
+
+    def info(self, path, **kwargs):
+        path = path.strip("/")
+        if path == "":
+            return {"name": "", "type": "directory", "size": 0}
+        if path == self._filename:
+            size = 0
+            try:
+                with self._get_client() as c:
+                    r = c.get(
+                        f"https://www.googleapis.com/drive/v3/files/{self._file_id}",
+                        params={"fields": "size"},
+                    )
+                    if r.status_code == 200:
+                        size = int(r.json().get("size", 0))
+            except Exception:
+                pass
+            return {"name": self._filename, "type": "file", "size": size}
+        raise FileNotFoundError(path)
+
+    def cat_file(self, path, **kwargs):
+        from ._google_drive import EXPORT_MIMES
+
+        with self._get_client() as c:
+            if self._item_type in EXPORT_MIMES:
+                mime, _ = EXPORT_MIMES[self._item_type]
+                r = c.get(
+                    f"https://www.googleapis.com/drive/v3/files/{self._file_id}/export",
+                    params={"mimeType": mime},
+                )
+            else:
+                r = c.get(
+                    f"https://www.googleapis.com/drive/v3/files/{self._file_id}",
+                    params={"alt": "media"},
+                )
+            r.raise_for_status()
+            return r.content
+
+    def pipe_file(self, path, value, **kwargs):
+        from ._google_drive import EXPORT_MIMES
+
+        if self._item_type in EXPORT_MIMES:
+            raise PermissionError("Cannot write to Google Docs/Sheets/Slides exports")
+        with self._get_client() as c:
+            r = c.patch(
+                f"https://www.googleapis.com/upload/drive/v3/files/{self._file_id}",
+                params={"uploadType": "media"},
+                content=value,
+            )
+            r.raise_for_status()
+
+    def _open(self, path, mode="rb", **kwargs):
+        import io
+
+        if "r" in mode:
+            return io.BytesIO(self.cat_file(path))
+        raise NotImplementedError(f"Mode {mode} not supported for single-file Google Drive")
+
+
+class GDriveFolderFS(AbstractFileSystem):
+    """Filesystem providing read/write access to a Google Drive folder via REST API.
+
+    Uses the Drive API v3 directly (no fsspec backend dependency). Items are
+    addressed by path; internally mapped to Drive file IDs via folder traversal.
+    """
+
+    protocol = "gdrive-folder"
+
+    def __init__(self, folder_id, auth, **kwargs):
+        super().__init__(**kwargs)
+        self._root_id = folder_id
+        self._auth = auth
+        # Cache: path -> (file_id, mime_type, size, is_folder)
+        self._id_cache: dict[str, tuple[str, str, int, bool]] = {}
+
+    def _get_client(self):
+        import httpx
+
+        return httpx.Client(auth=self._auth, follow_redirects=True, timeout=60)
+
+    def _resolve_id(self, path: str) -> tuple[str, str, int, bool]:
+        """Resolve a path to (file_id, mime_type, size, is_folder)."""
+        path = path.strip("/")
+        if not path:
+            return self._root_id, "application/vnd.google-apps.folder", 0, True
+        if path in self._id_cache:
+            return self._id_cache[path]
+        # Walk path segments
+        parts = path.split("/")
+        parent_id = self._root_id
+        for i, part in enumerate(parts):
+            with self._get_client() as c:
+                r = c.get(
+                    "https://www.googleapis.com/drive/v3/files",
+                    params={
+                        "q": f"'{parent_id}' in parents and name='{part}' and trashed=false",
+                        "fields": "files(id,name,mimeType,size)",
+                        "pageSize": 1,
+                    },
+                )
+                r.raise_for_status()
+                files = r.json().get("files", [])
+                if not files:
+                    raise FileNotFoundError(path)
+                item = files[0]
+                is_folder = item["mimeType"] == "application/vnd.google-apps.folder"
+                size = int(item.get("size", 0))
+                current_path = "/".join(parts[: i + 1])
+                self._id_cache[current_path] = (item["id"], item["mimeType"], size, is_folder)
+                parent_id = item["id"]
+        return self._id_cache[path]
+
+    def ls(self, path, detail=True, **kwargs):
+        path = path.strip("/")
+        file_id, _, _, is_folder = self._resolve_id(path)
+        if not is_folder:
+            info = self.info(path)
+            return [info] if detail else [path]
+
+        entries = []
+        page_token = None
+        with self._get_client() as c:
+            while True:
+                # "sharedWithMe" is a virtual root, not a real folder
+                if file_id == "sharedWithMe":
+                    q = "sharedWithMe=true and trashed=false"
+                else:
+                    q = f"'{file_id}' in parents and trashed=false"
+                params = {
+                    "q": q,
+                    "fields": "nextPageToken,files(id,name,mimeType,size,modifiedTime)",
+                    "pageSize": 1000,
+                }
+                if page_token:
+                    params["pageToken"] = page_token
+                r = c.get("https://www.googleapis.com/drive/v3/files", params=params)
+                r.raise_for_status()
+                data = r.json()
+                for item in data.get("files", []):
+                    mime = item["mimeType"]
+                    child_is_folder = mime == "application/vnd.google-apps.folder"
+                    name = item["name"]
+                    # Add export extension to Google Workspace files
+                    from ._google_drive import EXPORT_MIMES
+
+                    for doc_type, (_, ext) in EXPORT_MIMES.items():
+                        if f"google-apps.{doc_type}" in mime and not name.endswith(ext):
+                            name += ext
+                            break
+                    child_path = f"{path}/{name}" if path else name
+                    size = int(item.get("size", 0))
+                    self._id_cache[child_path] = (item["id"], mime, size, child_is_folder)
+                    if detail:
+                        entries.append(
+                            {
+                                "name": child_path,
+                                "type": "directory" if child_is_folder else "file",
+                                "size": size,
+                            }
+                        )
+                    else:
+                        entries.append(child_path)
+                page_token = data.get("nextPageToken")
+                if not page_token:
+                    break
+        return entries
+
+    def info(self, path, **kwargs):
+        path = path.strip("/")
+        if not path:
+            return {"name": "", "type": "directory", "size": 0}
+        file_id, mime, size, is_folder = self._resolve_id(path)
+        return {
+            "name": path,
+            "type": "directory" if is_folder else "file",
+            "size": size,
+        }
+
+    def cat_file(self, path, **kwargs):
+        file_id, mime, _, _ = self._resolve_id(path)
+        from ._google_drive import EXPORT_MIMES
+
+        with self._get_client() as c:
+            # Google Workspace files need export
+            for doc_type, (export_mime, _) in EXPORT_MIMES.items():
+                if f"google-apps.{doc_type}" in mime:
+                    r = c.get(
+                        f"https://www.googleapis.com/drive/v3/files/{file_id}/export",
+                        params={"mimeType": export_mime},
+                    )
+                    r.raise_for_status()
+                    return r.content
+            # Regular file download
+            r = c.get(
+                f"https://www.googleapis.com/drive/v3/files/{file_id}",
+                params={"alt": "media"},
+            )
+            r.raise_for_status()
+            return r.content
+
+    def pipe_file(self, path, value, **kwargs):
+        path = path.strip("/")
+        try:
+            file_id, mime, _, _ = self._resolve_id(path)
+            if "google-apps" in mime:
+                raise PermissionError("Cannot overwrite Google Workspace files")
+            # Update existing file
+            with self._get_client() as c:
+                r = c.patch(
+                    f"https://www.googleapis.com/upload/drive/v3/files/{file_id}",
+                    params={"uploadType": "media"},
+                    content=value,
+                )
+                r.raise_for_status()
+        except FileNotFoundError:
+            # Create new file in parent folder
+            parts = path.rsplit("/", 1)
+            if len(parts) == 2:
+                parent_id, _, _, _ = self._resolve_id(parts[0])
+                filename = parts[1]
+            else:
+                parent_id = self._root_id
+                filename = parts[0]
+            import json as _json
+
+            with self._get_client() as c:
+                # Multipart upload: metadata + content
+                metadata = _json.dumps({"name": filename, "parents": [parent_id]})
+                r = c.post(
+                    "https://www.googleapis.com/upload/drive/v3/files",
+                    params={"uploadType": "multipart"},
+                    headers={"Content-Type": "multipart/related; boundary=boundary"},
+                    content=(
+                        b"--boundary\r\n"
+                        b"Content-Type: application/json; charset=UTF-8\r\n\r\n"
+                        + metadata.encode()
+                        + b"\r\n--boundary\r\n"
+                        b"Content-Type: application/octet-stream\r\n\r\n" + value + b"\r\n--boundary--"
+                    ),
+                )
+                r.raise_for_status()
+            # Invalidate cache for parent
+            if path in self._id_cache:
+                del self._id_cache[path]
+
+    def rm_file(self, path):
+        file_id, _, _, _ = self._resolve_id(path)
+        with self._get_client() as c:
+            r = c.delete(f"https://www.googleapis.com/drive/v3/files/{file_id}")
+            r.raise_for_status()
+        # Remove from cache
+        path = path.strip("/")
+        self._id_cache.pop(path, None)
+
+    def mkdir(self, path, create_parents=True, **kwargs):
+        path = path.strip("/")
+        parts = path.rsplit("/", 1)
+        if len(parts) == 2:
+            parent_id, _, _, _ = self._resolve_id(parts[0])
+            folder_name = parts[1]
+        else:
+            parent_id = self._root_id
+            folder_name = parts[0]
+
+        with self._get_client() as c:
+            r = c.post(
+                "https://www.googleapis.com/drive/v3/files",
+                json={"name": folder_name, "mimeType": "application/vnd.google-apps.folder", "parents": [parent_id]},
+            )
+            r.raise_for_status()
+            new_id = r.json()["id"]
+            self._id_cache[path] = (new_id, "application/vnd.google-apps.folder", 0, True)
+
+    def _open(self, path, mode="rb", **kwargs):
+        import io
+
+        if "r" in mode:
+            return io.BytesIO(self.cat_file(path))
+        if "w" in mode:
+            buf = io.BytesIO()
+            # Attach a flush-on-close that uploads via pipe_file
+            _original_close = buf.close
+            _self = self
+            _path = path
+
+            def _close():
+                _self.pipe_file(_path, buf.getvalue())
+                _original_close()
+
+            buf.close = _close
+            return buf
+        raise NotImplementedError(f"Mode {mode} not supported")
+
+
 @dataclass
 class Root:
     """A named mount point in the virtual filesystem."""
@@ -225,8 +548,8 @@ class VirtualFileSystem:
         if root_name not in self._roots:
             raise FileNotFoundError(f"No root named {root_name!r}")
         root = self._roots[root_name]
-        # Self-scoped filesystems (e.g. SingleFileWebdavFS) don't need DirFileSystem
-        if isinstance(root.fs, SingleFileWebdavFS) or not root.base_path:
+        # Self-scoped filesystems don't need DirFileSystem wrapping
+        if isinstance(root.fs, (SingleFileWebdavFS, SingleFileGDriveFS, GDriveFolderFS)) or not root.base_path:
             return root.fs
         return DirFileSystem(path=root.base_path, fs=root.fs, skip_instance_cache=True)
 

@@ -452,13 +452,23 @@ class FilesystemAgentService(BaseAgentService):
         kwargs: dict | None = None,
     ) -> str:
         """Mount a new filesystem root."""
+        from ._schemas import ADD_ROOT_SCHEMA
+
         if not name:
             return json.dumps({"error": "name is required"})
+
+        # Validate protocol against schema enum
+        valid_protocols = ADD_ROOT_SCHEMA["properties"]["protocol"].get("enum", [])
+        if valid_protocols and protocol not in valid_protocols:
+            return json.dumps({"error": f"Unknown protocol '{protocol}'. Must be one of: {valid_protocols}"})
+
         vfs = self._ensure_vfs()
         opts = kwargs or {}
 
         if protocol == "sharepoint":
             return await self._add_sharepoint_root(name, base_path, opts)
+        if protocol == "google_drive":
+            return await self._add_google_drive_root(name, opts)
 
         vfs.add_root_from_protocol(name, protocol, base_path=base_path, **opts)
         return json.dumps({"mounted": name, "protocol": protocol, "base_path": base_path})
@@ -575,6 +585,110 @@ class FilesystemAgentService(BaseAgentService):
         """List all mounted filesystem roots."""
         vfs = self._ensure_vfs()
         return json.dumps(vfs.roots_info(), ensure_ascii=False, indent=2)
+
+    async def _add_google_drive_root(self, name: str, opts: dict) -> str:
+        """Mount a Google Drive root via sharing link with browser-based auth."""
+        from ._google_drive import EXPORT_MIMES, resolve_google_drive_url
+        from .auth import extract_google_drive_auth
+        from .vfs import SingleFileGDriveFS
+
+        raw_url = opts.get("share_url", "")
+        if not raw_url:
+            return json.dumps({"error": "kwargs.share_url is required for google_drive protocol"})
+
+        target = resolve_google_drive_url(raw_url)
+        if not target.item_id:
+            return json.dumps({"error": f"Could not extract Drive item ID from: {raw_url}"})
+
+        auth = extract_google_drive_auth(raw_url)
+        if not auth.token:
+            return json.dumps({"error": "Google Drive login failed - no OAuth token obtained"})
+
+        # Resolve item metadata
+        import httpx
+
+        # Virtual roots don't have file metadata
+        if target.item_id == "root":
+            item_name = "My Drive"
+        elif target.item_id == "sharedWithMe":
+            item_name = "Shared with me"
+        else:
+            meta_r = httpx.get(
+                f"https://www.googleapis.com/drive/v3/files/{target.item_id}",
+                auth=auth,
+                params={"fields": "name,mimeType,size"},
+                follow_redirects=True,
+                timeout=15,
+            )
+            if meta_r.status_code != 200:
+                return json.dumps({"error": f"Cannot access Drive item {target.item_id}: {meta_r.status_code}"})
+            meta = meta_r.json()
+            item_name = meta.get("name", target.item_id)
+
+        if target.item_type in ("folder", "shared"):
+            # Validate access
+            if target.item_id == "sharedWithMe":
+                q = "sharedWithMe=true and trashed=false"
+            else:
+                q = f"'{target.item_id}' in parents and trashed=false"
+            list_r = httpx.get(
+                "https://www.googleapis.com/drive/v3/files",
+                auth=auth,
+                params={
+                    "q": q,
+                    "fields": "files(id,name,mimeType,size,modifiedTime)",
+                    "pageSize": 1,
+                },
+                follow_redirects=True,
+                timeout=15,
+            )
+            if list_r.status_code != 200:
+                return json.dumps({"error": f"Cannot list Drive folder: {list_r.status_code}"})
+
+            from .vfs import GDriveFolderFS
+
+            gfs = GDriveFolderFS(folder_id=target.item_id, auth=auth)
+            vfs = self._ensure_vfs()
+            vfs.add_root(name, gfs)
+            return json.dumps(
+                {
+                    "mounted": name,
+                    "protocol": "google_drive",
+                    "folder_name": item_name,
+                    "folder_id": target.item_id,
+                }
+            )
+
+        # Single file or Google Doc
+        filename = item_name
+        if target.is_google_doc and target.item_type in EXPORT_MIMES:
+            _, ext = EXPORT_MIMES[target.item_type]
+            if not filename.endswith(ext):
+                filename += ext
+
+        sfs = SingleFileGDriveFS(
+            file_id=target.item_id,
+            filename=filename,
+            auth=auth,
+            item_type=target.item_type,
+        )
+        # Validate
+        try:
+            sfs.info(filename)
+        except Exception as exc:
+            return json.dumps({"error": f"Cannot access shared file: {exc}"})
+
+        vfs = self._ensure_vfs()
+        vfs.add_root(name, sfs)
+        return json.dumps(
+            {
+                "mounted": name,
+                "protocol": "google_drive",
+                "mode": "export" if target.is_google_doc else "single-file",
+                "file_id": target.item_id,
+                "file": filename,
+            }
+        )
 
 
 # App factory

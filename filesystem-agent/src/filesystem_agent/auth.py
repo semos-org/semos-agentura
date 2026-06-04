@@ -46,8 +46,10 @@ def acquire_sharepoint_token(tenant_id: str, client_id: str, client_secret: str,
     raise RuntimeError(f"Failed to acquire SharePoint token: {error}")
 
 
-# Store session next to this module so it works regardless of cwd
-SESSION_PATH = Path(__file__).resolve().parent.parent.parent / ".tokens" / "sharepoint_session.json"
+# Store sessions next to this module so it works regardless of cwd
+_TOKENS_DIR = Path(__file__).resolve().parent.parent.parent / ".tokens"
+SESSION_PATH = _TOKENS_DIR / "sharepoint_session.json"
+GOOGLE_SESSION_PATH = _TOKENS_DIR / "google_drive_session.json"
 
 
 async def _extract_cookies_via_browser(
@@ -187,3 +189,197 @@ def extract_sharepoint_cookies(sharepoint_url: str, session_path: Path = SESSION
     except RuntimeError:
         pass  # No running loop - asyncio.run() will work fine
     return asyncio.run(_extract_cookies_via_browser(sharepoint_url, session_path))
+
+
+# Google Drive auth
+# Uses OAuth2 InstalledAppFlow: opens browser for consent, local callback server.
+# Requires GOOGLE_DRIVE_CLIENT_ID and GOOGLE_DRIVE_CLIENT_SECRET in .env.
+
+_GOOGLE_SCOPES = ["https://www.googleapis.com/auth/drive"]
+GOOGLE_TOKEN_FILE = _TOKENS_DIR / "google_drive_token.json"
+
+
+def _load_cached_google_token() -> str | None:
+    """Load cached Google OAuth token, refresh if expired."""
+    if not GOOGLE_TOKEN_FILE.exists():
+        return None
+    try:
+        data = json.loads(GOOGLE_TOKEN_FILE.read_text(encoding="utf-8"))
+        token = data.get("access_token", "")
+        if token and _validate_google_token(token):
+            return token
+        # Try refresh
+        refresh = data.get("refresh_token", "")
+        cid = data.get("client_id", "")
+        csecret = data.get("client_secret", "")
+        if refresh and cid:
+            r = httpx.post(
+                "https://oauth2.googleapis.com/token",
+                data={
+                    "grant_type": "refresh_token",
+                    "refresh_token": refresh,
+                    "client_id": cid,
+                    "client_secret": csecret,
+                },
+                timeout=10,
+            )
+            if r.status_code == 200:
+                new_token = r.json().get("access_token", "")
+                data["access_token"] = new_token
+                GOOGLE_TOKEN_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
+                print("  Google token refreshed", flush=True)
+                return new_token
+    except Exception:
+        pass
+    return None
+
+
+def _validate_google_token(token: str) -> bool:
+    """Check if a Google OAuth token is still valid."""
+    if not token:
+        return False
+    try:
+        r = httpx.get(
+            "https://www.googleapis.com/drive/v3/about?fields=user",
+            auth=BearerAuth(token),
+            follow_redirects=True,
+            timeout=10,
+        )
+        return r.status_code == 200
+    except Exception:
+        return False
+
+
+def _run_google_oauth_flow() -> str:
+    """Run OAuth2 installed app flow: opens browser, user consents, returns token."""
+    import os
+    import webbrowser
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+    from urllib.parse import parse_qs, urlparse
+
+    client_id = os.environ.get("GOOGLE_DRIVE_CLIENT_ID", "")
+    client_secret = os.environ.get("GOOGLE_DRIVE_CLIENT_SECRET", "")
+    if not client_id:
+        print("  [ERROR] GOOGLE_DRIVE_CLIENT_ID not set in .env", flush=True)
+        return ""
+
+    auth_code = None
+    redirect_port = 8085
+
+    class _Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            nonlocal auth_code
+            qs = parse_qs(urlparse(self.path).query)
+            auth_code = qs.get("code", [None])[0]
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.end_headers()
+            self.wfile.write(
+                b"<html><body><h2>Google Drive connected!</h2><p>You can close this tab.</p></body></html>"
+            )
+
+        def log_message(self, *args):
+            pass
+
+    redirect_uri = f"http://localhost:{redirect_port}"
+    auth_url = (
+        f"https://accounts.google.com/o/oauth2/auth"
+        f"?client_id={client_id}"
+        f"&redirect_uri={redirect_uri}"
+        f"&response_type=code"
+        f"&scope={'%20'.join(_GOOGLE_SCOPES)}"
+        f"&access_type=offline"
+        f"&prompt=consent"
+    )
+
+    print("  Opening browser for Google Drive authorization...", flush=True)
+    webbrowser.open(auth_url)
+
+    server = HTTPServer(("localhost", redirect_port), _Handler)
+    server.timeout = 300
+    while auth_code is None:
+        server.handle_request()
+    server.server_close()
+
+    if not auth_code:
+        return ""
+
+    # Exchange code for tokens
+    r = httpx.post(
+        "https://oauth2.googleapis.com/token",
+        data={
+            "grant_type": "authorization_code",
+            "code": auth_code,
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "redirect_uri": redirect_uri,
+        },
+        timeout=15,
+    )
+    if r.status_code != 200:
+        print(f"  [ERROR] Token exchange failed: {r.text}", flush=True)
+        return ""
+
+    token_data = r.json()
+    save_data = {
+        "access_token": token_data.get("access_token", ""),
+        "refresh_token": token_data.get("refresh_token", ""),
+        "client_id": client_id,
+        "client_secret": client_secret,
+    }
+    GOOGLE_TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
+    GOOGLE_TOKEN_FILE.write_text(json.dumps(save_data, indent=2), encoding="utf-8")
+    print("  Google Drive authorized!", flush=True)
+    return token_data.get("access_token", "")
+
+
+class GoogleDriveAuth(httpx.Auth):
+    """Shared, auto-refreshing Google Drive auth.
+
+    All GDriveFolderFS / SingleFileGDriveFS instances should share a single
+    instance so token refresh in one mount is visible to all others.
+    """
+
+    def __init__(self) -> None:
+        self._token: str = ""
+
+    @property
+    def token(self) -> str:
+        """Return a valid token, refreshing if needed."""
+        if self._token and _validate_google_token(self._token):
+            return self._token
+        # Try loading/refreshing from disk
+        refreshed = _load_cached_google_token()
+        if refreshed:
+            self._token = refreshed
+            return self._token
+        # Need fresh login
+        self._token = _run_google_oauth_flow()
+        return self._token
+
+    def auth_flow(self, request: httpx.Request):
+        t = self.token
+        if t:
+            request.headers["Authorization"] = f"Bearer {t}"
+        yield request
+
+
+# Singleton instance shared across all Google Drive mounts
+_google_drive_auth: GoogleDriveAuth | None = None
+
+
+def extract_google_drive_auth(share_url: str = "") -> GoogleDriveAuth:
+    """Get the shared Google Drive auth instance.
+
+    First call loads/refreshes cached token or runs OAuth flow.
+    Subsequent calls return the same instance (shared across all mounts).
+    """
+    global _google_drive_auth
+    if _google_drive_auth is None:
+        _google_drive_auth = GoogleDriveAuth()
+    # Ensure we have a valid token (triggers refresh/login if needed)
+    if not _google_drive_auth.token:
+        print("  [ERROR] Google Drive login failed", flush=True)
+    else:
+        print("  Using Google Drive auth (shared across mounts)", flush=True)
+    return _google_drive_auth
