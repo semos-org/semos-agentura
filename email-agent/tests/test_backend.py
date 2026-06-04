@@ -244,6 +244,7 @@ class TestToolSchemas:
             "send_event",
             "draft_reply",
             "send_reply",
+            "set_flag",
         }
         assert names == expected
 

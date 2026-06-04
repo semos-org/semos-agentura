@@ -20,6 +20,7 @@ from agentura_commons.base import NamedFile, ToolResult
 from pydantic import BaseModel, EmailStr, Field
 
 from .formatting import md_to_plain
+from .models import FlagStatus
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +59,10 @@ class SearchEmailsInput(BaseModel):
     has_attachments: bool | None = Field(
         default=None,
         description="true = only with, false = only without.",
+    )
+    flag_status: FlagStatus | None = Field(
+        default=None,
+        description="Filter by flag: 'marked', 'complete', or null for any.",
     )
 
 
@@ -140,6 +145,13 @@ class SendEventInput(EventInput):
     )
 
 
+class SetFlagInput(BaseModel):
+    uid: str = Field(description="Email entry_id.")
+    status: FlagStatus = Field(
+        description="Flag status: 'marked', 'complete', or 'none'.",
+    )
+
+
 class ReplyInput(BaseModel):
     uid: str = Field(description="UID of the email to reply to (from search_emails/read_email results).")
     body: str = Field(description="Reply body text.")
@@ -188,6 +200,7 @@ class SearchEmailsTool(AgentTool):
                 before=before,
                 unread_only=inp.unread_only,
                 has_attachments=inp.has_attachments,
+                flag_status=inp.flag_status.value if inp.flag_status else "",
             )
 
         msgs = await self._service.run_sync(do)
@@ -200,6 +213,7 @@ class SearchEmailsTool(AgentTool):
                     "sender_email": m.sender,
                     "received": str(m.date or ""),
                     "has_attachments": bool(m.attachments),
+                    "flag_status": m.flag_status.value,
                 }
                 for m in msgs
             ],
@@ -562,6 +576,21 @@ def _create_meeting_com(
 # Tool factory
 
 
+class SetFlagTool(AgentTool):
+    name: str = "set_flag"
+    description: str = "Set the flag status of an email: 'marked' (follow-up), 'complete', or 'none' (clear)."
+    args_schema: type[BaseModel] = SetFlagInput
+
+    async def _arun(self, **kwargs: Any) -> str:
+        inp = SetFlagInput(**kwargs)
+
+        def do(backend):
+            backend.set_flag(inp.uid, inp.status)
+            return {"status": "ok", "flag": inp.status.value}
+
+        return json.dumps(await self._service.run_sync(do))
+
+
 def get_email_tools(service: Any) -> list[AgentTool]:
     """Create all email-agent tools bound to a service instance."""
     tools: list[AgentTool] = [
@@ -574,6 +603,7 @@ def get_email_tools(service: Any) -> list[AgentTool]:
         SendEventTool(),
         DraftReplyTool(),
         SendReplyTool(),
+        SetFlagTool(),
     ]
     for t in tools:
         t.bind_service(service)

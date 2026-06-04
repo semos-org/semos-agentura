@@ -28,6 +28,7 @@ OL_FOLDER_DRAFTS = 16
 OL_FOLDER_DELETED = 3
 OL_FOLDER_CALENDAR = 9
 OL_FOLDER_JUNK = 23
+OL_FOLDER_TODO = 28
 
 
 import re
@@ -80,6 +81,7 @@ class OutlookCOM:
         before: str = "",
         unread_only: bool = False,
         has_attachments: bool | None = None,
+        flag_status: str = "",
     ) -> list[dict]:
         """Search emails with composable filters. All filters are AND-combined.
 
@@ -93,39 +95,57 @@ class OutlookCOM:
             before: ISO date string (YYYY-MM-DD). Emails before this date.
             unread_only: Only return unread emails.
             has_attachments: Filter by attachment presence (True/False/None=any).
+            flag_status: Filter by flag: "marked" or "complete" (empty=any).
         """
-        folder = self._ns.GetDefaultFolder(folder_id)
-        clauses = []
+        # FlagStatus: 0=NoFlag, 1=Complete, 2=Marked
+        _FLAG_MAP = {"marked": 2, "complete": 1}
+        flag_val = _FLAG_MAP.get(flag_status) if flag_status else None
+
+        # Use To-Do folder for flag queries (pre-filtered by Outlook, fast)
+        if flag_val is not None:
+            folder = self._ns.GetDefaultFolder(OL_FOLDER_TODO)
+        else:
+            folder = self._ns.GetDefaultFolder(folder_id)
+
+        dasl = []
         if query:
             q = query.replace("'", "''")
-            clauses.append(f"\"urn:schemas:httpmail:subject\" LIKE '%{q}%'")
+            dasl.append(f"\"urn:schemas:httpmail:subject\" LIKE '%{q}%'")
         if from_addr:
-            clauses.append(f"\"urn:schemas:httpmail:fromemail\" LIKE '%{from_addr}%'")
+            dasl.append(f"\"urn:schemas:httpmail:fromemail\" LIKE '%{from_addr}%'")
         if to_addr:
-            clauses.append(f"\"urn:schemas:httpmail:displayto\" LIKE '%{to_addr}%'")
+            dasl.append(f"\"urn:schemas:httpmail:displayto\" LIKE '%{to_addr}%'")
         if since:
-            clauses.append(f"\"urn:schemas:httpmail:datereceived\" >= '{since}'")
+            dasl.append(f"\"urn:schemas:httpmail:datereceived\" >= '{since}'")
         if before:
-            clauses.append(f"\"urn:schemas:httpmail:datereceived\" < '{before}'")
+            dasl.append(f"\"urn:schemas:httpmail:datereceived\" < '{before}'")
         if unread_only:
-            clauses.append('"urn:schemas:httpmail:read" = 0')
+            dasl.append('"urn:schemas:httpmail:read" = 0')
         if has_attachments is True:
-            clauses.append('"urn:schemas:httpmail:hasattachment" = 1')
+            dasl.append('"urn:schemas:httpmail:hasattachment" = 1')
         elif has_attachments is False:
-            clauses.append('"urn:schemas:httpmail:hasattachment" = 0')
+            dasl.append('"urn:schemas:httpmail:hasattachment" = 0')
 
-        if clauses:
-            filt = "@SQL=" + " AND ".join(clauses)
-            items = folder.Items.Restrict(filt)
-        else:
-            items = folder.Items
-        items.Sort("[ReceivedTime]", True)
+        items = folder.Items
+        # JET filter first (To-Do folder: only mail items)
+        if flag_val is not None:
+            items = items.Restrict("[MessageClass] = 'IPM.Note'")
+        # DASL filter for date/subject/sender
+        if dasl:
+            items = items.Restrict("@SQL=" + " AND ".join(dasl))
+
+        sort_prop = "[LastModificationTime]" if flag_val is not None else "[ReceivedTime]"
+        items.Sort(sort_prop, True)
 
         results = []
         item = items.GetFirst()
         while item and len(results) < limit:
             try:
                 if item.Class == OL_MAIL:
+                    # Post-filter flag value (To-Do has both marked + complete)
+                    if flag_val is not None and getattr(item, "FlagStatus", 0) != flag_val:
+                        item = items.GetNext()
+                        continue
                     results.append(self._mail_to_dict(item))
             except Exception as e:
                 logger.debug("Skipping item: %s", e)
@@ -179,6 +199,7 @@ class OutlookCOM:
             "to": str(getattr(item, "To", "") or ""),
             "cc": str(getattr(item, "CC", "") or ""),
             "received": str(item.ReceivedTime),
+            "flag_status": getattr(item, "FlagStatus", 0),
             "has_attachments": item.Attachments.Count > 0,
             "attachment_count": item.Attachments.Count,
             "attachments": [],

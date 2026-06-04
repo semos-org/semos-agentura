@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
+from enum import Enum
 
 
 @dataclass
@@ -23,6 +24,14 @@ class EventInfo:
         day = " [ALL DAY]" if self.all_day else ""
         loc = f" @ {self.location}" if self.location else ""
         return f"{s}-{e}  {self.subject}{loc}{day}"
+
+
+class FlagStatus(Enum):
+    """Email flag status (Outlook + IMAP)."""
+
+    NONE = "none"
+    MARKED = "marked"  # COM FlagStatus=2, IMAP \Flagged
+    COMPLETE = "complete"  # COM FlagStatus=1, IMAP: not standard
 
 
 @dataclass
@@ -50,6 +59,7 @@ class EmailMessage:
     date: datetime | None = None
     attachments: list[Attachment] = field(default_factory=list)
     is_read: bool = False
+    flag_status: FlagStatus = FlagStatus.NONE
 
     @property
     def body(self) -> str:

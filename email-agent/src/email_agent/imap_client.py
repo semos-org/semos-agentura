@@ -164,6 +164,7 @@ class IMAPClient:
         since: datetime | None = None,
         before: datetime | None = None,
         unseen: bool = False,
+        flagged: bool = False,
     ) -> list[str]:
         """Search for messages matching criteria.
 
@@ -174,6 +175,7 @@ class IMAPClient:
             since: Messages received on or after this date.
             before: Messages received before this date.
             unseen: Only return unread messages.
+            flagged: Only return flagged messages.
 
         Returns:
             List of message sequence numbers matching the criteria.
@@ -191,6 +193,8 @@ class IMAPClient:
             criteria.append(f"BEFORE {before.strftime('%d-%b-%Y')}")
         if unseen:
             criteria.append("UNSEEN")
+        if flagged:
+            criteria.append("FLAGGED")
 
         search_str = " ".join(criteria) if criteria else "ALL"
         status, data = self._imap.search(None, search_str)

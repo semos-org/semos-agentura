@@ -9,7 +9,7 @@ from typing import Protocol, runtime_checkable
 
 from .config import Settings
 from .exceptions import BackendNotAvailable
-from .models import EmailMessage, EventInfo
+from .models import EmailMessage, EventInfo, FlagStatus
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +63,7 @@ class EmailBackend(Protocol):
         before: str = "",
         unread_only: bool = False,
         has_attachments: bool | None = None,
+        flag_status: str = "",
     ) -> list[EmailMessage]: ...
 
     # Send/Draft
@@ -92,6 +93,7 @@ class EmailBackend(Protocol):
 
     # Flags
     def mark_as_read(self, uid: str) -> None: ...
+    def set_flag(self, uid: str, status: FlagStatus) -> None: ...
 
     # Calendar
     @property
@@ -118,6 +120,15 @@ def _parse_com_datetime(s: str) -> datetime | None:
         return None
 
 
+def _com_flag_to_enum(val: int) -> FlagStatus:
+    """Convert COM FlagStatus int to FlagStatus enum."""
+    if val == 2:
+        return FlagStatus.MARKED
+    if val == 1:
+        return FlagStatus.COMPLETE
+    return FlagStatus.NONE
+
+
 def _com_dict_to_email(d: dict) -> EmailMessage:
     """Convert an OutlookCOM mail dict to an EmailMessage."""
     from .models import Attachment
@@ -132,6 +143,7 @@ def _com_dict_to_email(d: dict) -> EmailMessage:
         body_text=d.get("body", ""),
         date=_parse_com_datetime(d.get("received", "")),
         is_read=True,
+        flag_status=_com_flag_to_enum(d.get("flag_status", 0)),
         attachments=[
             Attachment(filename=a["filename"], content_type="application/octet-stream", data=b"")
             for a in d.get("attachments", [])
@@ -198,6 +210,7 @@ class IMAPBackend:
         before: str = "",
         unread_only: bool = False,
         has_attachments: bool | None = None,
+        flag_status: str = "",
     ) -> list[EmailMessage]:
         """Search with composable filters via IMAP SEARCH."""
         from datetime import datetime as _dt
@@ -212,6 +225,7 @@ class IMAPBackend:
             since=since_dt,
             before=before_dt,
             unseen=unread_only,
+            flagged=flag_status == "marked",
         )
         uids = uids[:limit]
         messages = []
@@ -339,6 +353,14 @@ class IMAPBackend:
     def mark_as_read(self, uid: str) -> None:
         self._ensure_client().mark_as_read(uid)
 
+    def set_flag(self, uid: str, status: FlagStatus) -> None:
+        client = self._ensure_client()
+        if status == FlagStatus.MARKED:
+            client._imap.store(uid.encode(), "+FLAGS", "\\Flagged")
+        else:
+            # NONE or COMPLETE - remove flag (IMAP has no "complete" concept)
+            client._imap.store(uid.encode(), "-FLAGS", "\\Flagged")
+
     # Calendar
 
     @property
@@ -462,6 +484,7 @@ if sys.platform == "win32":
             before: str = "",
             unread_only: bool = False,
             has_attachments: bool | None = None,
+            flag_status: str = "",
         ) -> list[EmailMessage]:
             from .com_client import OL_FOLDER_DRAFTS, OL_FOLDER_INBOX, OL_FOLDER_SENT
 
@@ -482,6 +505,7 @@ if sys.platform == "win32":
                 before=before,
                 unread_only=unread_only,
                 has_attachments=has_attachments,
+                flag_status=flag_status,
             )
             return [_com_dict_to_email(d) for d in raw]
 
@@ -534,6 +558,16 @@ if sys.platform == "win32":
         def mark_as_read(self, uid: str) -> None:
             item = self._com._ns.GetItemFromID(uid)
             item.UnRead = False
+            item.Save()
+
+        def set_flag(self, uid: str, status: FlagStatus) -> None:
+            _STATUS_TO_COM = {
+                FlagStatus.NONE: 0,
+                FlagStatus.COMPLETE: 1,
+                FlagStatus.MARKED: 2,
+            }
+            item = self._com._ns.GetItemFromID(uid)
+            item.FlagStatus = _STATUS_TO_COM[status]
             item.Save()
 
         # Calendar

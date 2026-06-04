@@ -96,6 +96,7 @@ async def test_list_tools(service):
             "send_event",
             "draft_reply",
             "send_reply",
+            "set_flag",
         }
 
 
