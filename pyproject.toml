@@ -60,4 +60,5 @@ dev = [
     "pytest-httpx>=0.30",
     "pytest-playwright>=0.7",
     "pytest-timeout>=2.3",
+    "pytest-cov>=6.0",
 ]

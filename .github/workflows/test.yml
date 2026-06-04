@@ -54,12 +54,19 @@ jobs:
       - name: Install Playwright browsers
         run: uv run playwright install --with-deps chromium
 
-      - name: Run tests (CI tier)
+      - name: Run tests with coverage
         timeout-minutes: 8
         run: |
           # Each package uses its own addopts from pyproject.toml.
-          # Packages without addopts get -m "not integration" here.
           for pkg in agentura-commons email-agent document-agent filesystem-agent; do
             echo "=== $pkg ==="
-            (cd "$pkg" && uv run pytest tests/ --timeout=60 --tb=short -q)
+            (cd "$pkg" && uv run pytest tests/ --timeout=60 --tb=short -q \
+              --cov=src/ --cov-report=xml:../coverage-$pkg.xml)
           done
+
+      - name: Upload coverage to Codecov
+        if: always()
+        uses: codecov/codecov-action@v5
+        with:
+          files: coverage-agentura-commons.xml,coverage-email-agent.xml,coverage-document-agent.xml,coverage-filesystem-agent.xml
+          fail_ci_if_error: false

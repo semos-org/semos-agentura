@@ -1,6 +1,7 @@
 # Semos Agentura
 
 [![CI](https://github.com/semos-org/semos-agentura/actions/workflows/test.yml/badge.svg)](https://github.com/semos-org/semos-agentura/actions/workflows/test.yml)
+[![codecov](https://codecov.io/gh/semos-org/semos-agentura/graph/badge.svg)](https://codecov.io/gh/semos-org/semos-agentura)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Python](https://img.shields.io/badge/python-3.13+-blue.svg)](https://www.python.org/downloads/)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20538079.svg)](https://doi.org/10.5281/zenodo.20538079)
