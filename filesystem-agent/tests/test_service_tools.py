@@ -327,6 +327,47 @@ async def test_write_file(tmp_service: FilesystemAgentService):
     assert vfs.cat("alpha://new.txt") == b"hello world"
 
 
+@pytest.mark.asyncio
+async def test_write_file_empty_string_allowed(tmp_service: FilesystemAgentService):
+    """Explicitly passing an empty string writes an empty file."""
+    result = await tmp_service._write_file("alpha://empty.txt", "")
+    assert "Written 0 chars" in result
+    vfs = tmp_service._ensure_vfs()
+    assert vfs.cat("alpha://empty.txt") == b""
+
+
+@pytest.mark.asyncio
+async def test_write_file_unicode(tmp_service: FilesystemAgentService):
+    """Em-dash and other non-ASCII content round-trips via UTF-8."""
+    content = "dash — geq ≥ end"
+    await tmp_service._write_file("alpha://uni.txt", content)
+    vfs = tmp_service._ensure_vfs()
+    assert vfs.cat("alpha://uni.txt").decode("utf-8") == content
+
+
+def test_write_file_required_in_schema():
+    """Schema must mark uri and content required so the LLM provides them."""
+    from filesystem_agent.tools import WriteFileTool
+
+    schema = WriteFileTool(_service=None).get_input_schema()
+    assert set(schema.get("required", [])) >= {"uri", "content"}
+
+
+def test_write_file_pydantic_rejects_missing_content():
+    """Pydantic validation rejects a call that omits content - this is what
+    the MCP wrapper enforces, preventing silent 0-char writes."""
+    import pytest as _pytest
+    from filesystem_agent.tools import WriteFileInput
+    from pydantic import ValidationError
+
+    with _pytest.raises(ValidationError):
+        WriteFileInput.model_validate({"uri": "session://x.md"})
+
+    # uri + content provided -> valid
+    ok = WriteFileInput.model_validate({"uri": "session://x.md", "content": "hi"})
+    assert ok.content == "hi"
+
+
 # file_info
 
 

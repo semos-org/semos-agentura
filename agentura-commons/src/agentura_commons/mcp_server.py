@@ -208,10 +208,19 @@ def _make_normalized_wrapper(
     def _base_url():
         return service.base_url or "http://127.0.0.1:8000"
 
+    def _validate(kwargs: dict) -> None:
+        # Enforce the tool's Pydantic schema (required fields, types) before
+        # dispatch. Raises pydantic.ValidationError, which FastMCP surfaces as
+        # a tool error - stops e.g. a write_file call that omits content from
+        # silently succeeding with an empty body.
+        if args_schema is not None:
+            args_schema.model_validate(kwargs)
+
     if inspect.iscoroutinefunction(fn):
 
         @functools.wraps(fn)
         async def wrapper(**kwargs):
+            _validate(kwargs)
             raw = await fn(**kwargs)
             if isinstance(raw, CallToolResult):
                 return raw
@@ -225,6 +234,7 @@ def _make_normalized_wrapper(
 
         @functools.wraps(fn)
         def wrapper(**kwargs):
+            _validate(kwargs)
             raw = fn(**kwargs)
             if isinstance(raw, CallToolResult):
                 return raw

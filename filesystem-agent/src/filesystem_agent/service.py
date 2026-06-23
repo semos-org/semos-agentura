@@ -227,7 +227,10 @@ class FilesystemAgentService(BaseAgentService):
         tree = vfs.tree(uri, depth=depth)
         return json.dumps(tree, ensure_ascii=False, indent=2, default=str)
 
-    async def _write_file(self, uri: str = "", content: str = "") -> str:
+    async def _write_file(self, uri: str, content: str) -> str:
+        # uri and content are required by WriteFileInput; the MCP wrapper
+        # validates against that schema before dispatch (see mcp_server.py),
+        # which stops silent 0-char writes when content is omitted.
         vfs = self._ensure_vfs()
         vfs.put(uri, content.encode("utf-8"))
         return f"Written {len(content)} chars to {uri}"

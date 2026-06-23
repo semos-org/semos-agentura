@@ -54,12 +54,15 @@ class FileTreeInput(BaseModel):
 
 class WriteFileInput(BaseModel):
     uri: str = Field(
-        default="",
+        ...,
         description="VFS URI to write to. Creates parent directories if needed.",
     )
     content: str = Field(
-        default="",
-        description="Text content to write.",
+        ...,
+        description=(
+            "Text content to write. REQUIRED - pass the full file body here. "
+            "Writing an empty file requires explicitly passing an empty string."
+        ),
     )
 
 
