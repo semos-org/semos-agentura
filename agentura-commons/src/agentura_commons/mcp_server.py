@@ -315,7 +315,7 @@ def create_mcp_server(service: BaseAgentService) -> FastMCP:
         # nested models like EmbedItem, $defs, etc.)
         if tool.args_schema:
             pydantic_schema = tool.get_input_schema()
-            if pydantic_schema.get("properties"):
+            if pydantic_schema.get("properties") or pydantic_schema.get("oneOf"):
                 registered = registered.model_copy(update={"parameters": pydantic_schema})
                 server._tool_manager._tools[tool.name] = registered
 

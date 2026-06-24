@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
+import jsonschema
 from pydantic import BaseModel, Field
 
 from .base import AgentTool
@@ -72,23 +73,39 @@ def _detect_provider(endpoint: str) -> str:
     return "openai"
 
 
-def _tool_schema(t: AgentTool) -> dict[str, Any]:
-    """Convert AgentTool/BaseTool to Anthropic tool schema."""
-    # Prefer the raw MCP inputSchema (preserves oneOf, const, enum, etc.)
-    # over the flattened Pydantic schema from get_input_schema().
+def _raw_tool_schema(t: AgentTool) -> dict[str, Any]:
+    """Return the tool's raw JSON input schema as a dict.
+
+    Prefers mcp_input_schema (full structure: oneOf/anyOf/const/enum).
+    Falls back to BaseTool.get_input_schema() (may be a Pydantic class).
+    """
     schema = getattr(t, "mcp_input_schema", None)
     if schema is None:
-        schema = t.get_input_schema()
-    # BaseTool.get_input_schema() may return a Pydantic model class
-    # (ModelMetaclass) instead of a dict. Convert it.
+        schema = getattr(t, "args_schema", None)
     if isinstance(schema, type):
         schema = schema.model_json_schema()
-    elif not isinstance(schema, dict):
-        schema = {"type": "object", "properties": {}}
+    return schema if isinstance(schema, dict) else {"type": "object", "properties": {}}
+
+
+def _param_is_array(schema: dict[str, Any], param: str) -> bool:
+    """True if param accepts an array, directly or via anyOf/oneOf."""
+    prop = schema.get("properties", {}).get(param, {})
+    if not isinstance(prop, dict):
+        return False
+    if prop.get("type") == "array":
+        return True
+    for branch in prop.get("anyOf", []) + prop.get("oneOf", []):
+        if isinstance(branch, dict) and branch.get("type") == "array":
+            return True
+    return False
+
+
+def _tool_schema(t: AgentTool) -> dict[str, Any]:
+    """Convert AgentTool/BaseTool to Anthropic tool schema."""
     return {
         "name": t.name,
         "description": t.description or "",
-        "input_schema": schema,
+        "input_schema": _raw_tool_schema(t),
     }
 
 
@@ -444,12 +461,9 @@ class LLMExecutor:
                     match_key = key if key in by_name else bare if bare in by_name else None
                     if match_key:
                         fa = {"name": match_key, "content": by_name[match_key]}
-                        if td.args_schema:
-                            fi = td.args_schema.model_fields.get(param)
-                            if fi and "list" in str(fi.annotation).lower():
-                                arguments[param] = [fa]
-                            else:
-                                arguments[param] = fa
+                        raw = _raw_tool_schema(td)
+                        if _param_is_array(raw, param):
+                            arguments[param] = [fa]
                         else:
                             arguments[param] = fa
                     else:
@@ -460,12 +474,15 @@ class LLMExecutor:
                             list(by_name.keys()),
                         )
 
-        # Validate input (Pydantic)
-        if td.args_schema:
+        # Validate input against the raw JSON schema. This preserves
+        # oneOf/anyOf/const/enum (a generated Pydantic model flattens
+        # combinators to Any and validates nothing useful).
+        raw_schema = _raw_tool_schema(td)
+        if raw_schema.get("properties"):
             try:
-                td.args_schema(**arguments)
-            except Exception as e:
-                return f"Validation error for {name}: {e}"
+                jsonschema.validate(arguments, raw_schema)
+            except jsonschema.ValidationError as e:
+                return f"Validation error for {name}: {e.message}"
 
         try:
             result = await td._arun(**arguments)

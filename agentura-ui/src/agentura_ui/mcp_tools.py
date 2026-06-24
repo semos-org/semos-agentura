@@ -12,7 +12,6 @@ from typing import Any
 
 from langchain_core.tools import BaseTool
 from mcp.types import Tool as MCPTool
-from pydantic import BaseModel, Field, create_model
 
 from .file_registry import (
     FileEntry,
@@ -23,47 +22,6 @@ from .file_registry import (
 from .mcp_hub import MCPHub
 
 logger = logging.getLogger(__name__)
-
-# JSON Schema type -> Python type mapping for pydantic model generation.
-_TYPE_MAP: dict[str, type] = {
-    "string": str,
-    "integer": int,
-    "number": float,
-    "boolean": bool,
-    "object": dict,
-    "array": list,
-}
-
-
-def _json_schema_to_pydantic(
-    schema: dict[str, Any],
-    model_name: str = "ToolInput",
-) -> type[BaseModel]:
-    """Convert an MCP tool's inputSchema to a Pydantic BaseModel.
-
-    Handles required/optional fields and default values.
-    """
-    props = schema.get("properties", {})
-    required = set(schema.get("required", []))
-    fields: dict[str, Any] = {}
-
-    for name, prop in props.items():
-        # anyOf (e.g. FileAttachment | string) - use Any
-        if "anyOf" in prop:
-            py_type = Any
-        else:
-            py_type = _TYPE_MAP.get(prop.get("type", "string"), str)
-        description = prop.get("description", "")
-        default_val = prop.get("default")
-
-        if name in required:
-            fields[name] = (py_type, Field(description=description))
-        elif default_val is not None:
-            fields[name] = (py_type, Field(default=default_val, description=description))
-        else:
-            fields[name] = (py_type | None, Field(default=None, description=description))
-
-    return create_model(model_name, **fields)
 
 
 # Shared list: tool _arun stores produced files here for the UI to drain.
@@ -146,25 +104,14 @@ def _make_mcp_tool_class(
         slug = "unknown"
     prefixed = f"{slug}__{mcp_tool.name}"
     safe_name = prefixed.replace("-", "_").replace(".", "_")
-    input_model = _json_schema_to_pydantic(
-        schema,
-        f"{safe_name}_Input",
-    )
-
-    # Preserve the original MCP inputSchema so the LLM sees the full
-    # schema (oneOf, const, enum, etc.) instead of the flattened Pydantic model.
-    _raw_input_schema = schema
 
     class _Tool(BaseTool):
         name: str = prefixed
         description: str = mcp_tool.description or f"MCP tool: {mcp_tool.name}"
-        args_schema: type[BaseModel] = input_model
-        # Raw MCP schema with full structure (oneOf, const, enum, pattern, etc.)
-        # Read by llm_executor._tool_schema() for Anthropic/OpenAI tool definitions.
-        mcp_input_schema: dict = _raw_input_schema
-
-        class Config:
-            arbitrary_types_allowed = True
+        # Raw MCP inputSchema passed straight through (preserves
+        # oneOf/anyOf/const/enum). LangChain 1.0 accepts a JSON
+        # schema dict here; llm_executor reads it via _raw_tool_schema.
+        args_schema: Any = schema
 
         def _run(self, **kwargs: Any) -> str:
             raise NotImplementedError("Use async")

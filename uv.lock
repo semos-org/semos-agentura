@@ -49,6 +49,7 @@ source = { editable = "agentura-commons" }
 dependencies = [
     { name = "a2a-sdk", extra = ["sqlite"] },
     { name = "fastapi" },
+    { name = "jsonschema" },
     { name = "langchain-core" },
     { name = "langchain-mcp-adapters" },
     { name = "mcp" },
@@ -60,6 +61,7 @@ dependencies = [
 requires-dist = [
     { name = "a2a-sdk", extras = ["sqlite"], specifier = ">=0.3" },
     { name = "fastapi", specifier = ">=0.115" },
+    { name = "jsonschema", specifier = ">=4.0" },
     { name = "langchain-core", specifier = ">=1.0" },
     { name = "langchain-mcp-adapters", specifier = ">=0.2" },
     { name = "mcp", specifier = ">=1.9" },

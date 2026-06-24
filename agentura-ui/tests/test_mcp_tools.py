@@ -1,4 +1,4 @@
-"""Tests for mcp_tools.py - schema conversion and tool wrappers."""
+"""Tests for mcp_tools.py - schema passthrough and tool wrappers."""
 
 from __future__ import annotations
 
@@ -8,7 +8,6 @@ import pytest
 from agentura_ui.file_registry import FileRegistry
 from agentura_ui.mcp_hub import AgentConnection
 from agentura_ui.mcp_tools import (
-    _json_schema_to_pydantic,
     _make_mcp_tool_class,
     create_mcp_tools,
     drain_produced_files,
@@ -16,89 +15,6 @@ from agentura_ui.mcp_tools import (
 from langchain_core.utils.function_calling import convert_to_openai_tool
 from mcp.types import CallToolResult, TextContent
 from mcp.types import Tool as MCPTool
-from pydantic import BaseModel
-
-# _json_schema_to_pydantic
-
-
-class TestJsonSchemaToPydantic:
-    def test_required_string_field(self):
-        schema = {
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "Search query",
-                },
-            },
-            "required": ["query"],
-        }
-        Model = _json_schema_to_pydantic(schema, "Test")
-        assert issubclass(Model, BaseModel)
-        js = Model.model_json_schema()
-        assert "query" in js["required"]
-
-    def test_optional_with_default(self):
-        schema = {
-            "type": "object",
-            "properties": {
-                "limit": {
-                    "type": "integer",
-                    "default": 20,
-                    "description": "Max results",
-                },
-            },
-        }
-        Model = _json_schema_to_pydantic(schema, "Test")
-        instance = Model()
-        assert instance.limit == 20
-
-    def test_all_types(self):
-        schema = {
-            "type": "object",
-            "properties": {
-                "s": {"type": "string"},
-                "i": {"type": "integer"},
-                "f": {"type": "number"},
-                "b": {"type": "boolean"},
-                "o": {"type": "object"},
-                "a": {"type": "array"},
-            },
-        }
-        Model = _json_schema_to_pydantic(schema, "AllTypes")
-        assert issubclass(Model, BaseModel)
-
-    def test_empty_schema(self):
-        Model = _json_schema_to_pydantic({}, "Empty")
-        instance = Model()
-        assert instance is not None
-
-    def test_oneof_property_accepts_object(self):
-        """A property using oneOf (no 'type') must accept a structured dict,
-        not be coerced to str. Regression for add_root's config param."""
-        schema = {
-            "type": "object",
-            "properties": {
-                "name": {"type": "string"},
-                "config": {
-                    "description": "Mount config",
-                    "oneOf": [
-                        {"title": "local", "properties": {"protocol": {"const": "local"}}},
-                    ],
-                },
-            },
-            "required": ["name", "config"],
-        }
-        Model = _json_schema_to_pydantic(schema, "AddRoot")
-        inst = Model.model_validate({"name": "proj", "config": {"protocol": "local", "base_path": "/x"}})
-        assert inst.config == {"protocol": "local", "base_path": "/x"}
-
-    def test_typeless_property_is_any(self):
-        """A property with neither 'type' nor a combinator defaults to Any."""
-        schema = {"type": "object", "properties": {"x": {"description": "no type"}}}
-        Model = _json_schema_to_pydantic(schema, "T")
-        assert Model.model_validate({"x": {"nested": 1}}).x == {"nested": 1}
-
 
 # _make_mcp_tool_class
 
@@ -112,10 +28,10 @@ class TestMakeMcpToolClass:
         hub.agent_for_tool.return_value = agent
         return hub
 
-    def test_get_input_schema_preserves_original(self):
-        """get_input_schema must return the original MCP inputSchema,
-        not the flattened Pydantic schema. This is critical for LLMs
-        to see oneOf, const, enum, pattern, etc."""
+    def test_args_schema_preserves_original(self):
+        """args_schema must be the original MCP inputSchema dict
+        (not a flattened Pydantic model). Critical for LLMs to see
+        oneOf, const, enum, pattern, etc."""
         rich_schema = {
             "type": "object",
             "required": ["name", "protocol"],
@@ -159,8 +75,9 @@ class TestMakeMcpToolClass:
         registry = FileRegistry()
         tool = _make_mcp_tool_class(mcp_tool, hub, registry)
 
-        # mcp_input_schema must preserve the original, not flattened
-        result = tool.mcp_input_schema
+        # args_schema must preserve the original, not flattened
+        result = tool.args_schema
+        assert isinstance(result, dict)
         assert "oneOf" in result, "oneOf lost - LLM won't see protocol options"
         assert len(result["oneOf"]) == 2
         # Check const values are preserved
@@ -179,14 +96,13 @@ class TestMakeMcpToolClass:
         assert tool.name == "document_agent__digest_document"
 
     def test_has_class_attr_args_schema(self, digest_tool):
-        """args_schema must be a class attr, not a property,
-        so LangChain's bind_tools can introspect it."""
+        """args_schema is the raw MCP inputSchema dict, passed
+        straight to LangChain (which accepts a JSON schema dict)."""
         hub = self._hub()
         registry = FileRegistry()
         tool = _make_mcp_tool_class(digest_tool, hub, registry)
-        # Must be a class (type), not an instance
-        assert isinstance(tool.args_schema, type)
-        assert issubclass(tool.args_schema, BaseModel)
+        assert isinstance(tool.args_schema, dict)
+        assert "source" in tool.args_schema["properties"]
 
     def test_convert_to_openai_tool_works(self, digest_tool):
         """bind_tools uses convert_to_openai_tool internally."""

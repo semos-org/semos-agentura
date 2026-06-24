@@ -16,7 +16,6 @@ from agentura_commons.file_middleware import (
 )
 from langchain_core.tools import BaseTool
 from mcp.types import Tool as MCPTool
-from pydantic import BaseModel, Field, create_model
 
 from .a2a_client import A2AAgentInfo, FileInfo, send_task, send_tool_call
 from .file_registry import (
@@ -25,7 +24,6 @@ from .file_registry import (
     pre_process_tool_call,
 )
 from .mcp_tools import (
-    _json_schema_to_pydantic,
     _notify_file,
     _produced_files,
     _update_status,
@@ -112,18 +110,13 @@ def _make_a2a_tool_class(
         "properties": {},
     }
     safe_name = mcp_tool.name.replace("-", "_").replace(".", "_")
-    input_model = _json_schema_to_pydantic(
-        schema,
-        f"{safe_name}_A2AInput",
-    )
 
     class _Tool(BaseTool):
         name: str = mcp_tool.name
         description: str = mcp_tool.description or f"A2A tool: {mcp_tool.name}"
-        args_schema: type[BaseModel] = input_model
-
-        class Config:
-            arbitrary_types_allowed = True
+        # Raw MCP schema passed straight through (preserves
+        # oneOf/anyOf/const/enum). Read via _raw_tool_schema.
+        args_schema: Any = schema
 
         def _run(self, **kwargs: Any) -> str:
             raise NotImplementedError("Use async")
@@ -200,25 +193,26 @@ def _make_a2a_delegate_tool(
         f"{a2a_info.description}"
     )
 
-    input_model = create_model(
-        f"{tool_name}_Input",
-        message=(str, Field(description="Task description")),
-        context_id=(
-            str | None,
-            Field(
-                default=None,
-                description=("Continue a conversation with the agent (context_id from a previous response)"),
-            ),
-        ),
-    )
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "message": {
+                "type": "string",
+                "description": "Task description",
+            },
+            "context_id": {
+                "anyOf": [{"type": "string"}, {"type": "null"}],
+                "default": None,
+                "description": ("Continue a conversation with the agent (context_id from a previous response)"),
+            },
+        },
+        "required": ["message"],
+    }
 
     class _Tool(BaseTool):
         name: str = tool_name
         description: str = desc
-        args_schema: type[BaseModel] = input_model
-
-        class Config:
-            arbitrary_types_allowed = True
+        args_schema: Any = input_schema
 
         def _run(self, **kwargs: Any) -> str:
             raise NotImplementedError("Use async")
