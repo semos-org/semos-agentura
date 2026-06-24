@@ -200,7 +200,7 @@ async def test_compose_docx(service):
         result = await client.call_tool(
             "compose_document",
             {
-                "source": "# Hello\n\nThis is a test document.",
+                "source_markdown": "# Hello\n\nThis is a test document.",
                 "format": "docx",
             },
         )
@@ -222,7 +222,7 @@ async def test_compose_with_explicit_filename(service):
         result = await client.call_tool(
             "compose_document",
             {
-                "source": "# Report\n\nContent here.",
+                "source_markdown": "# Report\n\nContent here.",
                 "format": "docx",
                 "filename": "my_report.docx",
             },
@@ -302,7 +302,7 @@ async def test_compose_html(service):
         result = await client.call_tool(
             "compose_document",
             {
-                "source": "# Test\n\nParagraph.",
+                "source_markdown": "# Test\n\nParagraph.",
                 "format": "html",
             },
         )
