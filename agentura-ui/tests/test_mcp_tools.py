@@ -73,6 +73,32 @@ class TestJsonSchemaToPydantic:
         instance = Model()
         assert instance is not None
 
+    def test_oneof_property_accepts_object(self):
+        """A property using oneOf (no 'type') must accept a structured dict,
+        not be coerced to str. Regression for add_root's config param."""
+        schema = {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "config": {
+                    "description": "Mount config",
+                    "oneOf": [
+                        {"title": "local", "properties": {"protocol": {"const": "local"}}},
+                    ],
+                },
+            },
+            "required": ["name", "config"],
+        }
+        Model = _json_schema_to_pydantic(schema, "AddRoot")
+        inst = Model.model_validate({"name": "proj", "config": {"protocol": "local", "base_path": "/x"}})
+        assert inst.config == {"protocol": "local", "base_path": "/x"}
+
+    def test_typeless_property_is_any(self):
+        """A property with neither 'type' nor a combinator defaults to Any."""
+        schema = {"type": "object", "properties": {"x": {"description": "no type"}}}
+        Model = _json_schema_to_pydantic(schema, "T")
+        assert Model.model_validate({"x": {"nested": 1}}).x == {"nested": 1}
+
 
 # _make_mcp_tool_class
 

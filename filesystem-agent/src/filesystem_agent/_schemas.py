@@ -1,40 +1,55 @@
 """Protocol schemas for the add_root tool.
 
 Extracted to avoid circular imports between service.py and tools.py.
+
+The add_root input is ``{name, config}`` where ``config`` is a discriminated
+union keyed on ``config.protocol`` (a const per variant). The union lives under
+the ``config`` property - nested, so the Anthropic API accepts it (it rejects
+oneOf/allOf/anyOf only at the TOP level of a tool input_schema).
 """
 
 from __future__ import annotations
 
 from typing import Any
 
+_NAME_PROP = {
+    "type": "string",
+    "description": (
+        "Short identifier for the mount - becomes the URI scheme. "
+        "Example: name='docs' creates URIs like docs://path/to/file"
+    ),
+}
 
-# Protocol-specific option schemas for add_root.
-# Each entry in oneOf describes one fsspec protocol and its kwargs.
-# Only protocols whose dependencies are installed are listed.
-# Installed: fsspec (local, memory, http, ftp), webdav4[fsspec] (webdav).
-# Optional extras (need separate pip install): sftp (paramiko), smb (smbprotocol),
-# s3 (s3fs), gcs (gcsfs), az (adlfs).
+
 # Optional protocols - only included if their extra dependency is installed.
+# Each returns a config variant: {protocol const + connection fields}.
 def _optional_entry(
-    title: str, description: str, check_import: str, kwargs_props: dict, kwargs_required: list | None = None
+    title: str,
+    description: str,
+    check_import: str,
+    fields: dict,
+    required: list | None = None,
+    *,
+    allow_base_path: bool = True,
 ) -> dict | None:
     try:
         __import__(check_import)
     except ImportError:
         return None
-    kwargs: dict[str, Any] = {"type": "object", "properties": kwargs_props}
-    if kwargs_required:
-        kwargs["required"] = kwargs_required
+    props: dict[str, Any] = {"protocol": {"const": title}}
+    if allow_base_path:
+        props["base_path"] = {
+            "type": "string",
+            "description": "Subfolder to scope the root to.",
+            "default": "",
+        }
+    props.update(fields)
     return {
         "title": title,
         "description": description,
-        "properties": {
-            "name": _NAME_PROP,
-            "protocol": {"const": title},
-            "base_path": {"type": "string", "default": ""},
-            "kwargs": kwargs,
-        },
-        "required": ["name", "protocol", "kwargs"],
+        "type": "object",
+        "properties": props,
+        "required": ["protocol", *(required or [])],
     }
 
 
@@ -99,196 +114,179 @@ _OPTIONAL_SCHEMAS = [
     ),
 ]
 
-# Build the final tool schema as a flat discriminated union.
-# Each oneOf entry is a complete self-contained object with name, protocol,
-# base_path (where applicable), and kwargs - no shared property definitions.
-_NAME_PROP = {
-    "type": "string",
-    "description": (
-        "Short identifier for the mount - becomes the URI scheme. "
-        "Example: name='docs' creates URIs like docs://path/to/file"
-    ),
-}
 
+# Per-protocol config variants. Each is discriminated on the `protocol` const
+# and carries its own connection fields (base_path where it applies, otherwise
+# named fields like site_url / share_url).
+_CORE_SCHEMAS: list[dict[str, Any]] = [
+    {
+        "title": "local",
+        "description": "Local filesystem.",
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "protocol": {"const": "local"},
+            "base_path": {
+                "type": "string",
+                "description": "Absolute path to the directory to mount.",
+            },
+        },
+        "required": ["protocol", "base_path"],
+    },
+    {
+        "title": "memory",
+        "description": "In-memory filesystem (ephemeral, lost on restart).",
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "protocol": {"const": "memory"},
+        },
+        "required": ["protocol"],
+    },
+    {
+        "title": "webdav",
+        "description": "WebDAV server (Nextcloud, ownCloud, generic WebDAV).",
+        "type": "object",
+        "properties": {
+            "protocol": {"const": "webdav"},
+            "base_url": {"type": "string", "description": "WebDAV endpoint URL"},
+            "auth": {
+                "type": "object",
+                "description": "Auth credentials",
+                "properties": {
+                    "type": {"type": "string", "enum": ["cookie", "bearer"]},
+                    "token": {"type": "string", "description": "Token or cookie value"},
+                },
+                "required": ["type", "token"],
+            },
+            "base_path": {
+                "type": "string",
+                "description": "Subfolder path on the WebDAV server.",
+                "default": "",
+            },
+        },
+        "required": ["protocol", "base_url"],
+    },
+    {
+        "title": "sharepoint",
+        "description": (
+            "SharePoint Online or OneDrive for Business. Automatic browser-based auth (SSO, smartcard, or email code)."
+        ),
+        "type": "object",
+        "properties": {
+            "protocol": {"const": "sharepoint"},
+            "site_url": {
+                "type": "string",
+                "description": (
+                    "SharePoint or OneDrive URL. Accepts: "
+                    "team sites (https://tenant.sharepoint.com/sites/MySite), "
+                    "personal sites (https://tenant-my.sharepoint.com/personal/user), "
+                    "or OneDrive sharing links, e.g. "
+                    "https://tenant-my.sharepoint.com/:f:/g/personal/user/"
+                    "Ab1Cd2Ef3?e=Xy9Zaa (folder) or .../:w:/g/.../Doc?e=... (file)."
+                ),
+                "pattern": r"^https://[^/]+\.sharepoint\.com(/.*)?$",
+            },
+            "doc_library": {
+                "type": "string",
+                "description": "Document library name. Auto-detected if omitted.",
+            },
+            "subfolder": {
+                "type": "string",
+                "description": "Subfolder within the doc library. Empty = library root.",
+                "default": "",
+            },
+        },
+        "required": ["protocol", "site_url"],
+    },
+    {
+        "title": "http",
+        "description": "Read-only HTTP/HTTPS file access.",
+        "type": "object",
+        "properties": {
+            "protocol": {"const": "http"},
+            "base_path": {
+                "type": "string",
+                "description": "Base URL to the HTTP directory.",
+            },
+            "headers": {
+                "type": "object",
+                "description": "Extra HTTP headers",
+                "additionalProperties": {"type": "string"},
+            },
+        },
+        "required": ["protocol", "base_path"],
+    },
+    {
+        "title": "ftp",
+        "description": "FTP file access.",
+        "type": "object",
+        "properties": {
+            "protocol": {"const": "ftp"},
+            "host": {"type": "string", "description": "FTP hostname"},
+            "port": {"type": "integer", "default": 21},
+            "username": {"type": "string"},
+            "password": {"type": "string"},
+            "base_path": {
+                "type": "string",
+                "description": "Directory path on the FTP server.",
+                "default": "",
+            },
+        },
+        "required": ["protocol", "host"],
+    },
+    {
+        "title": "google_drive",
+        "description": (
+            "Google Drive. OAuth2 auth (opens browser on first use, caches token). "
+            "Requires GOOGLE_DRIVE_CLIENT_ID and GOOGLE_DRIVE_CLIENT_SECRET in .env. "
+            "Supports folders, files, and Google Docs/Sheets/Slides export."
+        ),
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "protocol": {"const": "google_drive"},
+            "share_url": {
+                "type": "string",
+                "description": (
+                    "Google Drive URL. Accepts: "
+                    "folder links (https://drive.google.com/drive/folders/ID), "
+                    "file links (https://drive.google.com/file/d/ID/view), "
+                    "Google Docs/Sheets/Slides links, "
+                    "https://drive.google.com/drive/my-drive, "
+                    "or https://drive.google.com/drive/shared-with-me."
+                ),
+                "pattern": r"^https://(drive|docs)\.google\.com/.*$",
+            },
+        },
+        "required": ["protocol", "share_url"],
+    },
+]
+
+# add_root tool schema: {name, config}. config is a discriminated union keyed
+# on protocol (nested under a property, so the Anthropic API accepts it -
+# it rejects oneOf only at the TOP level). Defined statically, then one oneOf
+# element is added per enabled protocol below.
 ADD_ROOT_SCHEMA: dict[str, Any] = {
     "type": "object",
-    "required": ["name", "protocol"],
-    "oneOf": [
-        {
-            "title": "local",
-            "description": "Local filesystem",
-            "properties": {
-                "name": _NAME_PROP,
-                "protocol": {"const": "local"},
-                "base_path": {
-                    "type": "string",
-                    "description": "Absolute path to the directory to mount.",
-                },
-            },
-            "required": ["name", "protocol", "base_path"],
-        },
-        {
-            "title": "memory",
-            "description": "In-memory filesystem (ephemeral, lost on restart)",
-            "properties": {
-                "name": _NAME_PROP,
-                "protocol": {"const": "memory"},
-            },
-            "required": ["name", "protocol"],
-        },
-        {
-            "title": "webdav",
-            "description": "WebDAV server (SharePoint, Nextcloud, etc.)",
-            "properties": {
-                "name": _NAME_PROP,
-                "protocol": {"const": "webdav"},
-                "base_path": {
-                    "type": "string",
-                    "description": "Subfolder path on the WebDAV server.",
-                    "default": "",
-                },
-                "kwargs": {
-                    "type": "object",
-                    "properties": {
-                        "base_url": {"type": "string", "description": "WebDAV endpoint URL"},
-                        "auth": {
-                            "type": "object",
-                            "description": "Auth credentials",
-                            "properties": {
-                                "type": {"type": "string", "enum": ["cookie", "bearer"]},
-                                "token": {"type": "string", "description": "Token or cookie value"},
-                            },
-                            "required": ["type", "token"],
-                        },
-                    },
-                    "required": ["base_url"],
-                },
-            },
-            "required": ["name", "protocol", "kwargs"],
-        },
-        {
-            "title": "sharepoint",
+    "properties": {
+        "name": _NAME_PROP,
+        "config": {
             "description": (
-                "SharePoint Online or OneDrive for Business. "
-                "Automatic browser-based auth (SSO, smartcard, or email code). "
-                "Do NOT use base_path - use kwargs.subfolder instead."
+                "Mount configuration. Pick the variant matching your storage "
+                "backend; each sets 'protocol' and its own fields."
             ),
-            "properties": {
-                "name": _NAME_PROP,
-                "protocol": {"const": "sharepoint"},
-                "kwargs": {
-                    "type": "object",
-                    "description": "Only site_url is required; doc_library and subfolder are auto-detected.",
-                    "properties": {
-                        "site_url": {
-                            "type": "string",
-                            "description": (
-                                "SharePoint or OneDrive URL. Accepts: "
-                                "team sites (https://tenant.sharepoint.com/sites/MySite), "
-                                "personal sites (https://tenant-my.sharepoint.com/personal/user), "
-                                "or OneDrive sharing links."
-                            ),
-                            "pattern": r"^https://[^/]+\.sharepoint\.com(/.*)?$",
-                        },
-                        "doc_library": {
-                            "type": "string",
-                            "description": "Document library name. Auto-detected if omitted.",
-                        },
-                        "subfolder": {
-                            "type": "string",
-                            "description": "Subfolder within the doc library. Empty = library root.",
-                            "default": "",
-                        },
-                    },
-                    "required": ["site_url"],
-                },
-            },
-            "required": ["name", "protocol", "kwargs"],
+            "oneOf": [],
         },
-        {
-            "title": "http",
-            "description": "Read-only HTTP/HTTPS file access",
-            "properties": {
-                "name": _NAME_PROP,
-                "protocol": {"const": "http"},
-                "base_path": {
-                    "type": "string",
-                    "description": "Base URL to the HTTP directory.",
-                },
-                "kwargs": {
-                    "type": "object",
-                    "properties": {
-                        "headers": {
-                            "type": "object",
-                            "description": "Extra HTTP headers",
-                            "additionalProperties": {"type": "string"},
-                        },
-                    },
-                },
-            },
-            "required": ["name", "protocol", "base_path"],
-        },
-        {
-            "title": "ftp",
-            "description": "FTP file access",
-            "properties": {
-                "name": _NAME_PROP,
-                "protocol": {"const": "ftp"},
-                "base_path": {
-                    "type": "string",
-                    "description": "Directory path on the FTP server.",
-                    "default": "",
-                },
-                "kwargs": {
-                    "type": "object",
-                    "properties": {
-                        "host": {"type": "string", "description": "FTP hostname"},
-                        "port": {"type": "integer", "default": 21},
-                        "username": {"type": "string"},
-                        "password": {"type": "string"},
-                    },
-                    "required": ["host"],
-                },
-            },
-            "required": ["name", "protocol", "kwargs"],
-        },
-        {
-            "title": "google_drive",
-            "description": (
-                "Google Drive. OAuth2 auth (opens browser on first use, caches token). "
-                "Requires GOOGLE_DRIVE_CLIENT_ID and GOOGLE_DRIVE_CLIENT_SECRET in .env. "
-                "Supports folders, files, and Google Docs/Sheets/Slides export. "
-                "Do NOT use base_path."
-            ),
-            "properties": {
-                "name": _NAME_PROP,
-                "protocol": {"const": "google_drive"},
-                "kwargs": {
-                    "type": "object",
-                    "additionalProperties": False,
-                    "properties": {
-                        "share_url": {
-                            "type": "string",
-                            "description": (
-                                "Google Drive URL. Accepts: "
-                                "folder links (https://drive.google.com/drive/folders/ID), "
-                                "file links (https://drive.google.com/file/d/ID/view), "
-                                "Google Docs/Sheets/Slides links, "
-                                "https://drive.google.com/drive/my-drive, "
-                                "or https://drive.google.com/drive/shared-with-me."
-                            ),
-                            "pattern": r"^https://(drive|docs)\.google\.com/.*$",
-                        },
-                    },
-                    "required": ["share_url"],
-                },
-            },
-            "required": ["name", "protocol", "kwargs"],
-        },
-    ],
+    },
+    "required": ["name", "config"],
 }
 
-# Append optional protocols (only if their dependency is installed)
-for _s in _OPTIONAL_SCHEMAS:
-    if _s is not None:
-        ADD_ROOT_SCHEMA["oneOf"].append(_s)
+# Add one oneOf element per enabled protocol (core always; optional only when
+# its dependency is installed).
+for _variant in [*_CORE_SCHEMAS, *_OPTIONAL_SCHEMAS]:
+    if _variant is not None:
+        ADD_ROOT_SCHEMA["properties"]["config"]["oneOf"].append(_variant)
+
+# Same list, exposed for server-side protocol validation in service.py.
+_PROTOCOL_SCHEMAS = ADD_ROOT_SCHEMA["properties"]["config"]["oneOf"]

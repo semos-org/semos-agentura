@@ -455,15 +455,15 @@ class FilesystemAgentService(BaseAgentService):
         kwargs: dict | None = None,
     ) -> str:
         """Mount a new filesystem root."""
-        from ._schemas import ADD_ROOT_SCHEMA
+        from ._schemas import _PROTOCOL_SCHEMAS
 
         if not name:
             return json.dumps({"error": "name is required"})
 
-        # Validate protocol against oneOf const values
+        # Validate protocol against per-protocol const values
         valid_protocols = [
             s["properties"]["protocol"]["const"]
-            for s in ADD_ROOT_SCHEMA.get("oneOf", [])
+            for s in _PROTOCOL_SCHEMAS
             if "properties" in s and "protocol" in s["properties"]
         ]
         if valid_protocols and protocol not in valid_protocols:

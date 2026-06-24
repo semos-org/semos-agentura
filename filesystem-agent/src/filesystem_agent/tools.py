@@ -199,23 +199,20 @@ class BatchEditInput(BaseModel):
 
 class AddRootInput(BaseModel):
     name: str = Field(
-        default="",
+        ...,
         description=(
             "Short identifier for the mount - becomes the URI scheme. "
             "Example: name='docs' creates URIs like docs://path/to/file"
         ),
     )
-    protocol: str = Field(
-        default="local",
-        description="Storage backend to use.",
-    )
-    base_path: str = Field(
-        default="",
-        description="Subdirectory to scope the root to.",
-    )
-    kwargs: dict | None = Field(
-        default=None,
-        description="Protocol-specific connection options.",
+    config: dict = Field(
+        ...,
+        description=(
+            "Mount configuration discriminated on config.protocol. "
+            "Pick the variant matching your backend, e.g. "
+            "{'protocol': 'local', 'base_path': '/abs/path'} or "
+            "{'protocol': 'google_drive', 'share_url': '...'}."
+        ),
     )
 
 
@@ -423,16 +420,26 @@ class AddRootTool(AgentTool):
     name: str = "add_root"
     description: str = (
         "Mount a new filesystem root that becomes accessible via VFS URIs (name://path). "
-        "For SharePoint use protocol='sharepoint' with kwargs.site_url - "
-        "auth is handled automatically. "
-        "For local dirs use protocol='local' with base_path. "
-        "For other backends see the protocol-specific kwargs schemas."
+        "Pass {name, config} where config.protocol selects the backend and carries "
+        "its fields - e.g. config={'protocol': 'local', 'base_path': '/abs/path'} or "
+        "config={'protocol': 'sharepoint', 'site_url': '...'} (auth is automatic)."
     )
     args_schema: type[BaseModel] = AddRootInput
     parameters_override: dict[str, Any] | None = ADD_ROOT_SCHEMA
 
     async def _arun(self, **kwargs: Any) -> str:
-        return await self._service._add_root(**kwargs)
+        # Published shape is {name, config}; translate config into the flat
+        # (protocol, base_path, kwargs) the service handler expects.
+        name = kwargs.get("name", "")
+        config = dict(kwargs.get("config") or {})
+        protocol = config.pop("protocol", "")
+        base_path = config.pop("base_path", "")
+        return await self._service._add_root(
+            name=name,
+            protocol=protocol,
+            base_path=base_path,
+            kwargs=config,
+        )
 
 
 class RemoveRootTool(AgentTool):
