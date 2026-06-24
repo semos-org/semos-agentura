@@ -49,6 +49,49 @@ class TrackChanges(str, Enum):
     ALL = "all"
 
 
+class ComposeFormat(str, Enum):
+    PDF = "pdf"
+    PPTX = "pptx"
+    DOCX = "docx"
+    ODT = "odt"
+    HTML = "html"
+
+
+class TemplateBackend(str, Enum):
+    AUTO = "auto"
+    COM = "com"
+    UNO = "uno"
+    DOCKER = "docker"
+
+
+class DiagramType(str, Enum):
+    MERMAID = "mermaid"
+    DRAWIO = "drawio"
+
+
+class ImageMode(str, Enum):
+    GENERATE = "generate"
+    EDIT = "edit"
+    CUT = "cut"
+
+
+class ImageBackground(str, Enum):
+    AUTO = "auto"
+    TRANSPARENT = "transparent"
+    WHITE = "white"
+
+
+class ImageFormat(str, Enum):
+    PNG = "png"
+    WEBP = "webp"
+
+
+class MergeBackend(str, Enum):
+    AUTO = "auto"
+    COM = "com"
+    PPTX = "pptx"
+
+
 # Input models
 
 
@@ -104,8 +147,8 @@ class ComposeInput(BaseModel):
             raise ValueError("Provide source_file or source_markdown, not both")
         return self
 
-    format: str = Field(
-        description="Output format: 'pdf', 'pptx', 'docx', or 'html'.",
+    format: ComposeFormat = Field(
+        description="Output format: 'pdf', 'pptx', 'docx', 'odt', or 'html'.",
     )
     is_slides: bool = Field(
         default=False,
@@ -119,8 +162,8 @@ class ComposeInput(BaseModel):
         default="",
         description="For draft slides: PPTX template path for corporate branding.",
     )
-    template_backend: str = Field(
-        default="auto",
+    template_backend: TemplateBackend = Field(
+        default=TemplateBackend.AUTO,
         description="Template backend: auto, com, uno, docker.",
     )
     filename: str = Field(
@@ -159,8 +202,8 @@ class GenerateDiagramInput(BaseModel):
         default="",
         description="Natural-language description or modification instructions.",
     )
-    diagram_type: str = Field(
-        default="mermaid",
+    diagram_type: DiagramType = Field(
+        default=DiagramType.MERMAID,
         description="'mermaid' or 'drawio'.",
     )
     source: FileAttachment | str | None = Field(
@@ -178,8 +221,8 @@ class GenerateImageInput(BaseModel):
     description: str = Field(
         description="What to generate/edit/extract.",
     )
-    mode: str = Field(
-        default="generate",
+    mode: ImageMode = Field(
+        default=ImageMode.GENERATE,
         description="'generate' (text-to-image), 'edit' (modify), or 'cut' (extract element).",
     )
     source: FileAttachment | str | None = Field(
@@ -198,14 +241,15 @@ class GenerateImageInput(BaseModel):
     )
     size: str = Field(
         default="1024x1024",
-        description="Output size (e.g. '1024x1024', '512x512').",
+        pattern=r"^\d+x\d+$",
+        description="Output size as WIDTHxHEIGHT (e.g. '1024x1024', '512x512').",
     )
-    background: str = Field(
-        default="auto",
+    background: ImageBackground = Field(
+        default=ImageBackground.AUTO,
         description="'auto', 'transparent', or 'white'.",
     )
-    output_format: str = Field(
-        default="png",
+    output_format: ImageFormat = Field(
+        default=ImageFormat.PNG,
         description="'png' or 'webp'.",
     )
 
@@ -222,8 +266,8 @@ class FillFormInput(BaseModel):
         description="PDF or DOCX to fill (file path, base64, or data URI).",
         json_schema_extra={"x-file": True},
     )
-    data: str = Field(
-        description="JSON string of {field_name: value} pairs.",
+    data: str | dict = Field(
+        description="Field values as {field_name: value}. Accepts a dict or a JSON string.",
     )
     filename: str = Field(
         default="",
@@ -268,8 +312,8 @@ class MergeSlidesInput(BaseModel):
         default="merged.pptx",
         description="Name for the output file.",
     )
-    backend: str = Field(
-        default="auto",
+    backend: MergeBackend = Field(
+        default=MergeBackend.AUTO,
         description="'auto', 'com', or 'pptx'.",
     )
 
@@ -380,7 +424,7 @@ class ComposeDocumentTool(AgentTool):
                 is_slides=kwargs.get("is_slides", False),
                 draft=kwargs.get("draft", False),
                 template=tpl_path,
-                template_backend=kwargs.get("template_backend", "auto"),
+                template_backend=TemplateBackend(kwargs.get("template_backend", TemplateBackend.AUTO)).value,
                 reference_doc=ref_path,
                 header_footer_doc=hf_path,
                 settings=svc._settings,
@@ -429,7 +473,7 @@ class GenerateDiagramTool(AgentTool):
 
         result = await generate_diagram(
             description=kwargs.get("description") or None,
-            diagram_type=kwargs.get("diagram_type", "mermaid"),
+            diagram_type=DiagramType(kwargs.get("diagram_type", DiagramType.MERMAID)).value,
             source=src,
             embeds=resolved_embeds,
             output_dir=svc.output_dir,
@@ -465,13 +509,13 @@ class GenerateImageTool(AgentTool):
 
         result = await generate_image_fn(
             description=kwargs["description"],
-            mode=kwargs.get("mode", "generate"),
+            mode=ImageMode(kwargs.get("mode", ImageMode.GENERATE)).value,
             source=src_path,
             mask=mask_path,
             style=kwargs.get("style", ""),
             size=kwargs.get("size", "1024x1024"),
-            background=kwargs.get("background", "auto"),
-            output_format=kwargs.get("output_format", "png"),
+            background=ImageBackground(kwargs.get("background", ImageBackground.AUTO)).value,
+            output_format=ImageFormat(kwargs.get("output_format", ImageFormat.PNG)).value,
             output_dir=svc.output_dir,
             settings=svc._settings,
         )
@@ -581,7 +625,7 @@ class MergeSlidesTool(AgentTool):
         out = svc.output_dir / safe
 
         def _run():
-            return merge_slides(config, out, backend=kwargs.get("backend", "auto"))
+            return merge_slides(config, out, backend=MergeBackend(kwargs.get("backend", MergeBackend.AUTO)).value)
 
         result = await asyncio.to_thread(_run)
         return NamedFile(path=result.output_path, name=output_filename)
