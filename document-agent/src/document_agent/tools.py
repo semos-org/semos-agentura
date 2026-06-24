@@ -110,6 +110,8 @@ class DigestInput(BaseModel):
     )
     max_pages: int | None = Field(
         default=None,
+        ge=1,
+        le=1000,
         description="Maximum number of pages to OCR.",
     )
     digest_mode: DigestMode = Field(

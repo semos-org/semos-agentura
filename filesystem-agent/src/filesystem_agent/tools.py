@@ -48,6 +48,8 @@ class FileTreeInput(BaseModel):
     )
     depth: int = Field(
         default=2,
+        ge=1,
+        le=20,
         description="Maximum depth to traverse.",
     )
 
@@ -127,6 +129,8 @@ class SearchSharepointInput(BaseModel):
     )
     limit: int = Field(
         default=20,
+        ge=1,
+        le=200,
         description="Maximum number of results.",
     )
 
@@ -141,10 +145,14 @@ class GrepInput(BaseModel):
     )
     depth: int = Field(
         default=3,
+        ge=1,
+        le=20,
         description="Maximum directory depth to traverse.",
     )
     max_results: int = Field(
         default=100,
+        ge=1,
+        le=10000,
         description="Maximum number of matching lines to return.",
     )
 
@@ -159,10 +167,14 @@ class GlobInput(BaseModel):
     )
     depth: int = Field(
         default=5,
+        ge=1,
+        le=20,
         description="Maximum directory depth to traverse.",
     )
     max_results: int = Field(
         default=500,
+        ge=1,
+        le=10000,
         description="Maximum number of matching entries to return.",
     )
 
