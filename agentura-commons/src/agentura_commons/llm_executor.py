@@ -227,6 +227,7 @@ class LLMExecutor:
         system_prompt: str = "",
         max_steps: int = 10,
         on_progress: Any | None = None,
+        max_tokens: int = 32000,
     ):
         self.tools = tools
         self.model = model
@@ -235,6 +236,9 @@ class LLMExecutor:
         base = self._synthetic_tools_prompt()
         self.system_prompt = f"{base}\n\n{system_prompt}" if system_prompt else base
         self.max_steps = max_steps
+        # Per-turn output budget. Higher = the model can emit a full document
+        # in one write_file call instead of fragmenting into many small files.
+        self.max_tokens = max_tokens
         self.on_progress = on_progress  # async callback(message: str)
         self._provider = _detect_provider(api_base)
         self._tool_map = {t.name: t for t in tools}
@@ -600,7 +604,7 @@ class LLMExecutor:
 
         payload: dict[str, Any] = {
             "model": self.model,
-            "max_tokens": 4096,
+            "max_tokens": self.max_tokens,
             "system": self.system_prompt,
             "tools": tools,
             "messages": api_messages,
@@ -641,7 +645,7 @@ class LLMExecutor:
 
         payload: dict[str, Any] = {
             "model": self.model,
-            "max_tokens": 4096,
+            "max_tokens": self.max_tokens,
             "tools": tools,
             "messages": api_messages,
         }

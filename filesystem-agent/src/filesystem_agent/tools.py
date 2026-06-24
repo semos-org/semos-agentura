@@ -6,6 +6,7 @@ and an AgentTool subclass with the async implementation.
 
 from __future__ import annotations
 
+from enum import Enum
 from typing import Any
 
 from agentura_commons import AgentTool
@@ -13,7 +14,16 @@ from pydantic import BaseModel, Field
 
 from ._schemas import ADD_ROOT_SCHEMA
 
+# 8 MB - far above any real text document, guards a pathological caller
+# without constraining the LLM (whose output is token-bounded anyway).
+_MAX_WRITE_BYTES = 8 * 1024 * 1024
+
 # Input models
+
+
+class WriteMode(str, Enum):
+    OVERWRITE = "overwrite"
+    APPEND = "append"
 
 
 class ListFilesInput(BaseModel):
@@ -61,9 +71,18 @@ class WriteFileInput(BaseModel):
     )
     content: str = Field(
         ...,
+        max_length=_MAX_WRITE_BYTES,
         description=(
             "Text content to write. REQUIRED - pass the full file body here. "
             "Writing an empty file requires explicitly passing an empty string."
+        ),
+    )
+    mode: WriteMode = Field(
+        default=WriteMode.OVERWRITE,
+        description=(
+            "'overwrite' replaces the file (default). 'append' adds content to "
+            "the end of an existing file - use this to build one large document "
+            "across several calls instead of writing many small files."
         ),
     )
 
@@ -291,7 +310,11 @@ class FileTreeTool(AgentTool):
 
 class WriteFileTool(AgentTool):
     name: str = "write_file"
-    description: str = "Write text content to a file. Creates parent directories if needed."
+    description: str = (
+        "Write text content to a file. Creates parent directories if needed. "
+        "Use mode='append' to build one large document over several calls "
+        "rather than writing many small files."
+    )
     args_schema: type[BaseModel] = WriteFileInput
 
     async def _arun(self, **kwargs: Any) -> str:

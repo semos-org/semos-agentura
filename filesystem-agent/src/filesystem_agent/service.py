@@ -17,6 +17,7 @@ from typing import Any
 from agentura_commons import BaseAgentService, SkillDef, create_app
 
 from .config import Settings
+from .tools import WriteMode
 from .vfs import VirtualFileSystem
 
 logger = logging.getLogger(__name__)
@@ -227,12 +228,27 @@ class FilesystemAgentService(BaseAgentService):
         tree = vfs.tree(uri, depth=depth)
         return json.dumps(tree, ensure_ascii=False, indent=2, default=str)
 
-    async def _write_file(self, uri: str, content: str) -> str:
+    async def _write_file(
+        self,
+        uri: str,
+        content: str,
+        mode: WriteMode | str = WriteMode.OVERWRITE,
+    ) -> str:
         # uri and content are required by WriteFileInput; the MCP wrapper
         # validates against that schema before dispatch (see mcp_server.py),
         # which stops silent 0-char writes when content is omitted.
+        mode = WriteMode(mode)  # accept enum or wire string
         vfs = self._ensure_vfs()
-        vfs.put(uri, content.encode("utf-8"))
+        data = content.encode("utf-8")
+        if mode is WriteMode.APPEND:
+            try:
+                existing = vfs.cat(uri)
+            except FileNotFoundError:
+                existing = b""
+            data = existing + data
+            vfs.put(uri, data)
+            return f"Appended {len(content)} chars to {uri} (now {len(data)} bytes)"
+        vfs.put(uri, data)
         return f"Written {len(content)} chars to {uri}"
 
     async def _create_folder(self, uri: str = "") -> str:

@@ -328,6 +328,43 @@ async def test_write_file(tmp_service: FilesystemAgentService):
 
 
 @pytest.mark.asyncio
+async def test_write_file_append(tmp_service: FilesystemAgentService):
+    """mode='append' accumulates into one file instead of overwriting."""
+    vfs = tmp_service._ensure_vfs()
+    await tmp_service._write_file("alpha://log.md", "# Part 1\n")
+    await tmp_service._write_file("alpha://log.md", "## Part 2\n", mode="append")
+    await tmp_service._write_file("alpha://log.md", "## Part 3\n", mode="append")
+    assert vfs.cat("alpha://log.md").decode() == "# Part 1\n## Part 2\n## Part 3\n"
+
+
+@pytest.mark.asyncio
+async def test_write_file_append_creates_when_missing(tmp_service: FilesystemAgentService):
+    """Appending to a non-existent file creates it."""
+    vfs = tmp_service._ensure_vfs()
+    await tmp_service._write_file("alpha://fresh.txt", "hi", mode="append")
+    assert vfs.cat("alpha://fresh.txt") == b"hi"
+
+
+@pytest.mark.asyncio
+async def test_write_file_overwrite_default(tmp_service: FilesystemAgentService):
+    """Default mode overwrites."""
+    vfs = tmp_service._ensure_vfs()
+    await tmp_service._write_file("alpha://o.txt", "first")
+    await tmp_service._write_file("alpha://o.txt", "second")
+    assert vfs.cat("alpha://o.txt") == b"second"
+
+
+def test_write_file_mode_is_enum():
+    """mode is exposed as a WriteMode enum (closed set) in the schema."""
+    from filesystem_agent.tools import WriteFileInput, WriteMode
+    from pydantic import ValidationError
+
+    assert [m.value for m in WriteMode] == ["overwrite", "append"]
+    with pytest.raises(ValidationError):
+        WriteFileInput.model_validate({"uri": "x://a", "content": "c", "mode": "bogus"})
+
+
+@pytest.mark.asyncio
 async def test_write_file_empty_string_allowed(tmp_service: FilesystemAgentService):
     """Explicitly passing an empty string writes an empty file."""
     result = await tmp_service._write_file("alpha://empty.txt", "")
