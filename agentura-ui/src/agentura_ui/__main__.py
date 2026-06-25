@@ -123,22 +123,34 @@ def _build_agents() -> list[AgentConnection]:
         )
 
     # Extra agents from env: "survey-agent:8004,other:8005"
+    # Supports optional MCP path: "eln-agent:8765:/sse"
     extra = os.environ.get("EXTRA_AGENTS", "")
     for entry in extra.split(","):
         entry = entry.strip()
         if not entry:
             continue
-        if ":" in entry:
-            name, port_str = entry.rsplit(":", 1)
-            base = f"http://localhost:{port_str}"
+        parts = entry.split(":")
+        if len(parts) >= 3 and parts[2].startswith("/"):
+            name = parts[0]
+            base = f"http://localhost:{parts[1]}"
+            mcp_path = parts[2]
+            a2a_enabled = False
+        elif len(parts) >= 2:
+            name = parts[0]
+            base = f"http://localhost:{parts[1]}"
+            mcp_path = "/mcp/sse"
+            a2a_enabled = True
         else:
             name = entry
             base = "http://localhost:8080"
+            mcp_path = "/mcp/sse"
+            a2a_enabled = True
         agents.append(
             AgentConnection(
                 name=name,
-                url=f"{base}/mcp/sse",
+                url=f"{base}{mcp_path}",
                 base_url=base,
+                a2a_enabled=a2a_enabled,
             )
         )
 
@@ -744,7 +756,7 @@ def main() -> None:
 
     # 5. Discover A2A agents and create delegate tools
     # (natural language, agent routes internally)
-    base_urls = [a.base_url for a in agents]
+    base_urls = [a.base_url for a in agents if a.a2a_enabled]
     delegates: list = []
     try:
         a2a_agents = asyncio.run(discover_agents(base_urls))

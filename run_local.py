@@ -25,6 +25,7 @@ import time
 AGENTS = [
     ("email-agent", "email_agent.service:app", 8001),
     ("document-agent", "document_agent.service:app", 8002),
+    # ("llm4eln-osl", "http://0.0.0.0:8765"),
     # filesystem-agent is hosted in-process by the UI
     # (shares the same VFS instance for session:// files)
 ]

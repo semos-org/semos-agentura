@@ -25,6 +25,7 @@ class AgentConnection:
     base_url: str  # For file downloads (e.g. http://localhost:8002)
     session: ClientSession | None = field(default=None, repr=False)
     tools: list[Tool] = field(default_factory=list)
+    a2a_enabled: bool = True  # False for MCP-only agents (no agent-card endpoint)
 
 
 class MCPHub:
