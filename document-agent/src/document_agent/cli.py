@@ -42,9 +42,9 @@ def main() -> None:
     )
     dig.add_argument(
         "--mode",
-        choices=["auto", "ocr", "pandoc"],
+        choices=["auto", "ocr", "pandoc", "visual"],
         default="auto",
-        help="Digest mode: auto (pandoc for DOCX/ODT, OCR otherwise), ocr, or pandoc",
+        help="Digest mode: auto (pandoc for DOCX/ODT, OCR otherwise), ocr, pandoc, or visual (VLM reads rendered form pages)",
     )
     dig.add_argument(
         "--track-changes",
@@ -103,6 +103,17 @@ def main() -> None:
     insp = subparsers.add_parser("inspect", help="Inspect form fields in a PDF or DOCX")
     insp.add_argument("file", help="PDF or DOCX file with form fields")
     insp.add_argument("--json", action="store_true", help="Output as JSON")
+    insp.add_argument(
+        "--visual",
+        action="store_true",
+        help="Learn cryptic field labels via render + VLM (needs LibreOffice for DOCX)",
+    )
+    insp.add_argument(
+        "--max-iterations",
+        type=int,
+        default=3,
+        help="Visual mode: max probe/render/review cycles (default: 3)",
+    )
 
     # --- fill subcommand ---
     fill = subparsers.add_parser("fill", help="Fill form fields in a PDF or DOCX")
@@ -194,7 +205,7 @@ def main() -> None:
     elif args.command == "compose":
         _run_compose(args, settings)
     elif args.command == "inspect":
-        _run_inspect(args)
+        _run_inspect(args, settings)
     elif args.command == "fill":
         _run_fill(args)
     elif args.command == "diagram":
@@ -300,7 +311,7 @@ def _run_compose(args: argparse.Namespace, settings: Settings) -> None:
     print(f"Written: {result.output_path}")
 
 
-def _run_inspect(args: argparse.Namespace) -> None:
+def _run_inspect(args: argparse.Namespace, settings: Settings) -> None:
     import json as json_mod
 
     from .forms import inspect_form
@@ -310,18 +321,32 @@ def _run_inspect(args: argparse.Namespace) -> None:
         print(f"Error: File not found: {file_path}", file=sys.stderr)
         sys.exit(1)
 
-    fields = inspect_form(file_path)
-    if args.json:
-        print(json_mod.dumps(fields, indent=2, ensure_ascii=False, default=str))
+    if getattr(args, "visual", False):
+        import asyncio
+
+        from .forms import inspect_form_visual
+
+        result = asyncio.run(inspect_form_visual(file_path, max_iterations=args.max_iterations, settings=settings))
     else:
-        if not fields:
-            print("No form fields found.")
-            return
-        print(f"Form fields ({len(fields)}):\n")
-        for f in fields:
-            opts = f" options={f['options']}" if "options" in f else ""
-            fmt = f" [{f['format']}]" if "format" in f else ""
-            print(f"  {f['type']:10s} {f['name']:40s} = {f.get('value', '')!r}{opts}{fmt}")
+        result = inspect_form(file_path)
+
+    if args.json:
+        print(json_mod.dumps(result, indent=2, ensure_ascii=False, default=str))
+        return
+
+    props = result["schema"].get("properties", {})
+    if not props:
+        print("No form fields found.")
+        return
+    print(f"Form fields ({len(props)}):\n")
+    for key, prop in props.items():
+        fid = prop.get("x-field-id", key)
+        kind = prop.get("x-field-type", prop.get("type", ""))
+        title = prop.get("title", "")
+        value = result["data"].get(fid, "")
+        opts = f" options={prop['enum']}" if "enum" in prop else ""
+        label = f" [{title}]" if title and title != fid else ""
+        print(f"  {kind:10s} {fid:40s} = {value!r}{label}{opts}")
 
 
 def _run_fill(args: argparse.Namespace) -> None:

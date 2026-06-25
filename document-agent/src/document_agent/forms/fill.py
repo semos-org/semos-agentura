@@ -10,15 +10,17 @@ from typing import Any
 from ..exceptions import DocumentAgentError
 from ._docx_forms import fill_docx_fields, inspect_docx_fields
 from ._pdf_forms import fill_pdf_fields, inspect_pdf_fields
+from ._schema import fields_to_data, fields_to_schema, flatten_to_field_ids
 
 logger = logging.getLogger(__name__)
 
 
-def inspect_form(file_path: Path | str) -> list[dict]:
-    """Inspect form fields in a PDF or DOCX file.
+def inspect_form_fields(file_path: Path | str) -> list[dict]:
+    """Return the raw list of field metadata dicts for a PDF or DOCX.
 
-    Returns a list of field metadata dicts with keys:
-        name, type, format, value, options (if applicable)
+    Lower-level than ``inspect_form``: callers that need per-field geometry,
+    flags, or options (e.g. the visual inspect loop) use this. Each dict has
+    at least: name, type, value; PDF adds label/page/rect/max_length/flags.
     """
     file_path = Path(file_path)
     ext = file_path.suffix.lower()
@@ -29,6 +31,18 @@ def inspect_form(file_path: Path | str) -> list[dict]:
         return inspect_docx_fields(file_path)
     else:
         raise DocumentAgentError(f"Unsupported form file type: {ext}")
+
+
+def inspect_form(file_path: Path | str) -> dict:
+    """Inspect form fields in a PDF or DOCX file.
+
+    Returns ``{"schema": <JSON Schema>, "data": {field_id: current_value}}``.
+    The schema describes every field (type, label, options, max_length, page,
+    flags) with each leaf carrying ``x-field-id`` = the real fill key. The
+    data dict is a round-trip-ready fill input of current values.
+    """
+    fields = inspect_form_fields(file_path)
+    return {"schema": fields_to_schema(fields), "data": fields_to_data(fields)}
 
 
 def fill_form(
@@ -68,6 +82,11 @@ def fill_form(
 
     if not isinstance(data, dict):
         raise DocumentAgentError(f"Data must be a dict or path to JSON file, got {type(data)}")
+
+    # Accept a {schema, data} pair (from inspect_form) - flatten via x-field-id
+    # to the {field_id: value} dict the fillers expect.
+    if "schema" in data and "data" in data and isinstance(data["schema"], dict):
+        data = flatten_to_field_ids(data["schema"], data["data"])
 
     ext = file_path.suffix.lower()
     if ext == ".pdf":

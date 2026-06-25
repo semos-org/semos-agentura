@@ -17,7 +17,7 @@ from .composition import (
 )
 from .config import Settings
 from .digestion import digest
-from .forms import fill_form, fill_form_with_template, inspect_form
+from .forms import fill_form, fill_form_with_template, inspect_form, inspect_form_visual
 from .models import (
     ComposeResult,
     DiagramResult,
@@ -47,6 +47,7 @@ __all__ = [
     "generate_diagram",
     "generate_image_fn",
     "inspect_form",
+    "inspect_form_visual",
     "load_merge_config",
     "merge_slides",
     "parse_source_args",

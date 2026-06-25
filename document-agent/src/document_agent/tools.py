@@ -7,6 +7,7 @@ and an AgentTool subclass with the async implementation.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import shutil
 import uuid
@@ -25,6 +26,7 @@ from . import (
     generate_diagram,
     generate_image_fn,
     inspect_form,
+    inspect_form_visual,
     merge_slides,
 )
 from .models import OutputFormat, OutputMode
@@ -41,6 +43,7 @@ class DigestMode(str, Enum):
     AUTO = "auto"
     OCR = "ocr"
     PANDOC = "pandoc"
+    VISUAL = "visual"
 
 
 class TrackChanges(str, Enum):
@@ -116,7 +119,11 @@ class DigestInput(BaseModel):
     )
     digest_mode: DigestMode = Field(
         default=DigestMode.AUTO,
-        description="'auto' (pandoc for DOCX/ODT, OCR otherwise), 'ocr', or 'pandoc'.",
+        description=(
+            "'auto' (pandoc for DOCX/ODT, OCR otherwise), 'ocr', 'pandoc', or "
+            "'visual' (render pages and run a VLM to read filled form content "
+            "and validate field placement)."
+        ),
     )
     track_changes: TrackChanges = Field(
         default=TrackChanges.ACCEPT,
@@ -261,6 +268,20 @@ class InspectFormInput(BaseModel):
         description="PDF or DOCX to inspect (file path, base64, or data URI).",
         json_schema_extra={"x-file": True},
     )
+    visual: bool = Field(
+        default=False,
+        description=(
+            "Enable when form keys are cryptic / not self-explaining. Fills the "
+            "form with probe values, renders pages, and uses a VLM to learn each "
+            "field's human label. Slower; needs LibreOffice for DOCX."
+        ),
+    )
+    max_iterations: int = Field(
+        default=3,
+        ge=1,
+        le=10,
+        description="Visual mode: max probe/render/review cycles.",
+    )
 
 
 class FillFormInput(BaseModel):
@@ -269,7 +290,13 @@ class FillFormInput(BaseModel):
         json_schema_extra={"x-file": True},
     )
     data: str | dict = Field(
-        description="Field values as {field_name: value}. Accepts a dict or a JSON string.",
+        description=(
+            "Field values to write. Keys MUST be the field's x-field-id from "
+            "inspect_form's schema (the real fill key), NOT the human label. "
+            "Values by type: text/date -> str, checkbox -> bool, radio/dropdown "
+            "-> the option value. Accepts a dict or a JSON string. You may also "
+            "pass the whole {schema, data} object from inspect_form."
+        ),
     )
     filename: str = Field(
         default="",
@@ -325,6 +352,62 @@ class GetExamplesInput(BaseModel):
 
 
 # Tool implementations
+
+
+def _form_content_hash(path: Path) -> str:
+    """SHA1 of file bytes - stable across the temp paths of repeated uploads."""
+    return hashlib.sha1(Path(path).read_bytes()).hexdigest()
+
+
+def _cache_form_resolver(svc: Any, fp: Path, schema: dict) -> None:
+    """Cache a label/title -> x-field-id resolver for a later fill_form call."""
+    cache = getattr(svc, "_form_resolver_cache", None)
+    if cache is None:
+        cache = {}
+        svc._form_resolver_cache = cache
+    field_ids: set[str] = set()
+    label_to_id: dict[str, str] = {}
+    for prop in schema.get("properties", {}).values():
+        fid = prop.get("x-field-id")
+        if not fid:
+            continue
+        field_ids.add(fid)
+        title = prop.get("title")
+        if title and title != fid:
+            label_to_id.setdefault(title, fid)
+    cache[_form_content_hash(fp)] = {"field_ids": field_ids, "label_to_id": label_to_id}
+
+
+def _resolve_fill_keys(svc: Any, fp: Path, data: Any) -> Any:
+    """Remap label-keyed fill data to x-field-id using the cached resolver.
+
+    Lets fill_form succeed even when the model keys by the human label/title
+    instead of the real field id. Keys already matching a field id, and the
+    {schema, data} form, pass through untouched.
+    """
+    if not isinstance(data, dict) or "schema" in data:
+        return data
+    entry = (
+        getattr(svc, "_form_resolver_cache", {}).get(_form_content_hash(fp))
+        if hasattr(svc, "_form_resolver_cache")
+        else None
+    )
+    if not entry:
+        return data
+    field_ids = entry["field_ids"]
+    label_to_id = entry["label_to_id"]
+    lower = {lbl.lower(): fid for lbl, fid in label_to_id.items()}
+    out: dict[str, Any] = {}
+    for key, value in data.items():
+        if key in field_ids:
+            out[key] = value
+        elif key in label_to_id:
+            out[label_to_id[key]] = value
+        elif str(key).lower() in lower:
+            out[lower[str(key).lower()]] = value
+        else:
+            out[key] = value
+    return out
 
 
 class DigestDocumentTool(AgentTool):
@@ -533,7 +616,12 @@ class GenerateImageTool(AgentTool):
 
 class InspectFormTool(AgentTool):
     name: str = "inspect_form"
-    description: str = "Inspect form fields in a PDF or DOCX."
+    description: str = (
+        "Inspect form fields in a PDF or DOCX. Returns a JSON Schema of the "
+        "fields (each leaf carries x-field-id = the real fill key) plus a data "
+        "dict of current values. Set visual=true when keys are cryptic to learn "
+        "human labels from the rendered pages."
+    )
     args_schema: type[BaseModel] = InspectFormInput
     read_only: bool = True
     idempotent: bool = True
@@ -542,11 +630,29 @@ class InspectFormTool(AgentTool):
         svc = self._service
         fp = svc.resolve_file_attachment(kwargs["file_path"], ".pdf")
 
-        def _run():
-            return inspect_form(file_path=fp)
+        if kwargs.get("visual"):
+            result = await inspect_form_visual(
+                fp,
+                max_iterations=kwargs.get("max_iterations", 3),
+                output_dir=svc.output_dir,
+                settings=svc._settings,
+            )
+            validation = result.pop("validation_path", None)
+            _cache_form_resolver(svc, fp, result.get("schema", {}))
+            # Return the schema as structured data so it survives in
+            # structuredContent alongside the validation file (a file-only
+            # ToolResult would push the schema out of structuredContent).
+            if validation:
+                vpath = Path(validation)
+                return ToolResult(
+                    data=result,
+                    files=[NamedFile(path=vpath, name=f"{fp.stem}_validation{vpath.suffix}")],
+                )
+            return ToolResult(data=result)
 
-        fields = await asyncio.to_thread(_run)
-        return json.dumps(fields, ensure_ascii=False)
+        result = await asyncio.to_thread(inspect_form, fp)
+        _cache_form_resolver(svc, fp, result.get("schema", {}))
+        return ToolResult(data=result)
 
 
 class FillFormTool(AgentTool):
@@ -560,6 +666,9 @@ class FillFormTool(AgentTool):
         data = kwargs["data"]
         field_data = json.loads(data) if isinstance(data, str) else data
         fp = svc.resolve_file_attachment(kwargs["file_path"], ".pdf")
+        # Map label/title-keyed data back to x-field-id via the resolver cached
+        # by a preceding inspect_form call (robust to the model mis-keying).
+        field_data = _resolve_fill_keys(svc, fp, field_data)
         filename = kwargs.get("filename", "")
         if not filename:
             ext = fp.suffix or ".pdf"

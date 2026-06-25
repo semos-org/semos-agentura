@@ -176,6 +176,21 @@ class LLMClient:
         msgs = _inject_image(messages, image_b64, self.provider)
         return await self.chat(msgs, max_tokens=max_tokens)
 
+    async def chat_with_images(
+        self,
+        messages: list[dict[str, Any]],
+        images_b64: list[str],
+        *,
+        max_tokens: int = 4096,
+    ) -> str:
+        """Send chat with several inline base64 images for vision.
+
+        Appends all images to the last user message as multi-part
+        content blocks.
+        """
+        msgs = _inject_images(messages, images_b64, self.provider)
+        return await self.chat(msgs, max_tokens=max_tokens)
+
     async def chat_structured(
         self,
         messages: list[dict[str, Any]],
@@ -183,19 +198,24 @@ class LLMClient:
         *,
         tool_name: str = "structured_output",
         image_b64: str | None = None,
+        images_b64: list[str] | None = None,
         max_tokens: int = 4096,
     ) -> dict[str, Any]:
         """Chat with forced structured output matching a JSON schema.
 
         Uses tool_use (Anthropic) or response_format (OpenAI) to
-        guarantee the response matches the schema.
+        guarantee the response matches the schema. Pass image_b64 for a
+        single image or images_b64 for several (e.g. form pages).
 
         Returns the parsed dict.
         """
         import json
 
+        imgs = list(images_b64 or [])
         if image_b64:
-            messages = _inject_image(messages, image_b64, self.provider)
+            imgs.insert(0, image_b64)
+        if imgs:
+            messages = _inject_images(messages, imgs, self.provider)
 
         url, headers, payload = self._build_request(messages, max_tokens=max_tokens)
 
@@ -246,23 +266,34 @@ def _inject_image(
     image_b64: str,
     provider: str,
 ) -> list[dict[str, Any]]:
-    """Return a copy of messages with the image added to the
+    """Return a copy of messages with one image added to the last user
+    message (shim over _inject_images)."""
+    return _inject_images(messages, [image_b64], provider)
+
+
+def _inject_images(
+    messages: list[dict[str, Any]],
+    images_b64: list[str],
+    provider: str,
+) -> list[dict[str, Any]]:
+    """Return a copy of messages with one or more images added to the
     last user message."""
     msgs = [m.copy() for m in messages]
-    media_type, raw_b64 = _parse_image_b64(image_b64)
+    if not images_b64:
+        return msgs
+
     # Find last user message
     for i in range(len(msgs) - 1, -1, -1):
-        if msgs[i].get("role") == "user":
-            content = msgs[i].get("content", "")
-            if isinstance(content, str):
-                text_part = content
-            else:
-                text_part = content
-                break
+        if msgs[i].get("role") != "user":
+            continue
+        content = msgs[i].get("content", "")
+        text_part = content if isinstance(content, str) else ""
 
+        blocks: list[dict[str, Any]] = [{"type": "text", "text": text_part}]
+        for image_b64 in images_b64:
+            media_type, raw_b64 = _parse_image_b64(image_b64)
             if provider in ("anthropic", "azure_anthropic"):
-                msgs[i]["content"] = [
-                    {"type": "text", "text": text_part},
+                blocks.append(
                     {
                         "type": "image",
                         "source": {
@@ -270,19 +301,14 @@ def _inject_image(
                             "media_type": media_type,
                             "data": raw_b64,
                         },
-                    },
-                ]
+                    }
+                )
             else:
                 # OpenAI / Azure / Mistral vision format
                 data_uri = f"data:{media_type};base64,{raw_b64}"
-                msgs[i]["content"] = [
-                    {"type": "text", "text": text_part},
-                    {
-                        "type": "image_url",
-                        "image_url": {"url": data_uri},
-                    },
-                ]
-            break
+                blocks.append({"type": "image_url", "image_url": {"url": data_uri}})
+        msgs[i]["content"] = blocks
+        break
     return msgs
 
 

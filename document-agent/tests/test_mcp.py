@@ -155,11 +155,12 @@ async def test_inspect_form(service, sample_docx):
     async with mcp_client_for(service) as client:
         result = await client.call_tool("inspect_form", {"file_path": str(sample_docx)})
         data = parse_tool_result(result)
-        assert isinstance(data, list)
-        assert len(data) > 0
-        names = {f["name"] for f in data}
-        assert "StartDate" in names
-        assert "FullName" in names
+        assert set(data) == {"schema", "data"}
+        props = data["schema"]["properties"]
+        # Property keys carry x-field-id bridging to the real fill key.
+        field_ids = {p["x-field-id"] for p in props.values()}
+        assert "StartDate" in field_ids
+        assert "FullName" in field_ids
 
 
 # fill_form via MCP

@@ -104,6 +104,17 @@ def _digest_file(
     if ext not in SUPPORTED_EXTENSIONS:
         raise DocumentAgentError(f"Unsupported file type: {ext}")
 
+    # Visual path - render pages and run VLM extraction (forms, validation)
+    if digest_mode == "visual":
+        from ._visual_digest import digest_visual
+
+        return digest_visual(
+            file_path,
+            output_dir=output_dir or file_path.parent,
+            output_mode=output_mode,
+            settings=settings,
+        )
+
     # Pandoc path for DOCX/ODT - preserves footnotes, tracked changes, comments
     _pandoc_exts = {".docx", ".odt"}
     if ext in _pandoc_exts and digest_mode != "ocr":

@@ -20,13 +20,33 @@ FT_SIGNATURE = "/Sig"
 FF_PUSHBUTTON = 1 << 16
 FF_RADIO = 1 << 15
 
+# Common /Ff flag bits mapped to readable names (1-based bit numbers from spec).
+_FLAG_BITS = {
+    "readonly": 1 << 0,
+    "required": 1 << 1,
+    "no-export": 1 << 2,
+    "multiline": 1 << 12,  # text fields
+    "password": 1 << 13,  # text fields
+    "comb": 1 << 24,  # text fields
+}
+
+# Text justification (/Q) values.
+_ALIGN = {0: "left", 1: "center", 2: "right"}
+
 
 def inspect_pdf_fields(file_path: Path) -> list[dict]:
-    """Inspect all form fields in a PDF. Returns a list of field metadata dicts."""
+    """Inspect all form fields in a PDF. Returns a list of field metadata dicts.
+
+    Each dict carries every available AcroForm annotation: name, type, current
+    value/default, label (/TU tooltip), max_length (/MaxLen), alignment (/Q),
+    decoded flags (/Ff), options, and the widget's page index and rect.
+    """
     reader = PdfReader(file_path)
     fields = reader.get_fields()
     if not fields:
         return []
+
+    geometry = _build_geometry_map(reader)
 
     result = []
     for name, field in fields.items():
@@ -45,6 +65,35 @@ def inspect_pdf_fields(file_path: Path) -> list[dict]:
             "default": _format_value(default),
         }
 
+        # Human label from the tooltip / alternate field name.
+        tu = field.get("/TU")
+        if tu:
+            entry["label"] = str(tu)
+
+        # Capacity and presentation.
+        max_len = field.get("/MaxLen")
+        if max_len is not None:
+            try:
+                entry["max_length"] = int(max_len)
+            except (TypeError, ValueError):
+                pass
+        q = field.get("/Q")
+        if q is not None and int(q) in _ALIGN:
+            entry["alignment"] = _ALIGN[int(q)]
+
+        flags = _decode_flags(ff)
+        if flags:
+            entry["flags"] = flags
+
+        # Geometry (page index + rect) from the widget annotation.
+        geo = geometry.get(name)
+        if geo:
+            entry["page"] = geo[0]
+            entry["rect"] = geo[1]
+            if geo[2]:
+                entry["hidden"] = True
+                entry.setdefault("flags", []).append("hidden")
+
         # For radio/dropdown, extract options
         if kind == "radio":
             entry["options"] = _extract_radio_options(field)
@@ -54,6 +103,62 @@ def inspect_pdf_fields(file_path: Path) -> list[dict]:
         result.append(entry)
 
     return result
+
+
+def _decode_flags(ff: int) -> list[str]:
+    """Decode the /Ff bitmask into readable flag names."""
+    return [name for name, bit in _FLAG_BITS.items() if ff & bit]
+
+
+def _build_geometry_map(reader: PdfReader) -> dict[str, tuple[int, list[float], bool]]:
+    """Map field name -> (page_index, rect, hidden) from widget annotations.
+
+    The merged get_fields() dict lacks geometry, so we traverse each page's
+    /Annots and match widgets to their fully-qualified field name via /T,
+    walking /Parent for nested names. ``hidden`` is true for widgets whose
+    annotation /F flag sets Hidden (bit 2) or NoView (bit 6) - data-carrier
+    fields that do not print and so cannot be labeled visually.
+    """
+    geometry: dict[str, tuple[int, list[float], bool]] = {}
+    for page_index, page in enumerate(reader.pages):
+        annots = page.get("/Annots")
+        if not annots:
+            continue
+        for annot_ref in annots:
+            try:
+                annot = annot_ref.get_object()
+            except Exception:
+                continue
+            name = _qualified_name(annot)
+            if not name or name in geometry:
+                continue
+            rect = annot.get("/Rect")
+            if rect is None:
+                continue
+            flags = int(annot.get("/F", 0))
+            hidden = bool(flags & 2 or flags & 32)
+            try:
+                geometry[name] = (page_index, [float(x) for x in rect], hidden)
+            except (TypeError, ValueError):
+                continue
+    return geometry
+
+
+def _qualified_name(annot: Any) -> str | None:
+    """Build the fully-qualified field name for a widget annotation."""
+    parts: list[str] = []
+    node: Any = annot
+    seen = 0
+    while node is not None and seen < 20:
+        t = node.get("/T")
+        if t:
+            parts.append(str(t))
+        parent = node.get("/Parent")
+        node = parent.get_object() if parent is not None and hasattr(parent, "get_object") else None
+        seen += 1
+    if not parts:
+        return None
+    return ".".join(reversed(parts))
 
 
 def fill_pdf_fields(file_path: Path, output_path: Path, data: dict[str, Any]) -> Path:
