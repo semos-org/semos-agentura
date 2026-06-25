@@ -26,3 +26,6 @@ local-tests/
 
 # UI config (user-specific LLM provider settings, use config.example.yml)
 agentura-ui/config.yml
+
+# Local
+.claude
