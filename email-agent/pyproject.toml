@@ -1,7 +1,7 @@
 [project]
 name = "email-agent"
 dynamic = ["version"]
-description = "Unified email client — IMAP/SMTP + Outlook COM, with LLM agent and archive"
+description = "Unified email client (IMAP/SMTP + Outlook COM) with LLM agent and archive"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

@@ -1,10 +1,10 @@
-# Semos Agentura — Agent Architecture Reference
+# Semos Agentura: Agent Architecture Reference
 
 This document captures the architectural patterns implemented across semos-agentura, drawing on proven patterns from production coding agents (Claude Code, OpenCode) adapted for domain-specific use cases (document management, email, research).
 
 ## 1. The Universal Agent Loop
 
-**Implementation**: `agentura-commons/src/agentura_commons/llm_executor.py` — `LLMExecutor`
+**Implementation**: `agentura-commons/src/agentura_commons/llm_executor.py` (`LLMExecutor`)
 
 The core of every agent is the same loop:
 
@@ -24,15 +24,15 @@ Loop back to LLM call (up to max_steps)
 `LLMExecutor` supports both Anthropic (native API + Azure AI Foundry) and OpenAI-compatible endpoints. Provider detection is automatic based on `api_base` URL.
 
 Every agent instantiation differs only in:
-- **tools** — the `list[ToolDef]` specific to the domain
-- **system_prompt** — what the agent knows about itself
-- **max_steps** — guard against runaway loops (default: 10)
+- **tools**: the `list[ToolDef]` specific to the domain
+- **system_prompt**: what the agent knows about itself
+- **max_steps**: guard against runaway loops (default: 10)
 
 This pattern matches Claude Code's QueryEngine and OpenCode's streamText+processor loop.
 
 ## 2. Tool System
 
-**Implementation**: `agentura-commons/src/agentura_commons/base.py` — `ToolDef`, `ToolResult`
+**Implementation**: `agentura-commons/src/agentura_commons/base.py` (`ToolDef`, `ToolResult`)
 
 ### ToolDef
 
@@ -53,7 +53,7 @@ class ToolDef:
 
 If `parameters` is not provided, `LLMExecutor` generates a JSON schema from the function signature via `inspect.signature()`. Type annotations map to JSON types: `str→string`, `int→integer`, `bool→boolean`, `list→array`.
 
-For complex parameter types (nested objects, typed arrays), provide an explicit `parameters` dict on `ToolDef` instead of relying on auto-generation. Example: `batch_edit` uses `parameters={"type": "object", "properties": {"edits": {"type": "array", "items": {"type": "object", ...}}}}` so the LLM passes structured data directly — no JSON-in-a-string encoding needed.
+For complex parameter types (nested objects, typed arrays), provide an explicit `parameters` dict on `ToolDef` instead of relying on auto-generation. Example: `batch_edit` uses `parameters={"type": "object", "properties": {"edits": {"type": "array", "items": {"type": "object", ...}}}}` so the LLM passes structured data directly, with no JSON-in-a-string encoding needed.
 
 ### Tool result normalization
 
@@ -73,7 +73,7 @@ Tool functions can return any Python type. The MCP wrapper normalizes automatica
 
 ## 3. Synthetic Tools (Agent Interaction)
 
-**Implementation**: `agentura-commons/src/agentura_commons/llm_executor.py` — synthetic tool definitions
+**Implementation**: `agentura-commons/src/agentura_commons/llm_executor.py` (synthetic tool definitions)
 
 The LLM executor injects 5 synthetic tools into every agent session. These are intercepted by the executor itself (never reach real tool functions) and control the task lifecycle:
 
@@ -217,8 +217,8 @@ Three strategies, matching coding agent patterns:
 
 ### Batch edit (`batch_edit`)
 - Best for: multiple coordinated changes in one file
-- Pattern: structured `edits` array parameter (not a JSON string — uses explicit `parameters` schema on `ToolDef` with `type: "array"`, `items: {type: "object", properties: {old, new}}`)
-- Same efficiency as OpenCode's `multiedit` — N changes in 1 round trip instead of N
+- Pattern: structured `edits` array parameter (not a JSON string; it uses an explicit `parameters` schema on `ToolDef` with `type: "array"`, `items: {type: "object", properties: {old, new}}`)
+- Same efficiency as OpenCode's `multiedit`: N changes in 1 round trip instead of N
 - Each edit sees the result of prior edits (sequential application)
 
 ### When to use which
@@ -232,7 +232,7 @@ Three strategies, matching coding agent patterns:
 
 ## 9. Memory System
 
-The VFS itself serves as the memory substrate — no separate memory infrastructure needed.
+The VFS itself serves as the memory substrate, so no separate memory infrastructure is needed.
 
 ### Session memory (per-session)
 - `.md` files in the `session://` root (in-memory filesystem)
@@ -245,7 +245,7 @@ The VFS itself serves as the memory substrate — no separate memory infrastruct
 - Present in ALL agent sessions as a mounted root
 - Shared knowledge base: conventions, patterns, recurring solutions
 - Agent reads on startup, writes back discoveries
-- Updated via standard `write_file` / `edit_file` — no special API
+- Updated via standard `write_file` / `edit_file`, with no special API
 
 ### Future: Knowledge graph
 - Evolve from flat `.md` files to structured knowledge graph
@@ -255,14 +255,14 @@ The VFS itself serves as the memory substrate — no separate memory infrastruct
 - Graph operations exposed as additional VFS tools
 
 ### Key insight
-VFS IS the memory system. Files are the universal abstraction — whether the "memory" lives in a local directory, an in-memory filesystem, or a SharePoint document library, the same tools (`read_file`, `write_file`, `edit_file`, `grep`) work uniformly.
+VFS IS the memory system. Files are the universal abstraction: whether the "memory" lives in a local directory, an in-memory filesystem, or a SharePoint document library, the same tools (`read_file`, `write_file`, `edit_file`, `grep`) work uniformly.
 
 ## 10. Context Management
 
 ### Current implementation
-- `LLMExecutor.max_steps` — hard guard against infinite loops
-- Task history persistence — `_task_histories[task_id]` for multi-turn
-- File context accumulation — `_context_files[context_id]` across tasks
+- `LLMExecutor.max_steps`: hard guard against infinite loops
+- Task history persistence via `_task_histories[task_id]` for multi-turn
+- File context accumulation via `_context_files[context_id]` across tasks
 
 ### Future: Compaction
 For long-running sessions, context will need compression:
@@ -276,12 +276,12 @@ This matches the patterns used by Claude Code (automatic compaction) and OpenCod
 
 See [file-handling-spec.md](file-handling-spec.md) for the full specification.
 
-Core principle: **the LLM never touches binary data**. A client middleware layer handles all binary serialization — injecting file content into tool calls before they reach the server, and extracting file content from tool results before they reach the LLM.
+Core principle: **the LLM never touches binary data**. A client middleware layer handles all binary serialization, injecting file content into tool calls before they reach the server, and extracting file content from tool results before they reach the LLM.
 
 Key types:
-- `FileAttachment` — `{name: str, content: str}` — content is path, base64, or data URI
-- `NamedFile` — `Path` + display name (when on-disk name differs from user-facing name)
-- `FileRegistry` — client-side registry mapping names to content
+- `FileAttachment`: `{name: str, content: str}`, where content is path, base64, or data URI
+- `NamedFile`: `Path` plus a display name (when on-disk name differs from user-facing name)
+- `FileRegistry`: client-side registry mapping names to content
 
 ## 12. Agent Composition
 
@@ -305,8 +305,8 @@ Single interface for both MCP tools and A2A task delegation. An orchestrator age
 ### Pattern: Hub-and-spoke
 ```
 Orchestrator Agent
-  ├── filesystem-agent (A2A) — file access, search, editing
-  ├── document-agent (A2A) — OCR, composition, form filling
-  ├── email-agent (A2A) — Outlook, calendar, contacts
-  └── external MCP servers — additional capabilities
+  ├── filesystem-agent (A2A): file access, search, editing
+  ├── document-agent (A2A): OCR, composition, form filling
+  ├── email-agent (A2A): Outlook, calendar, contacts
+  └── external MCP servers: additional capabilities
 ```

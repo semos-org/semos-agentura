@@ -1,6 +1,6 @@
 # email-agent
 
-Unified email client with LLM agent — supports IMAP/SMTP, Outlook COM, CalDAV, and Microsoft Graph API backends.
+Unified email client with LLM agent. Supports IMAP/SMTP, Outlook COM, CalDAV, and Microsoft Graph API backends.
 
 ## Backends
 
@@ -11,7 +11,7 @@ Unified email client with LLM agent — supports IMAP/SMTP, Outlook COM, CalDAV,
 | CalDAV | No | Yes | Any | Google, Nextcloud, iCloud |
 | Graph API | No | No | Any | M365 (Phase 3) |
 
-Email and calendar backends are independent — e.g. IMAP for email + CalDAV for calendar.
+Email and calendar backends are independent (for example, IMAP for email plus CalDAV for calendar).
 
 **Auto-detection priority:**
 1. Explicit `BACKEND=com|imap|graph` overrides
@@ -103,17 +103,17 @@ Best regards
 
 **Re-run:** Delete the response block and remove the `[id]` from the prompt.
 
-**Multiple prompts** per email are supported — each gets its own ID.
+**Multiple prompts** per email are supported, and each gets its own ID.
 
 ### Tools available to @mailgent
 
-- `search_emails` — search by subject
-- `read_email` — read full email content
-- `list_events` — calendar events for next N days
-- `free_slots` — free meeting slots
-- `create_draft` — create email draft
-- `draft_reply` / `send_reply` — reply to an email
-- `draft_event` / `send_event` — create calendar event
+- `search_emails`: search by subject
+- `read_email`: read full email content
+- `list_events`: calendar events for next N days
+- `free_slots`: free meeting slots
+- `create_draft`: create email draft
+- `draft_reply` / `send_reply`: reply to an email
+- `draft_event` / `send_event`: create calendar event
 
 ### Config
 

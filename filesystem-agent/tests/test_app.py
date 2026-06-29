@@ -86,7 +86,7 @@ def test_tree_loads(page: Page, port: int):
         wrapper = page.locator("css=.wunderbaum-wrapper")
         expect(wrapper.first).to_be_visible(timeout=15_000)
         rows = page.locator("css=.wb-row")
-        assert rows.count() > 0, "No .wb-row elements — tree did not render"
+        assert rows.count() > 0, "No .wb-row elements; tree did not render"
     finally:
         server.stop()
 
@@ -379,7 +379,7 @@ def test_drop_move_updates_node_key(page: Page, port: int):
 def test_dnd_copy_browser(page: Page, port: int):
     """Actual browser Ctrl+drag from README.md to images/.
 
-    Uses ``window.__wbForceCopy`` — a test hook in panelini's Wunderbaum Vue
+    Uses ``window.__wbForceCopy``, a test hook in panelini's Wunderbaum Vue
     component that forces the DnD copy branch (since Playwright can't reliably
     deliver Ctrl keypresses into shadow DOM).
     """
