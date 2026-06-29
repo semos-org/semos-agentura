@@ -5,19 +5,20 @@ description = "Panel-based chat client for Semos Agentura MCP agents"
 requires-python = ">=3.11"
 dependencies = [
     "panelini[ai]",
+    "agentura-commons",
     "filesystem-agent",
-    "litellm>=1.30.0,!=1.82.7,!=1.82.8",
     "langchain-community>=0.3",
+    "langchain-core>=1.0",
     "mcp>=1.9",
-    "a2a-sdk>=1.0.0a0",
     "httpx>=0.28",
+    "panel>=1.7",
+    "uvicorn>=0.34",
     "python-dotenv>=1.0",
     "Pillow>=10.0",
-    "python-magic-bin>=0.4.14; sys_platform != 'linux'",
-    "python-magic>=0.4.27; sys_platform == 'linux'",
 ]
 
 [tool.uv.sources]
+agentura-commons = { workspace = true }
 filesystem-agent = { workspace = true }
 
 [build-system]
@@ -29,14 +30,6 @@ source = "vcs"
 fallback-version = "0.0.0"
 # Monorepo: the git root is the workspace root, one level up from this package.
 raw-options = { root = ".." }
-
-[tool.deptry.per_rule_ignores]
-# litellm/a2a-sdk are invoked indirectly via agentura-commons; python-magic(-bin) provides the
-# libmagic bindings loaded at runtime for file-type detection.
-DEP002 = ["litellm", "a2a-sdk", "python-magic", "python-magic-bin"]
-# Transitive: panel via panelini[ai], uvicorn & langchain_core via their parents, and
-# agentura_commons via the filesystem-agent workspace dependency.
-DEP003 = ["panel", "agentura_commons", "uvicorn", "langchain_core"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/agentura_ui"]

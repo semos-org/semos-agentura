@@ -55,10 +55,12 @@ source = { editable = "agentura-commons" }
 dependencies = [
     { name = "a2a-sdk", extra = ["sqlite"] },
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "jsonschema" },
     { name = "langchain-core" },
-    { name = "langchain-mcp-adapters" },
     { name = "mcp" },
+    { name = "protobuf" },
+    { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "uvicorn" },
 ]
@@ -67,10 +69,12 @@ dependencies = [
 requires-dist = [
     { name = "a2a-sdk", extras = ["sqlite"], specifier = ">=0.3" },
     { name = "fastapi", specifier = ">=0.115" },
+    { name = "httpx", specifier = ">=0.28" },
     { name = "jsonschema", specifier = ">=4.0" },
     { name = "langchain-core", specifier = ">=1.0" },
-    { name = "langchain-mcp-adapters", specifier = ">=0.2" },
     { name = "mcp", specifier = ">=1.9" },
+    { name = "protobuf", specifier = ">=4" },
+    { name = "pydantic", specifier = ">=2.0" },
     { name = "pydantic-settings", specifier = ">=2.13" },
     { name = "uvicorn", specifier = ">=0.34" },
 ]
@@ -79,17 +83,17 @@ requires-dist = [
 name = "agentura-ui"
 source = { editable = "agentura-ui" }
 dependencies = [
-    { name = "a2a-sdk" },
+    { name = "agentura-commons" },
     { name = "filesystem-agent" },
     { name = "httpx" },
     { name = "langchain-community" },
-    { name = "litellm" },
+    { name = "langchain-core" },
     { name = "mcp" },
+    { name = "panel" },
     { name = "panelini", extra = ["ai"] },
     { name = "pillow" },
     { name = "python-dotenv" },
-    { name = "python-magic", marker = "sys_platform == 'linux'" },
-    { name = "python-magic-bin", marker = "sys_platform != 'linux'" },
+    { name = "uvicorn" },
 ]
 
 [package.dev-dependencies]
@@ -102,17 +106,17 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "a2a-sdk", specifier = ">=1.0.0a0" },
+    { name = "agentura-commons", editable = "agentura-commons" },
     { name = "filesystem-agent", editable = "filesystem-agent" },
     { name = "httpx", specifier = ">=0.28" },
     { name = "langchain-community", specifier = ">=0.3" },
-    { name = "litellm", specifier = ">=1.30.0,!=1.82.7,!=1.82.8" },
+    { name = "langchain-core", specifier = ">=1.0" },
     { name = "mcp", specifier = ">=1.9" },
+    { name = "panel", specifier = ">=1.7" },
     { name = "panelini", extras = ["ai"], git = "https://github.com/opensemanticworld/panelini.git?branch=dev-agentura" },
     { name = "pillow", specifier = ">=10.0" },
     { name = "python-dotenv", specifier = ">=1.0" },
-    { name = "python-magic", marker = "sys_platform == 'linux'", specifier = ">=0.4.27" },
-    { name = "python-magic-bin", marker = "sys_platform != 'linux'", specifier = ">=0.4.14" },
+    { name = "uvicorn", specifier = ">=0.34" },
 ]
 
 [package.metadata.requires-dev]
@@ -974,7 +978,6 @@ name = "email-agent"
 source = { editable = "email-agent" }
 dependencies = [
     { name = "agentura-commons" },
-    { name = "litellm" },
     { name = "markdown" },
     { name = "msal" },
     { name = "pydantic", extra = ["email"] },
@@ -1002,7 +1005,6 @@ requires-dist = [
     { name = "agentura-commons", editable = "agentura-commons" },
     { name = "caldav", marker = "extra == 'caldav'", specifier = ">=1.4.0" },
     { name = "icalendar", marker = "extra == 'caldav'", specifier = ">=6.1.0" },
-    { name = "litellm", specifier = ">=1.30.0,!=1.82.7,!=1.82.8" },
     { name = "markdown", specifier = ">=3.10.2" },
     { name = "msal", specifier = ">=1.34.0" },
     { name = "pydantic", extras = ["email"], specifier = ">=2.0" },
@@ -1122,6 +1124,7 @@ name = "filesystem-agent"
 source = { editable = "filesystem-agent" }
 dependencies = [
     { name = "agentura-commons" },
+    { name = "fsspec" },
     { name = "httpx" },
     { name = "litellm" },
     { name = "msal" },
@@ -1129,6 +1132,7 @@ dependencies = [
     { name = "panel" },
     { name = "panelini" },
     { name = "playwright" },
+    { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "python-dotenv" },
     { name = "webdav4", extra = ["fsspec"] },
@@ -1145,6 +1149,7 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "agentura-commons", editable = "agentura-commons" },
+    { name = "fsspec", specifier = ">=2023.1" },
     { name = "httpx", specifier = ">=0.27.0,<1" },
     { name = "litellm", specifier = ">=1.30.0,!=1.82.7,!=1.82.8" },
     { name = "msal", specifier = ">=1.31.0" },
@@ -1152,6 +1157,7 @@ requires-dist = [
     { name = "panel", specifier = ">=1.7.1" },
     { name = "panelini", git = "https://github.com/opensemanticworld/panelini.git?branch=dev-agentura" },
     { name = "playwright", specifier = ">=1.44.0" },
+    { name = "pydantic", specifier = ">=2.0" },
     { name = "pydantic-settings", specifier = ">=2.13.0" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=9.0.2" },
     { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=0.24" },
@@ -1891,20 +1897,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/92/fe/20190232d9b513242899dbb0c2bb77e31b4d61e343743adbe90ebc2603d2/langchain_core-1.3.0.tar.gz", hash = "sha256:14a39f528bf459aa3aa40d0a7f7f1bae7520d435ef991ae14a4ceb74d8c49046", size = 860755, upload-time = "2026-04-17T14:51:38.298Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f8/e2/dbfa347aa072a6dc4cd38d6f9ebfc730b4c14c258c47f480f4c5c546f177/langchain_core-1.3.0-py3-none-any.whl", hash = "sha256:baf16ee028475df177b9ab8869a751c79406d64a6f12125b93802991b566cced", size = 515140, upload-time = "2026-04-17T14:51:36.274Z" },
-]
-
-[[package]]
-name = "langchain-mcp-adapters"
-version = "0.2.2"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "langchain-core" },
-    { name = "mcp" },
-    { name = "typing-extensions" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/0e/66/1cc7039e2daaddcdea9d8887851fe6eb67401925999b2aa394aa855c7132/langchain_mcp_adapters-0.2.2.tar.gz", hash = "sha256:12d39e91ae4389c54b61b221094e53850b6e152934d8bc10c80665d600e76530", size = 37942, upload-time = "2026-03-16T17:13:30.35Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/7d/2f/15d5e6c1765d8404a9cce38d8c81d7b33fb3392f9db5b992c000dddbd2a3/langchain_mcp_adapters-0.2.2-py3-none-any.whl", hash = "sha256:d08e64954e86281002653071b7430e0377c9a577cb4ac3143abfeb3e24ef8797", size = 23288, upload-time = "2026-03-16T17:13:29.073Z" },
 ]
 
 [[package]]
@@ -3728,25 +3720,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/82/ed/0301aeeac3e5353ef3d94b6ec08bbcabd04a72018415dcb29e588514bba8/python_dotenv-1.2.2.tar.gz", hash = "sha256:2c371a91fbd7ba082c2c1dc1f8bf89ca22564a087c2c287cd9b662adde799cf3", size = 50135, upload-time = "2026-03-01T16:00:26.196Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/0b/d7/1959b9648791274998a9c3526f6d0ec8fd2233e4d4acce81bbae76b44b2a/python_dotenv-1.2.2-py3-none-any.whl", hash = "sha256:1d8214789a24de455a8b8bd8ae6fe3c6b69a5e3d64aa8a8e5d68e694bbcb285a", size = 22101, upload-time = "2026-03-01T16:00:25.09Z" },
-]
-
-[[package]]
-name = "python-magic"
-version = "0.4.27"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/da/db/0b3e28ac047452d079d375ec6798bf76a036a08182dbb39ed38116a49130/python-magic-0.4.27.tar.gz", hash = "sha256:c1ba14b08e4a5f5c31a302b7721239695b2f0f058d125bd5ce1ee36b9d9d3c3b", size = 14677, upload-time = "2022-06-07T20:16:59.508Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/6c/73/9f872cb81fc5c3bb48f7227872c28975f998f3e7c2b1c16e95e6432bbb90/python_magic-0.4.27-py2.py3-none-any.whl", hash = "sha256:c212960ad306f700aa0d01e5d7a325d20548ff97eb9920dcd29513174f0294d3", size = 13840, upload-time = "2022-06-07T20:16:57.763Z" },
-]
-
-[[package]]
-name = "python-magic-bin"
-version = "0.4.14"
-source = { registry = "https://pypi.org/simple" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/32/2c/bbe8ad26591745da2c4692ea571145fb027c8ee1a0540407aa327684c4ce/python_magic_bin-0.4.14-py2.py3-none-macosx_10_6_intel.whl", hash = "sha256:7b1743b3dbf16601d6eedf4e7c2c9a637901b0faaf24ad4df4d4527e7d8f66a4", size = 334318, upload-time = "2017-10-02T16:30:13.6Z" },
-    { url = "https://files.pythonhosted.org/packages/5a/5d/10b9ac745d9fd2f7151a2ab901e6bb6983dbd70e87c71111f54859d1ca2e/python_magic_bin-0.4.14-py2.py3-none-win32.whl", hash = "sha256:34a788c03adde7608028203e2dbb208f1f62225ad91518787ae26d603ae68892", size = 397784, upload-time = "2017-10-02T16:30:15.806Z" },
-    { url = "https://files.pythonhosted.org/packages/07/c2/094e3d62b906d952537196603a23aec4bcd7c6126bf80eb14e6f9f4be3a2/python_magic_bin-0.4.14-py2.py3-none-win_amd64.whl", hash = "sha256:90be6206ad31071a36065a2fc169c5afb5e0355cbe6030e87641c6c62edc2b69", size = 409299, upload-time = "2017-10-02T16:30:18.545Z" },
 ]
 
 [[package]]

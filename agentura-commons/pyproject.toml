@@ -8,9 +8,11 @@ dependencies = [
     "a2a-sdk[sqlite]>=0.3",
     "fastapi>=0.115",
     "uvicorn>=0.34",
+    "httpx>=0.28",
+    "pydantic>=2.0",
     "pydantic-settings>=2.13",
     "langchain-core>=1.0",
-    "langchain-mcp-adapters>=0.2",
+    "protobuf>=4",
     "jsonschema>=4.0",
 ]
 
@@ -31,9 +33,11 @@ addopts = "-m 'not integration'"
 [tool.hatch.build.targets.wheel]
 packages = ["src/agentura_commons"]
 
+[tool.deptry.package_module_name_map]
+# `protobuf` provides the `google.protobuf` import namespace.
+protobuf = "google"
+
 [tool.deptry.per_rule_ignores]
-# Reserved for the planned migration to langchain_mcp_adapters (see TODOs in mcp_*.py).
-DEP002 = ["langchain-mcp-adapters"]
-# httpx/pydantic arrive transitively via fastapi & pydantic-settings; google via a2a-sdk;
-# the email/document agents are workspace siblings imported only by the test-helper module.
-DEP003 = ["httpx", "pydantic", "google", "email_agent", "document_agent"]
+# The email/document agents are workspace siblings imported only by the shared test-helper module
+# (testing.py); declaring them as runtime deps would create an import cycle, so they stay dev-only.
+DEP003 = ["email_agent", "document_agent"]
