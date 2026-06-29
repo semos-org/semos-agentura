@@ -36,10 +36,39 @@ def _find_browser():
     return _find_browser()
 
 
+def _drawio_can_render() -> bool:
+    """drawio may be installed yet unable to render headless (confined snap, missing
+    GL/display): it can exit 0 producing no output. Probe a real tiny export so such
+    environments skip rendering tests cleanly instead of failing. Runs only when present."""
+    from document_agent._utils import find_tool
+
+    drawio = find_tool("drawio")
+    if drawio is None:
+        return False
+    import tempfile
+
+    from document_agent.composition._drawio import render_drawio_to_png
+
+    xml = (
+        '<mxfile><diagram name="P"><mxGraphModel><root>'
+        '<mxCell id="0"/><mxCell id="1" parent="0"/>'
+        '<mxCell id="2" value="x" vertex="1" parent="1">'
+        '<mxGeometry x="0" y="0" width="40" height="20" as="geometry"/>'
+        "</mxCell></root></mxGraphModel></diagram></mxfile>"
+    )
+    with tempfile.TemporaryDirectory() as d:
+        out = Path(d) / "probe.png"
+        try:
+            render_drawio_to_png(xml, out, drawio_path=Path(drawio))
+        except Exception:
+            return False
+        return out.exists() and out.stat().st_size > 0
+
+
 needs_marp = pytest.mark.skipif(not _has_tool("marp"), reason="marp not installed")
 needs_mmdc = pytest.mark.skipif(not _has_tool("mmdc"), reason="mmdc not installed")
 needs_pandoc = pytest.mark.skipif(not _has_tool("pandoc"), reason="pandoc not installed")
-needs_drawio = pytest.mark.skipif(not _has_tool("drawio"), reason="drawio not installed")
+needs_drawio = pytest.mark.skipif(not _drawio_can_render(), reason="drawio cannot render in this environment")
 needs_libreoffice = pytest.mark.skipif(not _has_libre_office(), reason="LibreOffice not found")
 needs_browser = pytest.mark.skipif(_find_browser() is None, reason="No browser for Marp PDF/PPTX")
 

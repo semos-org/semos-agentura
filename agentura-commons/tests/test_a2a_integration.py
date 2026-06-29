@@ -6,6 +6,7 @@ and file round-trips. Uses a2a-sdk 1.0 Client API.
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 from uuid import uuid4
 from zipfile import ZipFile
@@ -21,6 +22,10 @@ from a2a.types import (
 )
 from agentura_commons.testing import free_port, start_agent
 from google.protobuf.struct_pb2 import Struct, Value
+
+# compose_document/digest_document shell out to pandoc; gate those tests so they skip
+# cleanly without pandoc (CI installs it).
+needs_pandoc = pytest.mark.skipif(shutil.which("pandoc") is None, reason="pandoc not installed")
 
 
 async def _connect(base_url: str) -> Client:
@@ -197,6 +202,7 @@ class TestA2AToolCalls:
         self.server.should_exit = True
         self.thread.join(timeout=5)
 
+    @needs_pandoc
     @pytest.mark.asyncio
     async def test_compose_html(self):
         client = await _connect(self.base_url)
@@ -280,6 +286,7 @@ class TestA2ANaturalLanguage:
         self.server.should_exit = True
         self.thread.join(timeout=5)
 
+    @needs_pandoc
     @pytest.mark.asyncio
     async def test_nl_compose_via_mocked_llm(self):
         """NL message routed to compose_document by mock LLM."""
@@ -348,6 +355,7 @@ class TestA2AFileRoundTrip:
         self.server.should_exit = True
         self.thread.join(timeout=5)
 
+    @needs_pandoc
     @pytest.mark.asyncio
     async def test_compose_then_digest(self):
         """Compose DOCX, fetch it, send back for digestion."""
@@ -453,6 +461,7 @@ class TestA2AJsonRpc:
         self.server.should_exit = True
         self.thread.join(timeout=5)
 
+    @needs_pandoc
     @pytest.mark.asyncio
     async def test_compose_via_jsonrpc(self):
         """Call compose_document via JSON-RPC binding."""

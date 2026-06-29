@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+
+      - name: Set up the environment
+        uses: ./.github/actions/setup-python-env
+
+      - name: Run checks (lock, pre-commit, ty, deptry)
+        run: make check
+
+  tests:
+    needs: quality
+    runs-on: ${{ matrix.platform }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.11", "3.12", "3.13"]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up the environment
+        uses: ./.github/actions/setup-python-env
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # pandoc is a hard requirement for the commons end-to-end composition tests
+      # (they do not skipif-skip), so install it on every OS. Heavier render tools
+      # (mmdc, drawio, libreoffice, browsers) are not installed: those tests either
+      # skip via needs_* guards or degrade gracefully with a warning.
+      - name: Install pandoc
+        run: |
+          case "$RUNNER_OS" in
+            Linux)   sudo apt-get update && sudo apt-get install -y pandoc ;;
+            macOS)   brew install pandoc ;;
+            Windows) choco install pandoc -y --no-progress ;;
+          esac
+
+      - name: Install Playwright chromium
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            uv run playwright install --with-deps chromium
+          else
+            uv run playwright install chromium
+          fi
+
+      # Each package runs from its own dir so it picks up its own pyproject
+      # [tool.pytest] config and conftest (Windows-only COM tests skipif-skip).
+      - name: Run tests with coverage
+        run: |
+          for pkg in agentura-commons email-agent document-agent filesystem-agent; do
+            echo "=== $pkg ==="
+            (cd "$pkg" && uv run pytest tests/ --timeout=60 --tb=short -q \
+              --cov=src/ --cov-report=xml:../coverage-$pkg.xml)
+          done
+
+      - name: Upload coverage to Codecov
+        if: ${{ runner.os == 'Linux' && matrix.python-version == '3.11' }}
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: coverage-agentura-commons.xml,coverage-email-agent.xml,coverage-document-agent.xml,coverage-filesystem-agent.xml
+          fail_ci_if_error: false

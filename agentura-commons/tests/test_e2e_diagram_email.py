@@ -14,10 +14,15 @@ Flow:
 
 from __future__ import annotations
 
+import shutil
 from uuid import uuid4
 
 import pytest
 from agentura_commons.testing import free_port, start_agent
+
+# These end-to-end tests compose documents via document-agent, which shells out to
+# pandoc; skip cleanly where pandoc is not installed (CI installs it).
+pytestmark = pytest.mark.skipif(shutil.which("pandoc") is None, reason="pandoc not installed")
 
 
 def _anthropic_tool_use(name, args, tool_id=None):

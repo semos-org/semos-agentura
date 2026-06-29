@@ -9,12 +9,17 @@ Run with: pytest agentura-commons/tests/test_client_integration.py -v
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 from zipfile import ZipFile
 
 import pytest
 from agentura_commons.client import AgenturaClient
 from agentura_commons.testing import free_port, start_agent
+
+# compose_document shells out to pandoc; gate the tests that actually run it so a dev
+# without pandoc gets a clean skip instead of a failure (CI installs pandoc).
+needs_pandoc = pytest.mark.skipif(shutil.which("pandoc") is None, reason="pandoc not installed")
 
 
 def _make_sample_docx(path: Path) -> Path:
@@ -110,12 +115,13 @@ class TestDocumentAgent:
                 {"file_path": "form.docx"},
             )
             assert not result.is_error, result.text
-            data = json.loads(result.text)
-            if isinstance(data, dict) and "items" in data:
-                data = data["items"]
-            names = {f["name"] for f in data}
-            assert "FullName" in names
+            # inspect_form returns {"schema": <JSON Schema>, "data": <values>};
+            # each field leaf carries x-field-id (the real fill key).
+            schema = json.loads(result.text)["schema"]
+            field_ids = {f.get("x-field-id") for f in schema["properties"].values()}
+            assert "FullName" in field_ids
 
+    @needs_pandoc
     @pytest.mark.asyncio
     async def test_compose_downloads_file(self, tmp_path):
         async with AgenturaClient(
@@ -138,6 +144,7 @@ class TestDocumentAgent:
             )
             assert "http://" not in result.text
 
+    @needs_pandoc
     @pytest.mark.asyncio
     async def test_compose_docx_with_filename(self, tmp_path):
         async with AgenturaClient(
@@ -156,6 +163,7 @@ class TestDocumentAgent:
             assert len(result.files) == 1
             assert result.files[0].filename == "report.docx"
 
+    @needs_pandoc
     @pytest.mark.asyncio
     async def test_compose_then_digest_roundtrip(self, tmp_path):
         async with AgenturaClient(

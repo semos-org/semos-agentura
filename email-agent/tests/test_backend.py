@@ -364,6 +364,7 @@ class TestFactory:
         assert not b.supports_com
         assert b.calendar is None
 
+    @pytest.mark.integration  # constructs a real COMBackend: needs Windows plus a running Outlook
     @pytest.mark.skipif(sys.platform != "win32", reason="COM only on Windows")
     def test_create_com_backend(self):
         import pythoncom
