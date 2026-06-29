@@ -25,6 +25,18 @@ jobs:
       - name: Run checks (lock, pre-commit, ty, deptry)
         run: make check
 
+  check-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up the environment
+        uses: ./.github/actions/setup-python-env
+
+      - name: Build documentation (strict)
+        run: make docs-test
+
   tests:
     needs: quality
     runs-on: ${{ matrix.platform }}
