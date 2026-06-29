@@ -31,6 +31,14 @@ fallback-version = "0.0.0"
 # Monorepo: the git root is the workspace root, one level up from this package.
 raw-options = { root = ".." }
 
+[tool.deptry.package_module_name_map]
+pywin32 = ["win32com", "pythoncom"]
+
+[tool.deptry.per_rule_ignores]
+# litellm is the LLM backend invoked indirectly via agentura-commons; caldav/icalendar are the
+# optional `caldav` extra used only by the optional CalDAV client.
+DEP002 = ["litellm", "caldav", "icalendar"]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/email_agent"]
 

@@ -12,7 +12,10 @@ repos:
         exclude: "^.*/forms/templates/.*\\.json$"
         args: [--autofix, --no-sort-keys]
       - id: end-of-file-fixer
+        # Keep test fixtures byte-exact (VFS/document fixtures represent real file content).
+        exclude: "(^|/)tests?/data/"
       - id: trailing-whitespace
+        exclude: "(^|/)tests?/data/"
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: "v0.15.12"

@@ -30,6 +30,14 @@ fallback-version = "0.0.0"
 # Monorepo: the git root is the workspace root, one level up from this package.
 raw-options = { root = ".." }
 
+[tool.deptry.per_rule_ignores]
+# litellm/a2a-sdk are invoked indirectly via agentura-commons; python-magic(-bin) provides the
+# libmagic bindings loaded at runtime for file-type detection.
+DEP002 = ["litellm", "a2a-sdk", "python-magic", "python-magic-bin"]
+# Transitive: panel via panelini[ai], uvicorn & langchain_core via their parents, and
+# agentura_commons via the filesystem-agent workspace dependency.
+DEP003 = ["panel", "agentura_commons", "uvicorn", "langchain_core"]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/agentura_ui"]
 

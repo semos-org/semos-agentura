@@ -15,7 +15,7 @@ def remove_background(image_bytes: bytes) -> bytes:
 
     Raises ImportError if rembg is not installed.
     """
-    import rembg
+    import rembg  # ty: ignore[unresolved-import]  # optional `image` extra; guarded by this function
 
     result = rembg.remove(image_bytes)
     return result

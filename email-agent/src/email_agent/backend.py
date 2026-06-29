@@ -600,7 +600,8 @@ def create_backend(settings: Settings | None = None) -> EmailBackend:
         # Attach CalDAV calendar if configured
         if settings.caldav_url:
             try:
-                from .caldav_client import CalDAVCalendar
+                # TODO: caldav_client not yet implemented (planned CalDAV calendar support).
+                from .caldav_client import CalDAVCalendar  # ty: ignore[unresolved-import]
 
                 backend.calendar = CalDAVCalendar(settings)
             except ImportError:

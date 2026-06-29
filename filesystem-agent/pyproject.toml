@@ -39,6 +39,12 @@ fallback-version = "0.0.0"
 # Monorepo: the git root is the workspace root, one level up from this package.
 raw-options = { root = ".." }
 
+[tool.deptry.per_rule_ignores]
+# Test-only deps declared in the `test` extra (exercised under tests/, not scanned src/).
+DEP002 = ["pytest", "pytest-asyncio", "pytest-playwright", "wsgidav"]
+# pydantic arrives via pydantic-settings; fsspec via webdav4[fsspec].
+DEP003 = ["pydantic", "fsspec"]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/filesystem_agent"]
 

@@ -30,3 +30,10 @@ addopts = "-m 'not integration'"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/agentura_commons"]
+
+[tool.deptry.per_rule_ignores]
+# Reserved for the planned migration to langchain_mcp_adapters (see TODOs in mcp_*.py).
+DEP002 = ["langchain-mcp-adapters"]
+# httpx/pydantic arrive transitively via fastapi & pydantic-settings; google via a2a-sdk;
+# the email/document agents are workspace siblings imported only by the test-helper module.
+DEP003 = ["httpx", "pydantic", "google", "email_agent", "document_agent"]

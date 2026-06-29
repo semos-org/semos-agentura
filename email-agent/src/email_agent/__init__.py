@@ -23,7 +23,7 @@ __all__ = [
 
 # COM imports are platform-guarded
 try:
-    from .backend import COMBackend  # noqa: F401
+    from .backend import COMBackend  # noqa: F401  # ty: ignore[unresolved-import]  # win32-only, guarded
 
     __all__.append("COMBackend")
 except (ImportError, NameError):

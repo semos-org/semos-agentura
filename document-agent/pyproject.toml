@@ -28,6 +28,8 @@ document-agent = "document_agent.cli:main"
 [project.optional-dependencies]
 slides = ["python-pptx>=1.0", "PyYAML>=6.0"]
 image = ["rembg>=2.0"]
+# Optional Outlook/PowerPoint COM automation on Windows (mirrors email-agent's `com` extra).
+com = ["pywin32>=311"]
 
 [dependency-groups]
 dev = [
@@ -44,6 +46,9 @@ source = "vcs"
 fallback-version = "0.0.0"
 # Monorepo: the git root is the workspace root, one level up from this package.
 raw-options = { root = ".." }
+
+[tool.deptry.package_module_name_map]
+pywin32 = ["win32com", "pythoncom"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/document_agent"]

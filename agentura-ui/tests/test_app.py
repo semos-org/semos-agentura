@@ -78,6 +78,7 @@ class TestWrapChatCallback:
     @pytest.fixture
     def setup(self):
         from agentura_ui.__main__ import _wrap_chat_callback
+
         registry = FileRegistry()
         pending_uploads: list[str] = []
 
