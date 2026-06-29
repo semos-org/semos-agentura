@@ -1,8 +1,8 @@
 [project]
 name = "semos-agentura"
-version = "0.2.0"
+dynamic = ["version"]
 description = "Semos Agentura - Multi-agent system with MCP + A2A"
-requires-python = ">=3.13"
+requires-python = ">=3.11"
 dependencies = [
     "agentura-commons",
     "email-agent",
@@ -10,6 +10,18 @@ dependencies = [
     "filesystem-agent",
     "agentura-ui",
 ]
+
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
+fallback-version = "0.0.0"
+
+[tool.hatch.build.targets.wheel]
+# Umbrella/meta-package: pulls in the workspace members, ships no code of its own.
+bypass-selection = true
 
 [tool.uv.workspace]
 members = [
@@ -39,7 +51,7 @@ markers = [
 
 [tool.ruff]
 line-length = 120
-target-version = "py313"
+target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
@@ -61,4 +73,25 @@ dev = [
     "pytest-playwright>=0.7",
     "pytest-timeout>=2.3",
     "pytest-cov>=6.0",
+    # tooling migration (oold-python parity)
+    "ty>=0.0.24",
+    "deptry>=0.25.1",
+    "pre-commit>=4.5.1",
+    "zensical>=0.0.26",
+    "mkdocstrings-python>=1.0.3",
 ]
+
+# --- static analysis / coverage (oold-python parity) ---------------------------
+# ty rule downgrades and per-package deptry config are added in Phase 3, once the
+# tools are run against the codebase and real findings are triaged.
+
+[tool.ty.environment]
+python = "./.venv"
+python-version = "3.11"
+
+[tool.coverage.run]
+branch = true
+source = ["src"]
+
+[tool.coverage.report]
+skip_empty = true

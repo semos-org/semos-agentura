@@ -1,9 +1,9 @@
 [project]
 name = "email-agent"
-version = "0.2.0"
+dynamic = ["version"]
 description = "Unified email client — IMAP/SMTP + Outlook COM, with LLM agent and archive"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.11"
 dependencies = [
     "agentura-commons",
     "msal>=1.34.0",
@@ -22,8 +22,14 @@ com = ["pywin32>=311"]
 caldav = ["caldav>=1.4.0", "icalendar>=6.1.0"]
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
+fallback-version = "0.0.0"
+# Monorepo: the git root is the workspace root, one level up from this package.
+raw-options = { root = ".." }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/email_agent"]

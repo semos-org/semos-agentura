@@ -1,9 +1,9 @@
 [project]
 name = "filesystem-agent"
-version = "0.2.0"
+dynamic = ["version"]
 description = "Virtual filesystem with multi-root VFS, SharePoint WebDAV, archive browsing, and MCP/A2A agent"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.11"
 dependencies = [
     "agentura-commons",
     "httpx>=0.27.0,<1",
@@ -30,8 +30,14 @@ test = [
 ]
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
+fallback-version = "0.0.0"
+# Monorepo: the git root is the workspace root, one level up from this package.
+raw-options = { root = ".." }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/filesystem_agent"]

@@ -1,8 +1,8 @@
 [project]
 name = "agentura-ui"
-version = "0.2.0"
+dynamic = ["version"]
 description = "Panel-based chat client for Semos Agentura MCP agents"
-requires-python = ">=3.13"
+requires-python = ">=3.11"
 dependencies = [
     "panelini[ai]",
     "filesystem-agent",
@@ -21,8 +21,14 @@ dependencies = [
 filesystem-agent = { workspace = true }
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
+fallback-version = "0.0.0"
+# Monorepo: the git root is the workspace root, one level up from this package.
+raw-options = { root = ".." }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/agentura_ui"]

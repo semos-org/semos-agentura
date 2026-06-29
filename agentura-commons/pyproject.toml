@@ -1,8 +1,8 @@
 [project]
 name = "agentura-commons"
-version = "0.2.0"
+dynamic = ["version"]
 description = "Shared MCP + A2A base classes for Semos Agentura agents"
-requires-python = ">=3.13"
+requires-python = ">=3.11"
 dependencies = [
     "mcp>=1.9",
     "a2a-sdk[sqlite]>=0.3",
@@ -15,8 +15,14 @@ dependencies = [
 ]
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
+fallback-version = "0.0.0"
+# Monorepo: the git root is the workspace root, one level up from this package.
+raw-options = { root = ".." }
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

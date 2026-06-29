@@ -1,9 +1,9 @@
 [project]
 name = "document-agent"
-version = "0.2.0"
+dynamic = ["version"]
 description = "Document digestion (OCR to Markdown) and composition (Markdown to documents) agent"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.11"
 dependencies = [
     "agentura-commons",
     "httpx>=0.28",
@@ -36,8 +36,14 @@ dev = [
 ]
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
+fallback-version = "0.0.0"
+# Monorepo: the git root is the workspace root, one level up from this package.
+raw-options = { root = ".." }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/document_agent"]
