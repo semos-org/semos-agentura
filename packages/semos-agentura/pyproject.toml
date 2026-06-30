@@ -1,0 +1,34 @@
+[project]
+name = "semos-agentura"
+dynamic = ["version"]
+description = "Semos Agentura - umbrella package installing the full multi-agent suite (MCP + A2A)"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "semos-agentura-core",
+    "semos-agentura-email",
+    "semos-agentura-document",
+    "semos-agentura-files",
+    "semos-agentura-ui",
+]
+
+[tool.uv.sources]
+semos-agentura-core = { workspace = true }
+semos-agentura-email = { workspace = true }
+semos-agentura-document = { workspace = true }
+semos-agentura-files = { workspace = true }
+semos-agentura-ui = { workspace = true }
+
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
+fallback-version = "0.0.0"
+# Monorepo: the git root is the workspace root, two levels up (packages/<pkg>/).
+raw-options = { root = "../.." }
+
+[tool.hatch.build.targets.wheel]
+# Umbrella/meta-package: pulls in the workspace members, ships no code of its own.
+bypass-selection = true

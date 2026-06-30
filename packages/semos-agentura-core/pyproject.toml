@@ -1,0 +1,46 @@
+[project]
+name = "semos-agentura-core"
+dynamic = ["version"]
+description = "Shared MCP + A2A base classes for Semos Agentura agents"
+requires-python = ">=3.11"
+dependencies = [
+    "mcp>=1.9",
+    "a2a-sdk[sqlite]>=0.3",
+    "fastapi>=0.115",
+    "uvicorn>=0.34",
+    "httpx>=0.28",
+    "pydantic>=2.0",
+    "pydantic-settings>=2.13",
+    "langchain-core>=1.0",
+    "protobuf>=4",
+    "jsonschema>=4.0",
+]
+
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
+fallback-version = "0.0.0"
+# Monorepo: the git root is the workspace root, two levels up (packages/<pkg>/).
+raw-options = { root = "../.." }
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+addopts = "-m 'not integration'"
+
+[tool.hatch.build.targets.wheel]
+# PEP 420 namespace: ship src/semos (semos/ and semos/agentura/ have no __init__.py).
+packages = ["src/semos"]
+
+[tool.deptry.package_module_name_map]
+# `protobuf` provides the `google.protobuf` import namespace.
+protobuf = "google"
+
+[tool.deptry.per_rule_ignores]
+# The email/document agents are workspace siblings imported only by the shared test-helper module
+# (testing.py). They live under the shared `semos` namespace, so deptry reports the transitive import
+# as the top-level module `semos`. Declaring them as runtime deps would create an import cycle, so they
+# stay dev-only. (Phase 6e moves these imports to tests/integration and drops this ignore.)
+DEP003 = ["semos"]

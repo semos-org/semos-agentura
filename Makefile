@@ -1,9 +1,9 @@
-# Workspace packages (uv monorepo)
-PKGS := agentura-commons email-agent document-agent filesystem-agent agentura-ui
-# Packages whose test suites run in CI (agentura-ui excluded, matching current workflow)
-TEST_PKGS := agentura-commons email-agent document-agent filesystem-agent
+# Workspace packages (uv monorepo, under packages/)
+PKGS := semos-agentura-core semos-agentura-email semos-agentura-document semos-agentura-files semos-agentura-ui
+# Packages whose test suites run in CI (semos-agentura-ui excluded, matching current workflow)
+TEST_PKGS := semos-agentura-core semos-agentura-email semos-agentura-document semos-agentura-files
 # Source dirs for static analysis
-SRC_DIRS := agentura-commons/src email-agent/src document-agent/src filesystem-agent/src agentura-ui/src
+SRC_DIRS := packages/semos-agentura-core/src packages/semos-agentura-email/src packages/semos-agentura-document/src packages/semos-agentura-files/src packages/semos-agentura-ui/src
 
 .PHONY: install
 install: ## Install the virtual environment and install the pre-commit hooks
@@ -22,7 +22,7 @@ check: ## Run code quality tools.
 	@echo "🚀 Checking for obsolete dependencies: Running deptry"
 	@for pkg in $(PKGS); do \
 		echo "  → deptry $$pkg"; \
-		(cd $$pkg && uv run deptry src) || exit 1; \
+		(cd packages/$$pkg && uv run deptry src) || exit 1; \
 	done
 
 .PHONY: test
@@ -30,8 +30,8 @@ test: ## Test the code with pytest (per package, with coverage)
 	@echo "🚀 Testing code: Running pytest"
 	@for pkg in $(TEST_PKGS); do \
 		echo "=== $$pkg ==="; \
-		(cd $$pkg && uv run pytest tests/ --timeout=60 --tb=short -q \
-			--cov=src/ --cov-report=xml:../coverage-$$pkg.xml) || exit 1; \
+		(cd packages/$$pkg && uv run pytest tests/ --timeout=60 --tb=short -q \
+			--cov=src/ --cov-report=xml:../../coverage-$$pkg.xml) || exit 1; \
 	done
 
 .PHONY: build
