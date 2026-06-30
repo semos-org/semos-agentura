@@ -59,6 +59,12 @@ features = [
 [project.theme.icon]
 logo = "lucide/network"
 
+# Auto / light / dark; the explicit choice is stored in localStorage and persists across pages.
+[[project.theme.palette]]
+media = "(prefers-color-scheme)"
+toggle.icon = "material/brightness-auto"
+toggle.name = "Switch to light mode"
+
 [[project.theme.palette]]
 media = "(prefers-color-scheme: light)"
 scheme = "default"
