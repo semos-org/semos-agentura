@@ -113,7 +113,7 @@ def main():
     procs: list[subprocess.Popen] = []
 
     # Kill existing processes on our ports
-    fs_port = int(os.environ.get("FILESYSTEM_AGENT_PORT", "8003"))
+    fs_port = int(os.environ.get("SEMOS_AGENTURA_FILES_PORT", "8003"))
     all_ports = [p for _, _, p in AGENTS] + [UI_PORT, fs_port]
     for port in all_ports:
         _kill_port(port)

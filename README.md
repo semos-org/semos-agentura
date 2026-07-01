@@ -112,8 +112,8 @@ uv run uvicorn semos.agentura.document.service:app --port 8002
 ```json
 {
   "mcpServers": {
-    "email-agent": { "url": "http://localhost:8001/mcp/sse" },
-    "document-agent": { "url": "http://localhost:8002/mcp/sse" }
+    "semos-agentura-email": { "url": "http://localhost:8001/mcp/sse" },
+    "semos-agentura-document": { "url": "http://localhost:8002/mcp/sse" }
   }
 }
 ```

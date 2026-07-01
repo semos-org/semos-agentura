@@ -90,7 +90,7 @@ def _make_mcp_tool_class(
     """Create a LangChain BaseTool instance for a single MCP tool.
 
     Tool name is prefixed with agent slug for uniqueness:
-    email_agent__search_emails, document_agent__compose_document.
+    semos_agentura_email__search_emails, semos_agentura_document__compose_document.
     """
     schema = mcp_tool.inputSchema or {
         "type": "object",

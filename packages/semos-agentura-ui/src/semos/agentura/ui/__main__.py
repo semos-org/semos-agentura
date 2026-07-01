@@ -40,7 +40,9 @@ from .renderers import (
 logger = logging.getLogger(__name__)
 
 _PKG_DIR = Path(__file__).resolve().parent
-_UI_DIR = _PKG_DIR.parent.parent  # agentura-ui/
+# __file__ is packages/semos-agentura-ui/src/semos/agentura/ui/__main__.py;
+# parents[3] is the package root (packages/semos-agentura-ui/).
+_UI_DIR = _PKG_DIR.parents[3]
 _config = _UI_DIR / "config.yml"
 _CONFIG_YML = _config if _config.exists() else _UI_DIR / "config.example.yml"
 
@@ -115,9 +117,9 @@ def _register_litellm_provider() -> None:
 # Default agents. Additional agents can be added via
 # EXTRA_AGENTS env var: "name:port,name:port,..."
 _DEFAULT_AGENTS = [
-    ("email-agent", 8001),
-    ("document-agent", 8002),
-    ("filesystem-agent", 8003),
+    ("semos-agentura-email", 8001),
+    ("semos-agentura-document", 8002),
+    ("semos-agentura-files", 8003),
 ]
 
 
@@ -358,7 +360,7 @@ def _build_tool_tree(frontend, hub):
     from panelini.panels.wunderbaum import Wunderbaum
 
     # Group tools by agent. Tool names are prefixed
-    # (email_agent__search_emails) but the hub knows
+    # (semos_agentura_email__search_emails) but the hub knows
     # original MCP names (search_emails).
     groups: dict[str, list[str]] = {}
     for tool_name in frontend.tool_checkboxes:
@@ -906,7 +908,7 @@ def create_app() -> Panelini:
 def main() -> None:
     """Launch the Agentura UI."""
     load_dotenv(_UI_DIR / ".env")
-    load_dotenv(_UI_DIR.parent / ".env")
+    load_dotenv(_UI_DIR.parent.parent / ".env")  # repo-root shared .env
 
     logging.basicConfig(
         level=logging.INFO,
@@ -919,7 +921,7 @@ def main() -> None:
     # 2. Start filesystem-agent in-process with shared VFS.
     # It runs as a uvicorn thread so MCP tools connect normally.
     global _fs_agent_port
-    _fs_agent_port = int(os.environ.get("FILESYSTEM_AGENT_PORT", "8003"))
+    _fs_agent_port = int(os.environ.get("SEMOS_AGENTURA_FILES_PORT", "8003"))
     _start_filesystem_agent_inprocess(_vfs, _fs_agent_port)
 
     agents = _build_agents()

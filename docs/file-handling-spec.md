@@ -312,7 +312,7 @@ Or by URI reference (preferred for large files):
   "file": {
     "name": "report.pptx",
     "mimeType": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-    "uri": "http://document-agent:8002/files/a3f1c2d0_report.pptx"
+    "uri": "http://semos-agentura-document:8002/files/a3f1c2d0_report.pptx"
   }
 }
 ```

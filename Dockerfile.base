@@ -16,25 +16,27 @@ WORKDIR /app
 COPY pyproject.toml uv.lock .python-version ./
 
 # Copy all package pyproject.toml files (for dependency resolution)
-COPY agentura-commons/pyproject.toml agentura-commons/pyproject.toml
-COPY email-agent/pyproject.toml email-agent/pyproject.toml
-COPY document-agent/pyproject.toml document-agent/pyproject.toml
-COPY filesystem-agent/pyproject.toml filesystem-agent/pyproject.toml
-COPY agentura-ui/pyproject.toml agentura-ui/pyproject.toml
+COPY packages/semos-agentura-core/pyproject.toml packages/semos-agentura-core/pyproject.toml
+COPY packages/semos-agentura-email/pyproject.toml packages/semos-agentura-email/pyproject.toml
+COPY packages/semos-agentura-document/pyproject.toml packages/semos-agentura-document/pyproject.toml
+COPY packages/semos-agentura-files/pyproject.toml packages/semos-agentura-files/pyproject.toml
+COPY packages/semos-agentura-ui/pyproject.toml packages/semos-agentura-ui/pyproject.toml
+COPY packages/semos-agentura/pyproject.toml packages/semos-agentura/pyproject.toml
 
 # Copy READMEs (required by hatchling build backend)
-COPY agentura-commons/README.md agentura-commons/README.md
-COPY email-agent/README.md email-agent/README.md
-COPY document-agent/README.md document-agent/README.md
-COPY filesystem-agent/README.md filesystem-agent/README.md
-COPY agentura-ui/README.md agentura-ui/README.md
+COPY packages/semos-agentura-core/README.md packages/semos-agentura-core/README.md
+COPY packages/semos-agentura-email/README.md packages/semos-agentura-email/README.md
+COPY packages/semos-agentura-document/README.md packages/semos-agentura-document/README.md
+COPY packages/semos-agentura-files/README.md packages/semos-agentura-files/README.md
+COPY packages/semos-agentura-ui/README.md packages/semos-agentura-ui/README.md
+COPY packages/semos-agentura/README.md packages/semos-agentura/README.md
 
 # Copy source code
-COPY agentura-commons/src/ agentura-commons/src/
-COPY email-agent/src/ email-agent/src/
-COPY document-agent/src/ document-agent/src/
-COPY filesystem-agent/src/ filesystem-agent/src/
-COPY agentura-ui/src/ agentura-ui/src/
+COPY packages/semos-agentura-core/src/ packages/semos-agentura-core/src/
+COPY packages/semos-agentura-email/src/ packages/semos-agentura-email/src/
+COPY packages/semos-agentura-document/src/ packages/semos-agentura-document/src/
+COPY packages/semos-agentura-files/src/ packages/semos-agentura-files/src/
+COPY packages/semos-agentura-ui/src/ packages/semos-agentura-ui/src/
 
 # Sync all workspace packages
 RUN uv sync --all-packages --no-dev --frozen

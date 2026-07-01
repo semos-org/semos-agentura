@@ -84,13 +84,13 @@ The draft was saved to the drafts folder (not sent).
 | Tool | Purpose |
 |---|---|
 | `get_current_time` | Anchor relative date references |
-| `email_agent__search_emails` | Find kickoff event info and WP contributor addresses |
-| `email_agent__read_email` | Extract full recipient list and thread context |
-| `email_agent__list_events` | Retrieve calendar events over the relevant period |
-| `email_agent__free_slots` | Compute available time windows per day |
+| `semos_agentura_email__search_emails` | Find kickoff event info and WP contributor addresses |
+| `semos_agentura_email__read_email` | Extract full recipient list and thread context |
+| `semos_agentura_email__list_events` | Retrieve calendar events over the relevant period |
+| `semos_agentura_email__free_slots` | Compute available time windows per day |
 | `survey_agent__deploy_survey` | Create and activate the scheduling poll |
 | `survey_agent__delete_survey` | Clean up outdated poll versions |
-| `email_agent__create_draft` | Compose and save the invitation email |
+| `semos_agentura_email__create_draft` | Compose and save the invitation email |
 
 ---
 

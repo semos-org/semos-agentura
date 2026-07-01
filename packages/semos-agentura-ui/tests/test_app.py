@@ -16,26 +16,26 @@ from semos.agentura.ui.mcp_tools import _make_mcp_tool_class
 
 class TestBuildAgents:
     def test_default_urls(self, monkeypatch):
-        monkeypatch.delenv("EMAIL_AGENT_URL", raising=False)
-        monkeypatch.delenv("DOCUMENT_AGENT_URL", raising=False)
+        monkeypatch.delenv("SEMOS_AGENTURA_EMAIL_URL", raising=False)
+        monkeypatch.delenv("SEMOS_AGENTURA_DOCUMENT_URL", raising=False)
         from semos.agentura.ui.__main__ import _build_agents
 
         agents = _build_agents()
         assert len(agents) == 3
-        assert agents[0].name == "email-agent"
+        assert agents[0].name == "semos-agentura-email"
         assert "8001" in agents[0].url
-        assert agents[1].name == "document-agent"
+        assert agents[1].name == "semos-agentura-document"
         assert "8002" in agents[1].url
-        assert agents[2].name == "filesystem-agent"
+        assert agents[2].name == "semos-agentura-files"
         assert "8003" in agents[2].url
 
     def test_from_env(self, monkeypatch):
         monkeypatch.setenv(
-            "EMAIL_AGENT_URL",
+            "SEMOS_AGENTURA_EMAIL_URL",
             "http://custom:9001/mcp/sse",
         )
         monkeypatch.setenv(
-            "DOCUMENT_AGENT_URL",
+            "SEMOS_AGENTURA_DOCUMENT_URL",
             "http://custom:9002/mcp/sse",
         )
         from semos.agentura.ui.__main__ import _build_agents

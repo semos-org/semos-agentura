@@ -21,7 +21,7 @@ from semos.agentura.ui.mcp_tools import (
 
 class TestMakeMcpToolClass:
     @staticmethod
-    def _hub(agent_name="document-agent"):
+    def _hub(agent_name="semos-agentura-document"):
         hub = MagicMock()
         agent = MagicMock()
         agent.name = agent_name
@@ -71,7 +71,7 @@ class TestMakeMcpToolClass:
             description="Mount a filesystem root",
             inputSchema=rich_schema,
         )
-        hub = self._hub("filesystem-agent")
+        hub = self._hub("semos-agentura-files")
         registry = FileRegistry()
         tool = _make_mcp_tool_class(mcp_tool, hub, registry)
 
@@ -93,7 +93,7 @@ class TestMakeMcpToolClass:
         hub = self._hub()
         registry = FileRegistry()
         tool = _make_mcp_tool_class(digest_tool, hub, registry)
-        assert tool.name == "document_agent__digest_document"
+        assert tool.name == "semos_agentura_document__digest_document"
 
     def test_has_class_attr_args_schema(self, digest_tool):
         """args_schema is the raw MCP inputSchema dict, passed
@@ -112,7 +112,7 @@ class TestMakeMcpToolClass:
         openai_tool = convert_to_openai_tool(tool)
         assert openai_tool["type"] == "function"
         fn = openai_tool["function"]
-        assert fn["name"] == "document_agent__digest_document"
+        assert fn["name"] == "semos_agentura_document__digest_document"
         assert "source" in fn["parameters"]["properties"]
 
     @pytest.mark.asyncio

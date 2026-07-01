@@ -17,11 +17,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     npm \
     && rm -rf /var/lib/apt/lists/*
 
-COPY document-agent/tools/package.json /app/document-agent/tools/
-RUN cd /app/document-agent/tools && npm install --omit=dev \
+COPY packages/semos-agentura-document/tools/package.json /app/packages/semos-agentura-document/tools/
+RUN cd /app/packages/semos-agentura-document/tools && npm install --omit=dev \
     && npx playwright install --with-deps chromium
 
-WORKDIR /app/document-agent
+WORKDIR /app/packages/semos-agentura-document
 
 # Chromium needs --no-sandbox when running as root in Docker
 RUN echo '{"args":["--no-sandbox","--disable-setuid-sandbox"]}' > /app/puppeteer.json
@@ -29,5 +29,5 @@ ENV PUPPETEER_CONFIG=/app/puppeteer.json
 
 EXPOSE 8002
 
-CMD ["uv", "run", "uvicorn", "document_agent.service:app", \
+CMD ["uv", "run", "uvicorn", "semos.agentura.document.service:app", \
      "--host", "0.0.0.0", "--port", "8002"]
