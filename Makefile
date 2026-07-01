@@ -34,6 +34,11 @@ test: ## Test the code with pytest (per package, with coverage)
 			--cov=src/ --cov-report=xml:../../coverage-$$pkg.xml) || exit 1; \
 	done
 
+.PHONY: test-integration
+test-integration: ## Run cross-package integration tests (starts agents; pandoc/drawio optional)
+	@echo "🚀 Running cross-package integration tests"
+	@uv run pytest tests/integration --timeout=120 --tb=short -q
+
 .PHONY: build
 build: clean-build ## Build wheels for all workspace packages
 	@echo "🚀 Creating wheel files"

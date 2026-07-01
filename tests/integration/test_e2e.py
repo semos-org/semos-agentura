@@ -3,28 +3,14 @@
 All agents are auto-started on random ports with mocked backends
 (no Outlook COM, no pandoc, no OCR). No manual startup needed.
 
-Run with: uv run pytest packages/semos-agentura-ui/tests/test_e2e.py -v
+Run with: uv run pytest tests/integration/test_e2e.py -v
 """
 
 from __future__ import annotations
 
-import importlib.util
-from pathlib import Path
-
 import pytest
+from _e2e_harness import free_port, start_agent
 from semos.agentura.ui.file_registry import FileRegistry
-
-# Import shared fixtures from semos-agentura-core/tests/conftest.py
-_commons_conftest = Path(__file__).resolve().parent.parent.parent / "semos-agentura-core" / "tests" / "conftest.py"
-_spec = importlib.util.spec_from_file_location(
-    "commons_conftest",
-    _commons_conftest,
-)
-_mod = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(_mod)
-free_port = _mod.free_port
-start_agent = _mod.start_agent
-
 
 # Fixtures: auto-start agents on random ports
 
@@ -43,7 +29,7 @@ def email_agent():
 def doc_agent():
     port = free_port()
     base = f"http://127.0.0.1:{port}"
-    server, thread = start_agent("document_agent", port)
+    server, thread = start_agent("document_agent", port, mock_document=True)
     yield {"port": port, "base_url": base, "sse": f"{base}/mcp/sse"}
     server.should_exit = True
     thread.join(timeout=5)
@@ -107,7 +93,7 @@ class TestMCPTool:
         mcp_tool = next(t for t in hub.all_tools() if t.name == "compose_document")
         wrapper = _make_mcp_tool_class(mcp_tool, hub, registry)
         result = await wrapper._arun(
-            source="# Test\n\nHello.",
+            source_markdown="# Test\n\nHello.",
             format="html",
         )
         assert isinstance(result, str)
@@ -165,7 +151,7 @@ class TestA2ATool:
         result = await send_tool_call(
             agent,
             "compose_document",
-            {"source": "# A2A Test\n\nContent.", "format": "html"},
+            {"source_markdown": "# A2A Test\n\nContent.", "format": "html"},
         )
         assert len(result.files) >= 1, f"Expected file artifact. text={result.text!r} files={result.files}"
         assert result.files[0].url.startswith("http")

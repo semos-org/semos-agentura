@@ -58,10 +58,11 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      # pandoc is a hard requirement for the commons end-to-end composition tests
-      # (they do not skipif-skip), so install it on every OS. Heavier render tools
+      # pandoc lets the document package's composition tests run instead of skipping
+      # (they guard with needs_pandoc), so install it on every OS. Heavier render tools
       # (mmdc, drawio, libreoffice, browsers) are not installed: those tests either
       # skip via needs_* guards or degrade gracefully with a warning.
+      # (Cross-package e2e composition runs in the separate `integration` job.)
       - name: Install pandoc
         run: |
           case "$RUNNER_OS" in
@@ -95,3 +96,22 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: coverage-semos-agentura-core.xml,coverage-semos-agentura-email.xml,coverage-semos-agentura-document.xml,coverage-semos-agentura-files.xml
           fail_ci_if_error: false
+
+  integration:
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up the environment
+        uses: ./.github/actions/setup-python-env
+
+      # Cross-package e2e: agents are started with mocked backends, but the real-compose
+      # tests need pandoc (else they skipif-skip). Browser/OCR/LLM paths are mocked or skipped.
+      - name: Install pandoc
+        run: sudo apt-get update && sudo apt-get install -y pandoc
+
+      - name: Run cross-package integration tests
+        run: make test-integration

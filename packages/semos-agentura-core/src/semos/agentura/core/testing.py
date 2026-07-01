@@ -6,89 +6,14 @@ Importable from semos.agentura.core.testing (not conftest).
 from __future__ import annotations
 
 import socket
-import threading
-import time
-from datetime import datetime
 from pathlib import Path
-from unittest.mock import MagicMock
 from zipfile import ZipFile
-
-import uvicorn
 
 
 def free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("127.0.0.1", 0))
         return s.getsockname()[1]
-
-
-def _patch_email_service_mock_backend():
-    """Inject a mock backend into the email-agent service.
-
-    Patches create_backend BEFORE the service module is imported,
-    so the COM worker thread uses the mock from the start.
-    Works on both Windows (has COM) and Linux (no COM).
-    """
-    from semos.agentura.email.models import EmailMessage
-
-    backend = MagicMock()
-    backend.search_emails.return_value = [
-        EmailMessage(
-            uid="mock-1",
-            subject="Test email",
-            sender_name="Alice",
-            sender="alice@example.com",
-            date=datetime(2025, 1, 1, 12, 0),
-            body_text="Hello from mock",
-            attachments=[],
-        ),
-    ]
-    backend.read_email.return_value = backend.search_emails.return_value[0]
-    backend.create_draft.return_value = "DRAFT-001"
-    backend.calendar = None
-    backend.connect = MagicMock()
-
-    # Patch create_backend to return our mock before any import
-    # of semos.agentura.email.service (which creates _service at module level).
-    import semos.agentura.email.backend as backend_mod
-
-    backend_mod.create_backend = lambda *a, **k: backend
-
-    # Import service - on first import _service is created, but
-    # _run_on_backend() is lazy so it hasn't called create_backend yet.
-    import semos.agentura.email.service as svc_mod
-
-    service = svc_mod._service
-
-    # Inject mock backend directly so _run_on_backend uses it.
-    service._backend_instance = backend
-
-
-def start_agent(agent_module: str, port: int):
-    """Start an agent in a background thread with mocked backends."""
-    if agent_module == "document_agent":
-        from semos.agentura.document.service import create_service_app
-    elif agent_module == "email_agent":
-        _patch_email_service_mock_backend()
-        from semos.agentura.email.service import create_service_app
-    else:
-        raise ValueError(f"Unknown agent: {agent_module}")
-
-    app = create_service_app(port=port)
-    config = uvicorn.Config(
-        app,
-        host="127.0.0.1",
-        port=port,
-        log_level="warning",
-    )
-    server = uvicorn.Server(config)
-    thread = threading.Thread(target=server.run, daemon=True)
-    thread.start()
-    for _ in range(50):
-        time.sleep(0.1)
-        if server.started:
-            break
-    return server, thread
 
 
 def mcp_client_for(service):

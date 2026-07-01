@@ -1,7 +1,9 @@
-"""Shared test fixtures for agentura-commons tests.
+"""Shared harness for cross-package integration tests (not shipped).
 
-Provides mocked agent services for integration tests that don't
-require real backends (COM, IMAP, LLM endpoints).
+Starts agent services in background threads with mocked backends so the
+suites run without Outlook COM, IMAP, live LLM endpoints, or (optionally)
+pandoc/OCR. Lives under tests/ rather than in any package `src/`, so no
+shipped package imports a sibling agent.
 """
 
 from __future__ import annotations
@@ -23,45 +25,43 @@ def free_port() -> int:
         return s.getsockname()[1]
 
 
-def _patch_email_service_mock_backend():
-    """Inject a mock backend into the email-agent service.
+def _patch_email_service_mock_backend() -> None:
+    """Inject a mock backend into the email service (no COM/IMAP).
 
-    Reuses the same pattern as email-agent/tests/test_mcp.py.
-    Must be called before create_service_app.
+    Patches create_backend before the service uses it and sets the lazy
+    `_backend_instance` directly, so it works on Windows and Linux alike.
     """
     from semos.agentura.email.models import EmailMessage
-    from semos.agentura.email.service import _service
-    from semos.agentura.email.tools import ToolExecutor
 
     backend = MagicMock()
     backend.search_emails.return_value = [
         EmailMessage(
-            uid="msg-1",
+            uid="mock-1",
             subject="Test email",
-            sender="alice@example.com",
             sender_name="Alice",
-            to=["bob@example.com"],
-            cc=[],
-            date=datetime(2026, 3, 20, 10, 0),
-            body_text="Test body",
-            body_html="<p>Test body</p>",
+            sender="alice@example.com",
+            date=datetime(2025, 1, 1, 12, 0),
+            body_text="Hello from mock",
+            attachments=[],
         ),
     ]
+    backend.read_email.return_value = backend.search_emails.return_value[0]
     backend.list_events.return_value = []
     backend.free_slots.return_value = []
-    backend.create_draft.return_value = "draft-1"
+    backend.create_draft.return_value = "DRAFT-001"
     backend.draft_reply.return_value = "reply-1"
     backend.send_reply.return_value = None
     backend.mark_as_read.return_value = None
     backend.calendar = None
+    backend.connect = MagicMock()
 
-    executor = ToolExecutor(backend)
+    import semos.agentura.email.backend as backend_mod
 
-    class _FakeExecutor:
-        async def execute(self, tool_name, args):
-            return executor.execute(tool_name, args)
+    backend_mod.create_backend = lambda *a, **k: backend
 
-    _service._executor_impl = _FakeExecutor()
+    import semos.agentura.email.service as svc_mod
+
+    svc_mod._service._backend_instance = backend
 
 
 def _make_minimal_docx(path: Path) -> Path:
@@ -99,14 +99,12 @@ def _make_minimal_docx(path: Path) -> Path:
     return path
 
 
-def _patch_document_service_mock_tools():
-    """Patch compose and digest in document-agent to avoid pandoc/OCR.
+def _patch_document_service_mock_tools() -> None:
+    """Stub compose and digest in the document service (no pandoc/OCR).
 
     compose -> writes a minimal DOCX/HTML to output_path
     digest -> returns mock markdown
-
-    Patches at multiple levels to catch both direct imports
-    and re-exports through __init__.py.
+    Patches at all import levels (module attrs + service module).
     """
     import semos.agentura.document
     import semos.agentura.document.composition.compose as _compose_mod
@@ -136,38 +134,42 @@ def _patch_document_service_mock_tools():
             markdown="# Mock Digest\n\nContent from mock.",
         )
 
-    # Patch at all import levels (module attrs + service module)
     _compose_mod.compose = _mock_compose
     _digest_mod.digest = _mock_digest
     semos.agentura.document.compose = _mock_compose
     semos.agentura.document.digest = _mock_digest
-    # Patch in service module (already imported, holds direct ref)
     import semos.agentura.document.service as _svc_mod
 
     _svc_mod.compose = _mock_compose
     _svc_mod.digest = _mock_digest
+    # tools.py does `from . import compose, digest`, so it holds its own module-level
+    # bindings that the patches above do not reach; patch them too (this is what the
+    # compose_document / digest_document tools actually call).
+    import semos.agentura.document.tools as _tools_mod
+
+    _tools_mod.compose = _mock_compose
+    _tools_mod.digest = _mock_digest
 
 
-def make_app(agent_module: str, port: int):
-    """Create an agent app with mocked backends.
+def start_agent(agent_module: str, port: int, *, mock_document: bool = False):
+    """Start an agent in a daemon thread with mocked backends.
 
-    email-agent: mock COM/IMAP backend
-    document-agent: mock compose (no pandoc) and digest (no OCR)
+    agent_module: "email_agent" or "document_agent".
+    mock_document: also stub compose/digest (avoids pandoc/OCR/LLM). Leave
+        False to exercise the real document pipeline (guard with pandoc).
+    Returns (server, thread); stop via `server.should_exit = True`.
     """
     if agent_module == "document_agent":
-        _patch_document_service_mock_tools()
+        if mock_document:
+            _patch_document_service_mock_tools()
         from semos.agentura.document.service import create_service_app
     elif agent_module == "email_agent":
         _patch_email_service_mock_backend()
         from semos.agentura.email.service import create_service_app
     else:
         raise ValueError(f"Unknown agent: {agent_module}")
-    return create_service_app(port=port)
 
-
-def start_agent(agent_module: str, port: int):
-    """Start agent in a background thread. Returns (server, thread)."""
-    app = make_app(agent_module, port)
+    app = create_service_app(port=port)
     config = uvicorn.Config(
         app,
         host="127.0.0.1",

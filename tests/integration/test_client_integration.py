@@ -14,8 +14,8 @@ from pathlib import Path
 from zipfile import ZipFile
 
 import pytest
+from _e2e_harness import free_port, start_agent
 from semos.agentura.core.client import AgenturaClient
-from semos.agentura.core.testing import free_port, start_agent
 
 # compose_document shells out to pandoc; gate the tests that actually run it so a dev
 # without pandoc gets a clean skip instead of a failure (CI installs pandoc).

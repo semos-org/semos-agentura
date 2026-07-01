@@ -18,7 +18,7 @@ import shutil
 from uuid import uuid4
 
 import pytest
-from semos.agentura.core.testing import free_port, start_agent
+from _e2e_harness import free_port, start_agent
 
 # These end-to-end tests compose documents via document-agent, which shells out to
 # pandoc; skip cleanly where pandoc is not installed (CI installs it).

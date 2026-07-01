@@ -13,6 +13,7 @@ from zipfile import ZipFile
 
 import httpx
 import pytest
+from _e2e_harness import free_port, start_agent
 from a2a.client import Client, ClientConfig, ClientFactory
 from a2a.types import (
     Message,
@@ -21,7 +22,6 @@ from a2a.types import (
     SendMessageRequest,
 )
 from google.protobuf.struct_pb2 import Struct, Value
-from semos.agentura.core.testing import free_port, start_agent
 
 # compose_document/digest_document shell out to pandoc; gate those tests so they skip
 # cleanly without pandoc (CI installs it).

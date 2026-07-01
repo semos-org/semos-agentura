@@ -38,9 +38,10 @@ packages = ["src/semos"]
 # `protobuf` provides the `google.protobuf` import namespace.
 protobuf = "google"
 
+# The agent-coupled test helpers moved to tests/integration/ (Phase 6d), so `semos-agentura-core`
+# no longer imports any sibling agent (the DEP003 `semos` ignore is gone).
 [tool.deptry.per_rule_ignores]
-# The email/document agents are workspace siblings imported only by the shared test-helper module
-# (testing.py). They live under the shared `semos` namespace, so deptry reports the transitive import
-# as the top-level module `semos`. Declaring them as runtime deps would create an import cycle, so they
-# stay dev-only. (Phase 6e moves these imports to tests/integration and drops this ignore.)
-DEP003 = ["semos"]
+# uvicorn is the ASGI server used to serve every agent built on core (each service runs
+# `uvicorn <module>.service:app` via the CLI in its Dockerfile / run_local.py; core does not import it),
+# so it ships in core and every agent gets a runnable server transitively.
+DEP002 = ["uvicorn"]
