@@ -50,12 +50,22 @@ clean-build: ## Clean build artifacts
 	@uv run python -c "import shutil; import os; shutil.rmtree('dist') if os.path.exists('dist') else None"
 
 .PHONY: publish
-publish: ## Publish all workspace packages to PyPI.
+publish: ## Publish all workspace packages to PyPI (CI does this via trusted publishing; local use needs a token).
 	@echo "🚀 Publishing."
 	@uv publish
 
 .PHONY: build-and-publish
 build-and-publish: build publish ## Build and publish.
+
+.PHONY: release
+release: ## Tag vX.Y.Z and push to trigger the release workflow. Usage: make release VERSION=X.Y.Z
+	@test -n "$(VERSION)" || { echo "Usage: make release VERSION=X.Y.Z"; exit 1; }
+	@test -z "$$(git status --porcelain)" || { echo "🚫 Working tree not clean; commit or stash first."; exit 1; }
+	@echo "🚀 Releasing v$(VERSION)"
+	@$(MAKE) check
+	@git tag -a "v$(VERSION)" -m "Release v$(VERSION)"
+	@git push origin "v$(VERSION)"
+	@echo "✅ Pushed tag v$(VERSION). The Release workflow will build, publish to PyPI, and deploy docs."
 
 .PHONY: docs-test
 docs-test: ## Test if documentation can be built without warnings or errors

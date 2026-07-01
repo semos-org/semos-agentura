@@ -11,7 +11,7 @@ dependencies = [
     "msal>=1.31.0",
     "nest-asyncio>=1.6.0",
     "panel>=1.7.1",
-    "panelini",
+    "panelini>=0.9.4",
     "playwright>=1.44.0",
     "pydantic>=2.0",
     "pydantic-settings>=2.13.0",
@@ -55,9 +55,6 @@ DEP002 = ["pytest", "pytest-asyncio", "pytest-playwright", "wsgidav"]
 [tool.hatch.build.targets.wheel]
 # PEP 420 namespace: ship src/semos (semos/ and semos/agentura/ have no __init__.py).
 packages = ["src/semos"]
-
-[tool.hatch.metadata]
-allow-direct-references = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

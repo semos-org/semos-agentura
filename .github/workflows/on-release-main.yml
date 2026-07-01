@@ -1,0 +1,63 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]*"
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    # PyPI trusted publishing (OIDC): no PYPI_TOKEN. A trusted publisher must be
+    # registered on each of the six projects (repo + this workflow + the `pypi` env).
+    environment: pypi
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # hatch-vcs derives the version from tags
+
+      - name: Set up the environment
+        uses: ./.github/actions/setup-python-env
+
+      - name: Build all packages
+        run: uv build --all-packages
+
+      # Publishes every wheel/sdist in dist/: semos-agentura-core, -email, -document,
+      # -files, -ui, and the semos-agentura umbrella. `always` forces OIDC trusted
+      # publishing and fails loudly if the token is missing (no token/keyring fallback).
+      - name: Publish to PyPI
+        run: uv publish --trusted-publishing always
+
+  deploy-docs:
+    needs: publish
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      pages: write
+      id-token: write
+      contents: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up the environment
+        uses: ./.github/actions/setup-python-env
+
+      - name: Build documentation
+        run: uv run zensical build
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

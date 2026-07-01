@@ -2790,12 +2790,16 @@ wheels = [
 
 [[package]]
 name = "panelini"
-version = "0.8.0"
-source = { git = "https://github.com/opensemanticworld/panelini.git?branch=dev-agentura#c693dcb8f338c3a2d0a55207902f3b15b05e2d40" }
+version = "0.9.4"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "panel" },
     { name = "param" },
     { name = "watchfiles" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/b9/d2/31bfd4487a54e83355f7a8b289e0c5539a225281fd2979fa1a31e2054d11/panelini-0.9.4.tar.gz", hash = "sha256:b6421e7a46bffad884c49be4f2995cf82ba0be920a1668841819e43203029f12", size = 6413914, upload-time = "2026-07-01T10:17:19.634Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7d/d6/c668d17d5c2851add64475d5fbdea142201d46bfb04b800224be3e63cfa4/panelini-0.9.4-py3-none-any.whl", hash = "sha256:f15653b68257a803c32230bb602e6587c8d9569d2f35dd69f16ba44acb7ff7e3", size = 1655961, upload-time = "2026-07-01T10:17:17.986Z" },
 ]
 
 [package.optional-dependencies]
@@ -4379,7 +4383,7 @@ requires-dist = [
     { name = "msal", specifier = ">=1.31.0" },
     { name = "nest-asyncio", specifier = ">=1.6.0" },
     { name = "panel", specifier = ">=1.7.1" },
-    { name = "panelini", git = "https://github.com/opensemanticworld/panelini.git?branch=dev-agentura" },
+    { name = "panelini", specifier = ">=0.9.4" },
     { name = "playwright", specifier = ">=1.44.0" },
     { name = "pydantic", specifier = ">=2.0" },
     { name = "pydantic-settings", specifier = ">=2.13.0" },
@@ -4425,7 +4429,7 @@ requires-dist = [
     { name = "langchain-core", specifier = ">=1.0" },
     { name = "mcp", specifier = ">=1.9" },
     { name = "panel", specifier = ">=1.7" },
-    { name = "panelini", extras = ["ai"], git = "https://github.com/opensemanticworld/panelini.git?branch=dev-agentura" },
+    { name = "panelini", extras = ["ai"], specifier = ">=0.9.4" },
     { name = "pillow", specifier = ">=10.0" },
     { name = "python-dotenv", specifier = ">=1.0" },
     { name = "semos-agentura-core", editable = "packages/semos-agentura-core" },
