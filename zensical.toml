@@ -25,11 +25,11 @@ nav = [
 # workspace package sources.
 [project.plugins.mkdocstrings.handlers.python]
 paths = [
-    "agentura-commons/src",
-    "email-agent/src",
-    "document-agent/src",
-    "filesystem-agent/src",
-    "agentura-ui/src",
+    "packages/semos-agentura-core/src",
+    "packages/semos-agentura-email/src",
+    "packages/semos-agentura-document/src",
+    "packages/semos-agentura-files/src",
+    "packages/semos-agentura-ui/src",
 ]
 
 [project.theme]

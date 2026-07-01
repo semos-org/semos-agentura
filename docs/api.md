@@ -1,16 +1,16 @@
 # API Reference
 
 Auto-generated from source docstrings via [mkdocstrings](https://mkdocstrings.github.io/). The shared
-framework lives in `agentura-commons`; each agent is a thin `BaseAgentService` subclass.
+framework lives in `semos-agentura-core`; each agent is a thin `BaseAgentService` subclass.
 
-## Core framework (agentura-commons)
+## Core framework (semos-agentura-core)
 
 ### BaseAgentService
 
 Abstract base every agent implements. Declares the tools and skills an agent exposes and serves them
 over both MCP and A2A.
 
-::: agentura_commons.BaseAgentService
+::: semos.agentura.core.BaseAgentService
 
 ---
 
@@ -19,7 +19,7 @@ over both MCP and A2A.
 The universal agentic loop: takes a message plus tool definitions, drives the model/tool cycle, and
 emits an `ExecutorResult`.
 
-::: agentura_commons.LLMExecutor
+::: semos.agentura.core.LLMExecutor
 
 ---
 
@@ -28,11 +28,11 @@ emits an `ExecutorResult`.
 `AgentTool` / the `agent_tool` decorator define callable tools; `ToolResult` is the normalized,
 multi-modal return type (text + data + files).
 
-::: agentura_commons.AgentTool
+::: semos.agentura.core.AgentTool
 
-::: agentura_commons.agent_tool
+::: semos.agentura.core.agent_tool
 
-::: agentura_commons.ToolResult
+::: semos.agentura.core.ToolResult
 
 ---
 
@@ -40,7 +40,7 @@ multi-modal return type (text + data + files).
 
 A2A skill definition advertised on the agent card.
 
-::: agentura_commons.SkillDef
+::: semos.agentura.core.SkillDef
 
 ---
 
@@ -48,7 +48,7 @@ A2A skill definition advertised on the agent card.
 
 Reference client for both MCP tools and A2A task delegation across agents.
 
-::: agentura_commons.AgenturaClient
+::: semos.agentura.core.AgenturaClient
 
 ---
 
@@ -56,7 +56,7 @@ Reference client for both MCP tools and A2A task delegation across agents.
 
 Connects to external MCP servers and exposes their tools to an agent.
 
-::: agentura_commons.MCPHub
+::: semos.agentura.core.MCPHub
 
 ---
 
@@ -64,7 +64,7 @@ Connects to external MCP servers and exposes their tools to an agent.
 
 Wires a `BaseAgentService` into a FastAPI app serving MCP and A2A endpoints.
 
-::: agentura_commons.create_app
+::: semos.agentura.core.create_app
 
 ## Agents
 
@@ -72,7 +72,7 @@ Wires a `BaseAgentService` into a FastAPI app serving MCP and A2A endpoints.
 
 Document digestion (OCR to Markdown) and composition (Markdown to documents).
 
-::: document_agent.service.DocumentAgentService
+::: semos.agentura.document.service.DocumentAgentService
 
 ---
 
@@ -80,7 +80,7 @@ Document digestion (OCR to Markdown) and composition (Markdown to documents).
 
 Unified email client over IMAP/SMTP and Outlook COM, with the `@mailgent` LLM agent.
 
-::: email_agent.service.EmailAgentService
+::: semos.agentura.email.service.EmailAgentService
 
 ---
 
@@ -88,4 +88,4 @@ Unified email client over IMAP/SMTP and Outlook COM, with the `@mailgent` LLM ag
 
 Multi-root virtual filesystem (local, WebDAV, SharePoint, archives) exposed as MCP/A2A tools.
 
-::: filesystem_agent.service.FilesystemAgentService
+::: semos.agentura.files.service.FilesystemAgentService

@@ -14,7 +14,7 @@ A modular multi-agent system for professional and scientific workflows, built on
 
 **Federated by design.** Agents are discovered via A2A Agent Cards and connected via protocol, not configuration. A new agent joins the system by publishing its capabilities - no central registry to update, no monolith to redeploy. This extends across organizational boundaries: a partner institution can expose its own agents over A2A without granting access to its internal systems.
 
-**Modular composition.** Each agent encapsulates a single domain and exposes it as MCP tools (for LLM-driven use) and A2A skills (for programmatic workflows). The shared `agentura-commons` library provides only protocol wiring - no business logic, no framework lock-in. Agents are plain Python packages that work standalone, with or without the multi-agent layer.
+**Modular composition.** Each agent encapsulates a single domain and exposes it as MCP tools (for LLM-driven use) and A2A skills (for programmatic workflows). The shared `semos-agentura-core` library provides only protocol wiring - no business logic, no framework lock-in. Agents are plain Python packages that work standalone, with or without the multi-agent layer.
 
 **Open standards, no vendor lock-in.** MCP and A2A are both Linux Foundation standards (under [AAIF](https://aaif.io/)) with multi-vendor support. LLM providers are interchangeable via `litellm`. Agents run as standard HTTP services - deployable with uvicorn, Docker, Kubernetes, or any infrastructure.
 
@@ -26,8 +26,8 @@ A modular multi-agent system for professional and scientific workflows, built on
 
 | Component                                                              | Description                                                                                                                                                                                                       | Status  |
 | ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| **[agentura-commons](agentura-commons/)**                              | Shared framework: BaseAgentService, MCP+A2A transport, file middleware, LLMExecutor (universal agentic loop), reference client (AgenturaClient)                                                                   | Done    |
-| **[Virtual Filesystem](filesystem-agent/src/filesystem_agent/vfs.py)** | Unified API for local, WebDAV, SharePoint, and in-memory backends via fsspec. Single namespace for all file operations.                                                                                           | Done    |
+| **[semos-agentura-core](packages/semos-agentura-core/)**               | Shared framework: BaseAgentService, MCP+A2A transport, file middleware, LLMExecutor (universal agentic loop), reference client (AgenturaClient)                                                                   | Done    |
+| **[Virtual Filesystem](packages/semos-agentura-files/src/semos/agentura/files/vfs.py)** | Unified API for local, WebDAV, SharePoint, and in-memory backends via fsspec. Single namespace for all file operations.                                                                                           | Done    |
 | **[File Middleware](docs/file-handling-spec.md)**                      | Symmetric LLM file handling: the LLM only sees symbolic filenames. Client middleware resolves names to base64/URL on input, fetches download URLs and registers files on output. Based on the Virtual Filesystem. | Done    |
 | **[Orchestrator](docs/agent-architecture.md)**                         | Multi-session manager that can run independently in background. Operates on the virtual filesystem, maintains task lists and memory, spawns sub-agents. Email and UI are message paths into shared sessions.      | Planned |
 
@@ -35,16 +35,16 @@ A modular multi-agent system for professional and scientific workflows, built on
 
 | Component                                    | Description                                                                                                                                                                                 | Status  |
 | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| **[Agentura UI](agentura-ui/)**              | Multi-session, multi-model chat UI. Visualizes orchestrator state and is itself one message path into the orchestrator. Built on [panelini](https://github.com/opensemanticworld/panelini). | Partial |
-| **[Email Agent](email-agent/)** (as channel) | Second message path: incoming emails create/resume orchestrator sessions, replies go back via email. Uses `@mailgent` tagging.                                                              | Partial |
+| **[Agentura UI](packages/semos-agentura-ui/)**              | Multi-session, multi-model chat UI. Visualizes orchestrator state and is itself one message path into the orchestrator. Built on [panelini](https://github.com/opensemanticworld/panelini). | Partial |
+| **[Email Agent](packages/semos-agentura-email/)** (as channel) | Second message path: incoming emails create/resume orchestrator sessions, replies go back via email. Uses `@mailgent` tagging.                                                              | Partial |
 
 ### Specialist Agents
 
 | Agent                                     | Description                                                                                                                                                                                   | Tools | Status  |
 | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | ------- |
-| **[Filesystem Agent](filesystem-agent/)** | File operations on the Virtual Filesystem: read, write, edit, copy, move, search, glob, archive browsing across all backends.                                                                 | 15    | Done    |
-| **[Document Agent](document-agent/)**     | Non-plaintext document processing: OCR digest (PDF, images, Office), compose (Markdown to PDF/PPTX/DOCX/HTML), diagram generation (Mermaid, draw.io), form inspection and filling (PDF/DOCX). | 7     | Done    |
-| **[Email Agent](email-agent/)**           | Email and calendar operations: search, read, draft, reply, send. Calendar events and free slot computation. Backends: IMAP/SMTP, Outlook COM, MS Graph API.                                   | 9     | Done    |
+| **[Filesystem Agent](packages/semos-agentura-files/)** | File operations on the Virtual Filesystem: read, write, edit, copy, move, search, glob, archive browsing across all backends.                                                                 | 15    | Done    |
+| **[Document Agent](packages/semos-agentura-document/)**     | Non-plaintext document processing: OCR digest (PDF, images, Office), compose (Markdown to PDF/PPTX/DOCX/HTML), diagram generation (Mermaid, draw.io), form inspection and filling (PDF/DOCX). | 7     | Done    |
+| **[Email Agent](packages/semos-agentura-email/)**           | Email and calendar operations: search, read, draft, reply, send. Calendar events and free slot computation. Backends: IMAP/SMTP, Outlook COM, MS Graph API.                                   | 9     | Done    |
 | **Browser Agent**                         | Web-based retrieval and website automation via Playwright. Visual navigation, data extraction, form filling on live websites.                                                                 | -     | Planned |
 | **Coding Agent**                          | Write and execute program code. File exchange via file middleware. Code review, test generation.                                                                                              | -     | Planned |
 | **Knowledge Agent**                       | Long-term memory with retrieve, patch, and auto-consolidation. Based on [Object-Oriented Linked Data (OO-LD)](https://github.com/OO-LD). Knowledge graph with semantic search.                | -     | Planned |
@@ -82,7 +82,7 @@ Each agent is a FastAPI app exposing both protocols:
 ## Quick Start
 
 ```bash
-# Prerequisites: Python 3.13+, uv
+# Prerequisites: Python 3.11+, uv
 # Install: https://docs.astral.sh/uv/getting-started/installation/
 
 # Install all workspace packages
@@ -92,8 +92,8 @@ uv sync --all-packages
 uv run python run_local.py
 
 # Or run individual agents
-uv run uvicorn email_agent.service:app --port 8001
-uv run uvicorn document_agent.service:app --port 8002
+uv run uvicorn semos.agentura.email.service:app --port 8001
+uv run uvicorn semos.agentura.document.service:app --port 8002
 ```
 
 ### Endpoints per Agent
@@ -120,14 +120,14 @@ uv run uvicorn document_agent.service:app --port 8002
 
 ## Adding a New Agent
 
-1. Create `my-agent/` with `pyproject.toml` and `src/my_agent/`
-2. Add `"agentura-commons"` as a dependency with `workspace = true`
+1. Create `packages/semos-agentura-myagent/` with `pyproject.toml` and `src/semos/agentura/myagent/`
+2. Add `"semos-agentura-core"` as a dependency with `workspace = true`
 3. Implement `BaseAgentService` in `service.py`
 4. Add to workspace members in root `pyproject.toml`
 5. `uv sync --all-packages`
 
 ```python
-from agentura_commons import BaseAgentService, ToolDef, SkillDef, create_app
+from semos.agentura.core import BaseAgentService, ToolDef, SkillDef, create_app
 
 class MyAgentService(BaseAgentService):
     @property
@@ -160,9 +160,9 @@ Each agent loads `.env` from its own directory, falling back to the workspace ro
 ```dts
 semos-agentura/
   .env                    # Shared: ANTHROPIC_API_KEY, AZURE_API_KEY, ...
-  email-agent/.env        # IMAP_HOST, EMAIL_ADDRESS, ...
-  document-agent/.env     # DOCUMENT_AI_*, DIAGRAM_CODEGEN_*, ...
-  agentura-ui/config.yml  # LLM provider config (see config.example.yml)
+  packages/semos-agentura-email/.env       # IMAP_HOST, EMAIL_ADDRESS, ...
+  packages/semos-agentura-document/.env    # DOCUMENT_AI_*, DIAGRAM_CODEGEN_*, ...
+  packages/semos-agentura-ui/config.yml    # LLM provider config (see config.example.yml)
 ```
 
 ## Protocols
@@ -175,7 +175,7 @@ Used when an **LLM decides** which tool to call. The orchestrator's LLM sees all
 
 Used for **high-level delegation** - the requesting LLM sends a natural language task to an agent's LLM, which plans and executes it using its own tools. Also used for deterministic pipelines and cron workflows (no LLM needed).
 
-Each agent exposes dual A2A bindings: REST (`/a2a`) and JSON-RPC (`/a2a/rpc`). The `LLMExecutor` in agentura-commons provides the universal agentic loop with 5 synthetic tools (`request_input`, `return_result`, `report_progress`, `reject_task`, `request_auth`) that map to A2A task states.
+Each agent exposes dual A2A bindings: REST (`/a2a`) and JSON-RPC (`/a2a/rpc`). The `LLMExecutor` in semos-agentura-core provides the universal agentic loop with 5 synthetic tools (`request_input`, `return_result`, `report_progress`, `reject_task`, `request_auth`) that map to A2A task states.
 
 Both protocols are served by every agent. The caller picks which one to use.
 
@@ -183,10 +183,10 @@ Both protocols are served by every agent. The caller picks which one to use.
 
 ```bash
 # CI tests (no external deps - mocked backends, no LLM/COM/pandoc)
-cd agentura-commons && uv run pytest tests/ -m "not integration"
-cd email-agent && uv run pytest tests/ -m "not integration"
-cd document-agent && uv run pytest tests/ -m "not integration"
-cd filesystem-agent && uv run pytest tests/ -m "not integration"
+cd packages/semos-agentura-core && uv run pytest tests/ -m "not integration"
+cd packages/semos-agentura-email && uv run pytest tests/ -m "not integration"
+cd packages/semos-agentura-document && uv run pytest tests/ -m "not integration"
+cd packages/semos-agentura-files && uv run pytest tests/ -m "not integration"
 
 # Integration tests (needs real backends)
 uv run pytest -m integration
@@ -205,11 +205,11 @@ Pre-commit hook enforces ruff lint + format.
 
 | Component                 | License                               |
 | ------------------------- | ------------------------------------- |
-| `agentura-commons`        | Apache 2.0                            |
-| `agentura-ui`             | Apache 2.0                            |
-| `email-agent`             | Apache 2.0                            |
-| `document-agent`          | Apache 2.0                            |
-| `filesystem-agent`        | Apache 2.0                            |
+| `semos-agentura-core`        | Apache 2.0                            |
+| `semos-agentura-ui`       | Apache 2.0                            |
+| `semos-agentura-email`    | Apache 2.0                            |
+| `semos-agentura-document` | Apache 2.0                            |
+| `semos-agentura-files`    | Apache 2.0                            |
 | Future specialized agents | May be commercial (per-agent license) |
 
 See [LICENSE](LICENSE) for the full Apache 2.0 text. Individual agents may override with their own license file.

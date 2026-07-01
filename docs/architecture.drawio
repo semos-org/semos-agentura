@@ -107,8 +107,8 @@
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
 
-        <!-- agentura-commons Foundation Layer -->
-        <mxCell id="commons" value="&lt;b&gt;agentura-commons&lt;/b&gt;: BaseAgentService, MCP+A2A transport, file middleware, LLMExecutor, AgenturaClient" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="1">
+        <!-- semos-agentura-core Foundation Layer -->
+        <mxCell id="commons" value="&lt;b&gt;semos-agentura-core&lt;/b&gt;: BaseAgentService, MCP+A2A transport, file middleware, LLMExecutor, AgenturaClient" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="1">
           <mxGeometry x="40" y="510" width="910" height="35" as="geometry"/>
         </mxCell>
 

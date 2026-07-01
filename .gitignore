@@ -16,8 +16,8 @@ output/
 site/
 
 # Agent-local lockfiles (workspace root uv.lock is the canonical one)
-email-agent/uv.lock
-document-agent/uv.lock
+packages/semos-agentura-email/uv.lock
+packages/semos-agentura-document/uv.lock
 
 # Local/custom scripts and test files (not part of the package)
 local-tests/
@@ -26,7 +26,7 @@ local-tests/
 **/forms/templates/*.json
 
 # UI config (user-specific LLM provider settings, use config.example.yml)
-agentura-ui/config.yml
+packages/semos-agentura-ui/config.yml
 
 # Local
 .claude

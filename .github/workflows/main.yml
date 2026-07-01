@@ -82,10 +82,10 @@ jobs:
       # [tool.pytest] config and conftest (Windows-only COM tests skipif-skip).
       - name: Run tests with coverage
         run: |
-          for pkg in agentura-commons email-agent document-agent filesystem-agent; do
+          for pkg in semos-agentura-core semos-agentura-email semos-agentura-document semos-agentura-files; do
             echo "=== $pkg ==="
-            (cd "$pkg" && uv run pytest tests/ --timeout=60 --tb=short -q \
-              --cov=src/ --cov-report=xml:../coverage-$pkg.xml)
+            (cd "packages/$pkg" && uv run pytest tests/ --timeout=60 --tb=short -q \
+              --cov=src/ --cov-report=xml:../../coverage-$pkg.xml)
           done
 
       - name: Upload coverage to Codecov
@@ -93,5 +93,5 @@ jobs:
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          files: coverage-agentura-commons.xml,coverage-email-agent.xml,coverage-document-agent.xml,coverage-filesystem-agent.xml
+          files: coverage-semos-agentura-core.xml,coverage-semos-agentura-email.xml,coverage-semos-agentura-document.xml,coverage-semos-agentura-files.xml
           fail_ci_if_error: false

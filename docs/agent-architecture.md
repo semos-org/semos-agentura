@@ -4,7 +4,7 @@ This document captures the architectural patterns implemented across semos-agent
 
 ## 1. The Universal Agent Loop
 
-**Implementation**: `agentura-commons/src/agentura_commons/llm_executor.py` (`LLMExecutor`)
+**Implementation**: `packages/semos-agentura-core/src/semos/agentura/core/llm_executor.py` (`LLMExecutor`)
 
 The core of every agent is the same loop:
 
@@ -32,7 +32,7 @@ This pattern matches Claude Code's QueryEngine and OpenCode's streamText+process
 
 ## 2. Tool System
 
-**Implementation**: `agentura-commons/src/agentura_commons/base.py` (`ToolDef`, `ToolResult`)
+**Implementation**: `packages/semos-agentura-core/src/semos/agentura/core/base.py` (`ToolDef`, `ToolResult`)
 
 ### ToolDef
 
@@ -73,7 +73,7 @@ Tool functions can return any Python type. The MCP wrapper normalizes automatica
 
 ## 3. Synthetic Tools (Agent Interaction)
 
-**Implementation**: `agentura-commons/src/agentura_commons/llm_executor.py` (synthetic tool definitions)
+**Implementation**: `packages/semos-agentura-core/src/semos/agentura/core/llm_executor.py` (synthetic tool definitions)
 
 The LLM executor injects 5 synthetic tools into every agent session. These are intercepted by the executor itself (never reach real tool functions) and control the task lifecycle:
 
@@ -94,7 +94,7 @@ The key difference: in coding agents these are built-in UI features. In semos-ag
 
 ## 4. A2A Protocol Integration
 
-**Implementation**: `agentura-commons/src/agentura_commons/a2a_server.py`
+**Implementation**: `packages/semos-agentura-core/src/semos/agentura/core/a2a_server.py`
 
 ### AgentCard
 
@@ -139,7 +139,7 @@ Client sends message
 
 ## 5. MCP Protocol Integration
 
-**Implementation**: `agentura-commons/src/agentura_commons/mcp_server.py`
+**Implementation**: `packages/semos-agentura-core/src/semos/agentura/core/mcp_server.py`
 
 The same `BaseAgentService` serves both MCP and A2A. `create_app()` wires both transports into a single FastAPI application.
 
@@ -149,7 +149,7 @@ The same `BaseAgentService` serves both MCP and A2A. `create_app()` wires both t
 
 ## 6. BaseAgentService Contract
 
-**Implementation**: `agentura-commons/src/agentura_commons/base.py`
+**Implementation**: `packages/semos-agentura-core/src/semos/agentura/core/base.py`
 
 Every agent implements this abstract base class:
 
