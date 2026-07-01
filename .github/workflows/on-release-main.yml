@@ -11,7 +11,8 @@ jobs:
     runs-on: ubuntu-latest
     # PyPI trusted publishing (OIDC): no PYPI_TOKEN. A trusted publisher must be
     # registered on each of the six projects (repo + this workflow + the `pypi` env).
-    environment: pypi
+    environment:
+      name: pypi
     permissions:
       id-token: write
       contents: read
