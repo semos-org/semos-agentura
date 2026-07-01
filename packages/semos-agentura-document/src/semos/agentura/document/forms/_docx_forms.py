@@ -10,7 +10,6 @@ Uses lxml to preserve all namespace declarations in the original document.
 from __future__ import annotations
 
 import logging
-import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -91,12 +90,10 @@ def fill_docx_fields(file_path: Path, output_path: Path, data: dict[str, Any]) -
     # Fill table cells (label -> adjacent empty cell)
     filled_count += _fill_table_cells(root, data)
 
-    # Write back
+    # Write back: stream the source zip straight to output_path, swapping document.xml.
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(file_path, output_path)
-
     xml_bytes = etree.tostring(root, xml_declaration=True, encoding="UTF-8", standalone=True)
-    _replace_in_zip(output_path, "word/document.xml", xml_bytes)
+    _write_docx_with_replaced_member(file_path, output_path, "word/document.xml", xml_bytes)
 
     logger.info("Filled %d fields, written: %s", filled_count, output_path)
     return output_path
@@ -117,16 +114,21 @@ def _read_document_xml(file_path: Path) -> etree._Element:
             return tree.getroot()
 
 
-def _replace_in_zip(zip_path: Path, member: str, data: bytes) -> None:
-    """Replace a single file inside a ZIP archive (DOCX)."""
-    tmp = zip_path.with_suffix(".tmp")
-    with ZipFile(zip_path, "r") as zin, ZipFile(tmp, "w") as zout:
+def _write_docx_with_replaced_member(src_path: Path, output_path: Path, member: str, data: bytes) -> None:
+    """Write output_path from src_path in one pass, replacing a single ZIP member.
+
+    Streaming straight from the source zip to the destination avoids the
+    copy-then-reopen-then-os.replace pattern, which intermittently fails on
+    Windows with a file-lock error (WinError 32) when the just-created file is
+    still held open (e.g. by the AV scanner). Passing each source ZipInfo to
+    writestr preserves the original per-member compression.
+    """
+    with ZipFile(src_path, "r") as zin, ZipFile(output_path, "w") as zout:
         for item in zin.infolist():
             if item.filename == member:
                 zout.writestr(item, data)
             else:
                 zout.writestr(item, zin.read(item.filename))
-    tmp.replace(zip_path)
 
 
 # ---------------------------------------------------------------------------
