@@ -157,7 +157,7 @@ app = create_app(MyAgentService())
 
 Each agent loads `.env` from its own directory, falling back to the workspace root `.env` for shared keys. See `.env.example` files in each package.
 
-```dts
+```text
 semos-agentura/
   .env                    # Shared: ANTHROPIC_API_KEY, AZURE_API_KEY, ...
   packages/semos-agentura-email/.env       # IMAP_HOST, EMAIL_ADDRESS, ...
