@@ -14,15 +14,6 @@ runs:
       with:
         python-version: ${{ inputs.python-version }}
 
-    # Pin uv to the matrix interpreter for EVERY uv call in the whole job (this sync
-    # AND later `uv run` steps like playwright/pytest). Setting it only on the sync
-    # step is not enough: a later `uv run` re-resolves to uv's own default Python
-    # (e.g. 3.13) and rebuilds .venv, so the matrix cell would silently test 3.13.
-    # GITHUB_ENV persists the value to all subsequent steps of the parent job.
-    - name: Pin uv to the matrix Python
-      run: echo "UV_PYTHON=${{ inputs.python-version }}" >> "$GITHUB_ENV"
-      shell: bash
-
     - name: Install uv
       uses: astral-sh/setup-uv@v6
       with:
