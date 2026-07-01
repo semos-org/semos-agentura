@@ -58,14 +58,16 @@ publish: ## Publish all workspace packages to PyPI (CI does this via trusted pub
 build-and-publish: build publish ## Build and publish.
 
 .PHONY: release
-release: ## Tag vX.Y.Z and push to trigger the release workflow. Usage: make release VERSION=X.Y.Z
-	@test -n "$(VERSION)" || { echo "Usage: make release VERSION=X.Y.Z"; exit 1; }
+# V strips a leading "v" if present, so VERSION=0.5.0 and VERSION=v0.5.0 both tag v0.5.0.
+release: V = $(VERSION:v%=%)
+release: ## Tag vX.Y.Z and push to trigger the release workflow. Usage: make release VERSION=0.5.0
+	@test -n "$(VERSION)" || { echo "Usage: make release VERSION=0.5.0 (the leading v is added for you)"; exit 1; }
 	@test -z "$$(git status --porcelain)" || { echo "🚫 Working tree not clean; commit or stash first."; exit 1; }
-	@echo "🚀 Releasing v$(VERSION)"
+	@echo "🚀 Releasing v$(V)"
 	@$(MAKE) check
-	@git tag -a "v$(VERSION)" -m "Release v$(VERSION)"
-	@git push origin "v$(VERSION)"
-	@echo "✅ Pushed tag v$(VERSION). The Release workflow will build, publish to PyPI, and deploy docs."
+	@git tag -a "v$(V)" -m "Release v$(V)"
+	@git push origin "v$(V)"
+	@echo "✅ Pushed tag v$(V). The Release workflow will build, publish to PyPI, and deploy docs."
 
 .PHONY: docs-test
 docs-test: ## Test if documentation can be built without warnings or errors
