@@ -1,52 +1,36 @@
-[project]
-name = "semos-agentura"
-version = "0.2.0"
-description = "Semos Agentura - Multi-agent system with MCP + A2A"
-requires-python = ">=3.13"
-dependencies = [
-    "agentura-commons",
-    "email-agent",
-    "document-agent",
-    "filesystem-agent",
-    "agentura-ui",
-]
+# Virtual workspace root: dev tooling + shared tool config only. Not a publishable package.
+# The umbrella that installs the whole suite lives at packages/semos-agentura.
 
 [tool.uv.workspace]
-members = [
-    "agentura-commons",
-    "email-agent",
-    "document-agent",
-    "filesystem-agent",
-    "agentura-ui",
-]
+members = ["packages/*"]
 
 [tool.uv.sources]
-agentura-commons = { workspace = true }
-email-agent = { workspace = true }
-document-agent = { workspace = true }
-filesystem-agent = { workspace = true }
-agentura-ui = { workspace = true }
-panelini = { git = "https://github.com/opensemanticworld/panelini.git", branch = "dev-agentura" }
+semos-agentura-core = { workspace = true }
+semos-agentura-email = { workspace = true }
+semos-agentura-document = { workspace = true }
+semos-agentura-files = { workspace = true }
+semos-agentura-ui = { workspace = true }
+semos-agentura = { workspace = true }
 
 [tool.pytest.ini_options]
 asyncio_mode = "strict"
-# Each package runs tests from its own dir (cd pkg && uv run pytest tests/)
+# Each package runs tests from its own dir (cd packages/<pkg> && uv run pytest tests/)
 # to pick up its own pyproject.toml [tool.pytest] config and conftest.py.
 markers = [
-    "integration: requires real backend credentials (COM, IMAP, SharePoint, LLM API keys) - excluded in CI",
-    "playwright: uses Playwright browser automation (chromium installed in CI)",
+  "integration: requires real backend credentials (COM, IMAP, SharePoint, LLM API keys) - excluded in CI",
+  "playwright: uses Playwright browser automation (chromium installed in CI)",
 ]
 
 [tool.ruff]
 line-length = 120
-target-version = "py313"
+target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
 ignore = [
-    "E402",   # module import not at top (load_dotenv before imports)
-    "E501",   # line too long (handled by formatter)
-    "UP042",  # str+Enum -> StrEnum (keep compat with older Python if needed)
+  "E402",  # module import not at top (load_dotenv before imports)
+  "E501",  # line too long (handled by formatter)
+  "UP042", # str+Enum -> StrEnum (keep compat with older Python if needed)
 ]
 
 [tool.ruff.lint.per-file-ignores]
@@ -54,11 +38,52 @@ ignore = [
 
 [dependency-groups]
 dev = [
-    "ruff>=0.15.12",
-    "pytest>=9.0",
-    "pytest-asyncio>=1.0",
-    "pytest-httpx>=0.30",
-    "pytest-playwright>=0.7",
-    "pytest-timeout>=2.3",
-    "pytest-cov>=6.0",
+  "ruff>=0.15.12",
+  "pytest>=9.0",
+  "pytest-asyncio>=1.0",
+  "pytest-httpx>=0.30",
+  "pytest-playwright>=0.7",
+  "pytest-timeout>=2.3",
+  "pytest-cov>=6.0",
+  # tooling migration (oold-python parity)
+  "ty>=0.0.24",
+  "deptry>=0.25.1",
+  "pre-commit>=4.5.1",
+  "zensical>=0.0.26",
+  "mkdocstrings-python>=1.0.3",
+  # type stubs so ty resolves C-extension / Windows-only deps it cannot import in the lint env
+  "types-pywin32>=308", # win32com.client, pythoncom (pywin32 is Windows-only)
+  "lxml-stubs>=0.5",    # lxml.etree (lxml ships incomplete inline types)
 ]
+
+# --- static analysis / coverage (oold-python parity) ---------------------------
+
+[tool.ty.environment]
+python = "./.venv"
+python-version = "3.11"
+
+[tool.ty.rules]
+# semos-agentura wires MCP/A2A servers, LangChain/litellm and Panel UIs together with heavy
+# runtime dynamism: pydantic models built at runtime, dict-shaped tool payloads, and duck-typed
+# fs/http clients. The checks below fire on these intentional, runtime-valid patterns rather than
+# real defects, so they are downgraded to keep `ty check` actionable without mass inline ignores.
+unresolved-attribute = "ignore"
+invalid-argument-type = "ignore"
+invalid-assignment = "ignore"
+invalid-return-type = "ignore"
+invalid-method-override = "ignore"
+unsupported-operator = "ignore"
+call-non-callable = "ignore"
+not-subscriptable = "ignore"
+not-iterable = "ignore"
+no-matching-overload = "ignore"
+# `unresolved-import` is left at its default (error): C-extension/Windows-only deps are resolved via
+# the `types-pywin32` and `lxml-stubs` stub packages; the few genuinely optional/platform-gated or
+# not-yet-implemented imports carry a documented line-level `# ty: ignore[unresolved-import]`.
+
+[tool.coverage.run]
+branch = true
+source = ["src"]
+
+[tool.coverage.report]
+skip_empty = true

@@ -23,8 +23,8 @@ import threading
 import time
 
 AGENTS = [
-    ("email-agent", "email_agent.service:app", 8001),
-    ("document-agent", "document_agent.service:app", 8002),
+    ("semos-agentura-email", "semos.agentura.email.service:app", 8001),
+    ("semos-agentura-document", "semos.agentura.document.service:app", 8002),
     # filesystem-agent is hosted in-process by the UI
     # (shares the same VFS instance for session:// files)
 ]
@@ -113,7 +113,7 @@ def main():
     procs: list[subprocess.Popen] = []
 
     # Kill existing processes on our ports
-    fs_port = int(os.environ.get("FILESYSTEM_AGENT_PORT", "8003"))
+    fs_port = int(os.environ.get("SEMOS_AGENTURA_FILES_PORT", "8003"))
     all_ports = [p for _, _, p in AGENTS] + [UI_PORT, fs_port]
     for port in all_ports:
         _kill_port(port)
@@ -125,7 +125,7 @@ def main():
             continue
         prefix = _log_prefix(name, i)
         print(f"  Starting {name} on port {port}...")
-        agent_dir = __import__("pathlib").Path(__file__).parent / name
+        agent_dir = __import__("pathlib").Path(__file__).parent / "packages" / name
         p = subprocess.Popen(
             [
                 sys.executable,
@@ -164,7 +164,7 @@ def main():
         ui_prefix = _log_prefix("ui", len(AGENTS))
         print(f"  Starting agentura-ui on port {UI_PORT}...")
         p = subprocess.Popen(
-            [sys.executable, "-m", "agentura_ui"],
+            [sys.executable, "-m", "semos.agentura.ui"],
             cwd=str(__import__("pathlib").Path(__file__).parent),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,

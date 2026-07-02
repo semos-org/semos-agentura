@@ -67,7 +67,7 @@ Entries are presented to the LLM as short text references, never as binary conte
 
 ### 2. FileAttachment Type
 
-File parameters use a structured `FileAttachment` type shared across all agents (defined in `agentura-commons`):
+File parameters use a structured `FileAttachment` type shared across all agents (defined in `semos-agentura-core`):
 
 ```python
 class FileAttachment(TypedDict):
@@ -312,7 +312,7 @@ Or by URI reference (preferred for large files):
   "file": {
     "name": "report.pptx",
     "mimeType": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-    "uri": "http://document-agent:8002/files/a3f1c2d0_report.pptx"
+    "uri": "http://semos-agentura-document:8002/files/a3f1c2d0_report.pptx"
   }
 }
 ```
@@ -343,9 +343,9 @@ A2A `FilePart` is preferred over MCP `EmbeddedResource` for agent-to-agent becau
 
 ### 9. Implementation Checklist
 
-#### Agent side (agentura-commons + agents)
+#### Agent side (semos-agentura-core + agents)
 
-- [x] `FileAttachment` TypedDict in `agentura-commons` (shared)
+- [x] `FileAttachment` TypedDict in `semos-agentura-core` (shared)
 - [x] `_resolve_file()` accepts path, base64, and data URI
 - [x] `_resolve_file_attachment()` accepts `FileAttachment` or plain string, preserves filename
 - [x] File-producing tools return `download_url` + `filename` + `mime_type` + `size_bytes`
@@ -361,7 +361,7 @@ A2A `FilePart` is preferred over MCP `EmbeddedResource` for agent-to-agent becau
 - [ ] Signed/expiring download URLs (production)
 - [ ] Per-user file isolation (multi-user production)
 
-#### Chat client middleware (agentura-ui)
+#### Chat client middleware (semos-agentura-ui)
 
 - [x] File registry (upload tracking + tool output tracking)
 - [x] Pre-processing: resolve file references -> base64/URL before tool call

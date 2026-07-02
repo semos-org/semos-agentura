@@ -1,0 +1,54 @@
+[project]
+name = "semos-agentura-ui"
+dynamic = ["version"]
+description = "Panel-based chat client for Semos Agentura MCP agents"
+requires-python = ">=3.11"
+dependencies = [
+    "panelini[ai]>=0.9.4",
+    "semos-agentura-core",
+    "semos-agentura-files",
+    "langchain-community>=0.3",
+    "langchain-core>=1.0",
+    "mcp>=1.9",
+    "httpx>=0.28",
+    "panel>=1.7",
+    "uvicorn>=0.34",
+    "python-dotenv>=1.0",
+    "Pillow>=10.0",
+]
+
+[tool.uv.sources]
+semos-agentura-core = { workspace = true }
+semos-agentura-files = { workspace = true }
+
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
+fallback-version = "0.0.0"
+# Monorepo: the git root is the workspace root, two levels up (packages/<pkg>/).
+raw-options = { root = "../.." }
+
+[tool.hatch.build.targets.wheel]
+# PEP 420 namespace: ship src/semos (semos/ and semos/agentura/ have no __init__.py).
+packages = ["src/semos"]
+
+[tool.deptry.package_module_name_map]
+# Workspace deps live under the shared PEP 420 `semos` namespace, so map the dists to its import root.
+semos-agentura-core = "semos"
+semos-agentura-files = "semos"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+    "pytest-httpx>=0.35",
+    "pytest-playwright>=0.5",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = ["ui: browser tests requiring Playwright"]

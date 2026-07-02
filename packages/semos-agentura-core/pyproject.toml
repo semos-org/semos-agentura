@@ -1,0 +1,47 @@
+[project]
+name = "semos-agentura-core"
+dynamic = ["version"]
+description = "Shared MCP + A2A base classes for Semos Agentura agents"
+requires-python = ">=3.11"
+dependencies = [
+    "mcp>=1.9",
+    "a2a-sdk[sqlite]>=0.3",
+    "fastapi>=0.115",
+    "uvicorn>=0.34",
+    "httpx>=0.28",
+    "pydantic>=2.0",
+    "pydantic-settings>=2.13",
+    "langchain-core>=1.0",
+    "protobuf>=4",
+    "jsonschema>=4.0",
+]
+
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
+fallback-version = "0.0.0"
+# Monorepo: the git root is the workspace root, two levels up (packages/<pkg>/).
+raw-options = { root = "../.." }
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+addopts = "-m 'not integration'"
+
+[tool.hatch.build.targets.wheel]
+# PEP 420 namespace: ship src/semos (semos/ and semos/agentura/ have no __init__.py).
+packages = ["src/semos"]
+
+[tool.deptry.package_module_name_map]
+# `protobuf` provides the `google.protobuf` import namespace.
+protobuf = "google"
+
+# The agent-coupled test helpers moved to tests/integration/ (Phase 6d), so `semos-agentura-core`
+# no longer imports any sibling agent (the DEP003 `semos` ignore is gone).
+[tool.deptry.per_rule_ignores]
+# uvicorn is the ASGI server used to serve every agent built on core (each service runs
+# `uvicorn <module>.service:app` via the CLI in its Dockerfile / run_local.py; core does not import it),
+# so it ships in core and every agent gets a runnable server transitively.
+DEP002 = ["uvicorn"]
