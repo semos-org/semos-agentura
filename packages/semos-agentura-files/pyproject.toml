@@ -1,6 +1,6 @@
 [project]
 name = "semos-agentura-files"
-dynamic = ["version"]
+version = "0.5.0"
 description = "Virtual filesystem with multi-root VFS, SharePoint WebDAV, archive browsing, and MCP/A2A agent"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -32,14 +32,8 @@ test = [
 ]
 
 [build-system]
-requires = ["hatchling", "hatch-vcs"]
+requires = ["hatchling"]
 build-backend = "hatchling.build"
-
-[tool.hatch.version]
-source = "vcs"
-fallback-version = "0.0.0"
-# Monorepo: the git root is the workspace root, two levels up (packages/<pkg>/).
-raw-options = { root = "../.." }
 
 [tool.deptry.package_module_name_map]
 # Workspace deps live under the shared PEP 420 `semos` namespace, so map the dist to its import root.
@@ -63,3 +57,17 @@ markers = [
     "playwright: uses Playwright browser automation (chromium installed in CI)",
 ]
 addopts = "-m 'not integration and not playwright'"
+
+[tool.semantic_release]
+commit_parser = "conventional-monorepo"
+tag_format = "semos-agentura-files-v{version}"
+version_toml = ["pyproject.toml:project.version"]
+commit_message = "chore(release): semos-agentura-files v{version} [skip ci]"
+# CI runs PSR from this package dir; refresh the workspace lockfile so the bumped
+# version lands in uv.lock within the same release commit.
+build_command = "uv lock"
+assets = ["../../uv.lock"]
+
+[tool.semantic_release.commit_parser_options]
+# Only commits touching this package bump it.
+path_filters = ["."]

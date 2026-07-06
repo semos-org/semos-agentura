@@ -1,6 +1,6 @@
 [project]
 name = "semos-agentura-ui"
-dynamic = ["version"]
+version = "0.5.0"
 description = "Panel-based chat client for Semos Agentura MCP agents"
 requires-python = ">=3.11"
 dependencies = [
@@ -22,14 +22,8 @@ semos-agentura-core = { workspace = true }
 semos-agentura-files = { workspace = true }
 
 [build-system]
-requires = ["hatchling", "hatch-vcs"]
+requires = ["hatchling"]
 build-backend = "hatchling.build"
-
-[tool.hatch.version]
-source = "vcs"
-fallback-version = "0.0.0"
-# Monorepo: the git root is the workspace root, two levels up (packages/<pkg>/).
-raw-options = { root = "../.." }
 
 [tool.hatch.build.targets.wheel]
 # PEP 420 namespace: ship src/semos (semos/ and semos/agentura/ have no __init__.py).
@@ -52,3 +46,17 @@ dev = [
 testpaths = ["tests"]
 asyncio_mode = "auto"
 markers = ["ui: browser tests requiring Playwright"]
+
+[tool.semantic_release]
+commit_parser = "conventional-monorepo"
+tag_format = "semos-agentura-ui-v{version}"
+version_toml = ["pyproject.toml:project.version"]
+commit_message = "chore(release): semos-agentura-ui v{version} [skip ci]"
+# CI runs PSR from this package dir; refresh the workspace lockfile so the bumped
+# version lands in uv.lock within the same release commit.
+build_command = "uv lock"
+assets = ["../../uv.lock"]
+
+[tool.semantic_release.commit_parser_options]
+# Only commits touching this package bump it.
+path_filters = ["."]
