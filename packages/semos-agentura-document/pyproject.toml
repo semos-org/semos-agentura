@@ -1,6 +1,6 @@
 [project]
 name = "semos-agentura-document"
-version = "0.5.0"
+version = "1.0.0"
 description = "Document digestion (OCR to Markdown) and composition (Markdown to documents) agent"
 readme = "README.md"
 requires-python = ">=3.11"
