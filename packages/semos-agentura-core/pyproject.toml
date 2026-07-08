@@ -44,6 +44,10 @@ DEP002 = ["uvicorn"]
 commit_parser = "conventional-monorepo"
 tag_format = "semos-agentura-core-v{version}"
 version_toml = ["pyproject.toml:project.version"]
+# PSR v10 defaults allow_zero_version=false, which jumps any 0.x baseline straight
+# to 1.0.0 on first release (bit us on 2026-07-08). Moot at >=1.0.0, but kept true
+# so copies of this setup into fresh 0.x monorepos bump as expected.
+allow_zero_version = true
 commit_message = "chore(release): semos-agentura-core v{version} [skip ci]"
 # CI runs PSR from this package dir; refresh the workspace lockfile so the bumped
 # version lands in uv.lock within the same release commit.

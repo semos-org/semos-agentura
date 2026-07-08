@@ -66,6 +66,9 @@ every push to `main` runs the Release workflow, which versions each package inde
 - Consequences: a commit touching files in two package dirs bumps both packages (so keep
   commits scoped to one package where possible), and a `feat:`/`fix:` touching only root-level
   files (docs, Makefile, workflows) releases nothing because no package path matches.
+- Commit **bodies** are parsed too (squash-merge support): any body line starting with `fix:`,
+  `feat:`, or another bump keyword counts as an embedded conventional commit. Never quote such
+  keywords at the start of a line in a commit message; indent or rephrase them.
 - Whenever any subpackage bumps, the umbrella `semos-agentura` bumps by the **same increment
   level** on its own version line; untouched subpackages keep their versions.
 - Each release writes the package's `CHANGELOG.md`, tags (`semos-agentura-<name>-vX.Y.Z`,
@@ -73,7 +76,7 @@ every push to `main` runs the Release workflow, which versions each package inde
 
 ### Example: changing a single package
 
-Starting state: every package is at 0.5.0. You commit
+Starting state: every package is at 1.0.0. You commit
 
 ```text
 feat(email): add CalDAV calendar sync
@@ -83,21 +86,21 @@ touching only files under `packages/semos-agentura-email/`. When the commit land
 the Release workflow processes it like this:
 
 1. `semos-agentura-core`, `-document`, `-files`, `-ui`: no commits touched their paths, so
-   nothing happens. They stay at 0.5.0 with no new tags.
+   nothing happens. They stay at 1.0.0 with no new tags.
 2. `semos-agentura-email`: the `feat` commit matches its path filter, so it gets a minor bump
-   to 0.6.0. PSR writes `version = "0.6.0"` into its pyproject, refreshes `uv.lock`, prepends
-   the 0.6.0 section to its `CHANGELOG.md`, commits, tags `semos-agentura-email-v0.6.0`, and
+   to 1.1.0. PSR writes `version = "1.1.0"` into its pyproject, refreshes `uv.lock`, prepends
+   the 1.1.0 section to its `CHANGELOG.md`, commits, tags `semos-agentura-email-v1.1.0`, and
    creates the GitHub Release.
 3. `semos-agentura` (umbrella): the same commit matches its cross-package path filters. The
-   largest increment among the changes is minor, so the umbrella goes from 0.5.0 to 0.6.0
-   with tag `v0.6.0`, its own changelog entry, and a GitHub Release.
-4. Publish: only `semos-agentura-email` 0.6.0 and `semos-agentura` 0.6.0 are built and
+   largest increment among the changes is minor, so the umbrella goes from 1.0.0 to 1.1.0
+   with tag `v1.1.0`, its own changelog entry, and a GitHub Release.
+4. Publish: only `semos-agentura-email` 1.1.0 and `semos-agentura` 1.1.0 are built and
    uploaded to PyPI. The other four packages are not rebuilt or republished.
 
-The same flow with `fix(email): ...` instead would produce 0.5.1 for email and 0.5.1 for the
-umbrella; with `feat(email)!: ...` (breaking) both would go to 1.0.0. Version lines drift apart
-over time, and that is the point: a later `fix(files): ...` would release files 0.5.1 while the
-umbrella, already at 0.6.0, moves to 0.6.1.
+The same flow with `fix(email): ...` instead would produce 1.0.1 for email and 1.0.1 for the
+umbrella; with `feat(email)!: ...` (breaking) both would go to 2.0.0. Version lines drift apart
+over time, and that is the point: a later `fix(files): ...` would release files 1.0.1 while the
+umbrella, already at 1.1.0, moves to 1.1.1.
 
 Preview what the next push to `main` would release with `make release-dry`.
 

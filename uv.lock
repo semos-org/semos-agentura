@@ -38,7 +38,7 @@ dev = [
     { name = "pytest-httpx", specifier = ">=0.30" },
     { name = "pytest-playwright", specifier = ">=0.7" },
     { name = "pytest-timeout", specifier = ">=2.3" },
-    { name = "python-semantic-release", specifier = ">=10.6" },
+    { name = "python-semantic-release", specifier = ">=10.6,<11" },
     { name = "ruff", specifier = ">=0.15.12" },
     { name = "ty", specifier = ">=0.0.24" },
     { name = "types-pywin32", specifier = ">=308" },
@@ -4294,7 +4294,7 @@ wheels = [
 
 [[package]]
 name = "semos-agentura"
-version = "0.5.0"
+version = "1.0.0"
 source = { editable = "packages/semos-agentura" }
 dependencies = [
     { name = "semos-agentura-core" },
@@ -4315,7 +4315,7 @@ requires-dist = [
 
 [[package]]
 name = "semos-agentura-core"
-version = "0.5.0"
+version = "1.0.0"
 source = { editable = "packages/semos-agentura-core" }
 dependencies = [
     { name = "a2a-sdk", extra = ["sqlite"] },
@@ -4346,7 +4346,7 @@ requires-dist = [
 
 [[package]]
 name = "semos-agentura-document"
-version = "0.5.0"
+version = "1.0.0"
 source = { editable = "packages/semos-agentura-document" }
 dependencies = [
     { name = "httpx" },
@@ -4410,7 +4410,7 @@ dev = [
 
 [[package]]
 name = "semos-agentura-email"
-version = "0.5.0"
+version = "1.0.0"
 source = { editable = "packages/semos-agentura-email" }
 dependencies = [
     { name = "markdown" },
@@ -4458,7 +4458,7 @@ dev = [
 
 [[package]]
 name = "semos-agentura-files"
-version = "0.5.0"
+version = "1.0.0"
 source = { editable = "packages/semos-agentura-files" }
 dependencies = [
     { name = "fsspec" },
@@ -4508,7 +4508,7 @@ provides-extras = ["test"]
 
 [[package]]
 name = "semos-agentura-ui"
-version = "0.5.0"
+version = "1.0.0"
 source = { editable = "packages/semos-agentura-ui" }
 dependencies = [
     { name = "httpx" },
