@@ -2,12 +2,18 @@ name: Release
 
 on:
   push:
-    tags:
-      - "v[0-9]*"
+    branches:
+      - main
   workflow_dispatch:
 
+# One release run at a time: python-semantic-release pushes commits/tags to main,
+# so overlapping runs would race each other.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
-  publish:
+  release:
     runs-on: ubuntu-latest
     # PyPI trusted publishing (OIDC): no PYPI_TOKEN. A trusted publisher must be
     # registered on each of the six projects (repo + this workflow + the `pypi` env).
@@ -15,27 +21,66 @@ jobs:
       name: pypi
     permissions:
       id-token: write
-      contents: read
+      contents: write # push release commits/tags and create GitHub Releases (PSR)
+    outputs:
+      released: ${{ steps.psr.outputs.released }}
     steps:
       - name: Check out
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # hatch-vcs derives the version from tags
+          fetch-depth: 0 # python-semantic-release analyzes the full commit history
+          # Latest main, not the triggering SHA: when merges queue up behind the
+          # concurrency group, a later run must include the release commits the
+          # previous run pushed, or its own push is rejected as non-fast-forward.
+          ref: main
 
       - name: Set up the environment
         uses: ./.github/actions/setup-python-env
 
-      - name: Build all packages
-        run: uv build --all-packages
+      # Sequential per-package semantic-release. Each run analyzes the conventional
+      # commits touching that package (path_filters), bumps pyproject.toml + uv.lock,
+      # writes the package CHANGELOG.md, commits, tags (semos-agentura-<pkg>-vX.Y.Z),
+      # pushes, and creates the GitHub Release. The umbrella runs last: its path
+      # filters span all subpackages, so it bumps by the max increment across their
+      # changes (tag vX.Y.Z). Release commits carry [skip ci], and pushes made with
+      # GITHUB_TOKEN do not retrigger workflows, so no release loops.
+      - name: Version and tag with python-semantic-release
+        id: psr
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          released=""
+          for pkg in semos-agentura-core semos-agentura-email semos-agentura-document \
+                     semos-agentura-files semos-agentura-ui semos-agentura; do
+            echo "=== $pkg ==="
+            before=$(uv version --package "$pkg" --short)
+            (cd "packages/$pkg" && uv run semantic-release version)
+            after=$(uv version --package "$pkg" --short)
+            if [ "$before" != "$after" ]; then
+              echo "released: $pkg $before -> $after"
+              released="$released $pkg"
+            fi
+          done
+          echo "released=${released# }" >> "$GITHUB_OUTPUT"
 
-      # Publishes every wheel/sdist in dist/: semos-agentura-core, -email, -document,
-      # -files, -ui, and the semos-agentura umbrella. `always` forces OIDC trusted
-      # publishing and fails loudly if the token is missing (no token/keyring fallback).
+      # --no-sources: workspace-only (tool.uv.sources) resolution must not leak into
+      # the published metadata.
+      - name: Build released packages
+        if: steps.psr.outputs.released != ''
+        run: |
+          for pkg in ${{ steps.psr.outputs.released }}; do
+            uv build --package "$pkg" --no-sources
+          done
+
       - name: Publish to PyPI
+        if: steps.psr.outputs.released != ''
         run: uv publish --trusted-publishing always
 
   deploy-docs:
-    needs: publish
+    needs: release
+    if: needs.release.outputs.released != ''
     runs-on: ubuntu-latest
     environment:
       name: github-pages

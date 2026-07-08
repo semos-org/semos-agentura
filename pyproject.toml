@@ -49,6 +49,7 @@ dev = [
   "ty>=0.0.24",
   "deptry>=0.25.1",
   "pre-commit>=4.5.1",
+  "python-semantic-release>=10.6",
   "zensical>=0.0.26",
   "mkdocstrings-python>=1.0.3",
   # type stubs so ty resolves C-extension / Windows-only deps it cannot import in the lint env

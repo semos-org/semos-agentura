@@ -1,6 +1,6 @@
 [project]
 name = "semos-agentura-core"
-dynamic = ["version"]
+version = "0.5.0"
 description = "Shared MCP + A2A base classes for Semos Agentura agents"
 requires-python = ">=3.11"
 dependencies = [
@@ -17,14 +17,8 @@ dependencies = [
 ]
 
 [build-system]
-requires = ["hatchling", "hatch-vcs"]
+requires = ["hatchling"]
 build-backend = "hatchling.build"
-
-[tool.hatch.version]
-source = "vcs"
-fallback-version = "0.0.0"
-# Monorepo: the git root is the workspace root, two levels up (packages/<pkg>/).
-raw-options = { root = "../.." }
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
@@ -45,3 +39,17 @@ protobuf = "google"
 # `uvicorn <module>.service:app` via the CLI in its Dockerfile / run_local.py; core does not import it),
 # so it ships in core and every agent gets a runnable server transitively.
 DEP002 = ["uvicorn"]
+
+[tool.semantic_release]
+commit_parser = "conventional-monorepo"
+tag_format = "semos-agentura-core-v{version}"
+version_toml = ["pyproject.toml:project.version"]
+commit_message = "chore(release): semos-agentura-core v{version} [skip ci]"
+# CI runs PSR from this package dir; refresh the workspace lockfile so the bumped
+# version lands in uv.lock within the same release commit.
+build_command = "uv lock"
+assets = ["../../uv.lock"]
+
+[tool.semantic_release.commit_parser_options]
+# Only commits touching this package bump it.
+path_filters = ["."]

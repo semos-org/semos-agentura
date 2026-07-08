@@ -57,17 +57,15 @@ publish: ## Publish all workspace packages to PyPI (CI does this via trusted pub
 .PHONY: build-and-publish
 build-and-publish: build publish ## Build and publish.
 
-.PHONY: release
-# V strips a leading "v" if present, so VERSION=0.5.0 and VERSION=v0.5.0 both tag v0.5.0.
-release: V = $(VERSION:v%=%)
-release: ## Tag vX.Y.Z and push to trigger the release workflow. Usage: make release VERSION=0.5.0
-	@test -n "$(VERSION)" || { echo "Usage: make release VERSION=0.5.0 (the leading v is added for you)"; exit 1; }
-	@test -z "$$(git status --porcelain)" || { echo "🚫 Working tree not clean; commit or stash first."; exit 1; }
-	@echo "🚀 Releasing v$(V)"
-	@$(MAKE) check
-	@git tag -a "v$(V)" -m "Release v$(V)"
-	@git push origin "v$(V)"
-	@echo "✅ Pushed tag v$(V). The Release workflow will build, publish to PyPI, and deploy docs."
+# Releases are automated: python-semantic-release runs on every push to main and bumps
+# the packages whose paths the conventional commits touched (umbrella last, same
+# increment). See .github/workflows/on-release-main.yml.
+.PHONY: release-dry
+release-dry: ## Preview the next version of every package from unreleased conventional commits
+	@for pkg in $(PKGS) semos-agentura; do \
+		next=$$(cd packages/$$pkg && uv run semantic-release version --print 2>/dev/null); \
+		printf '%-25s %s\n' "$$pkg" "$${next:-no release (only main releases)}"; \
+	done
 
 .PHONY: docs-test
 docs-test: ## Test if documentation can be built without warnings or errors

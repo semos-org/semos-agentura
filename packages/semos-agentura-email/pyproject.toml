@@ -1,6 +1,6 @@
 [project]
 name = "semos-agentura-email"
-dynamic = ["version"]
+version = "0.5.0"
 description = "Unified email client (IMAP/SMTP + Outlook COM) with LLM agent and archive"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -21,14 +21,8 @@ com = ["pywin32>=311"]
 caldav = ["caldav>=1.4.0", "icalendar>=6.1.0"]
 
 [build-system]
-requires = ["hatchling", "hatch-vcs"]
+requires = ["hatchling"]
 build-backend = "hatchling.build"
-
-[tool.hatch.version]
-source = "vcs"
-fallback-version = "0.0.0"
-# Monorepo: the git root is the workspace root, two levels up (packages/<pkg>/).
-raw-options = { root = "../.." }
 
 [tool.deptry.package_module_name_map]
 pywin32 = ["win32com", "pythoncom"]
@@ -60,3 +54,17 @@ markers = [
     "integration: requires real backend (COM/IMAP) - run with -m integration",
 ]
 addopts = "-m 'not integration'"
+
+[tool.semantic_release]
+commit_parser = "conventional-monorepo"
+tag_format = "semos-agentura-email-v{version}"
+version_toml = ["pyproject.toml:project.version"]
+commit_message = "chore(release): semos-agentura-email v{version} [skip ci]"
+# CI runs PSR from this package dir; refresh the workspace lockfile so the bumped
+# version lands in uv.lock within the same release commit.
+build_command = "uv lock"
+assets = ["../../uv.lock"]
+
+[tool.semantic_release.commit_parser_options]
+# Only commits touching this package bump it.
+path_filters = ["."]

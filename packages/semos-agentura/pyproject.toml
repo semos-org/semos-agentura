@@ -1,6 +1,6 @@
 [project]
 name = "semos-agentura"
-dynamic = ["version"]
+version = "0.5.0"
 description = "Semos Agentura - umbrella package installing the full multi-agent suite (MCP + A2A)"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -20,15 +20,33 @@ semos-agentura-files = { workspace = true }
 semos-agentura-ui = { workspace = true }
 
 [build-system]
-requires = ["hatchling", "hatch-vcs"]
+requires = ["hatchling"]
 build-backend = "hatchling.build"
-
-[tool.hatch.version]
-source = "vcs"
-fallback-version = "0.0.0"
-# Monorepo: the git root is the workspace root, two levels up (packages/<pkg>/).
-raw-options = { root = "../.." }
 
 [tool.hatch.build.targets.wheel]
 # Umbrella/meta-package: pulls in the workspace members, ships no code of its own.
 bypass-selection = true
+
+[tool.semantic_release]
+commit_parser = "conventional-monorepo"
+# Continues the repo's original lockstep tag line (v0.5.0, ...).
+tag_format = "v{version}"
+version_toml = ["pyproject.toml:project.version"]
+commit_message = "chore(release): semos-agentura v{version} [skip ci]"
+# CI runs PSR from this package dir; refresh the workspace lockfile so the bumped
+# version lands in uv.lock within the same release commit.
+build_command = "uv lock"
+assets = ["../../uv.lock"]
+
+[tool.semantic_release.commit_parser_options]
+# Umbrella rule: any commit touching a subpackage counts here too, so the umbrella
+# bump equals the max increment across subpackage changes, applied to its own
+# version line. Subpackage chore(release) commits match but are non-bumping types.
+path_filters = [
+    ".",
+    "../semos-agentura-core/**",
+    "../semos-agentura-email/**",
+    "../semos-agentura-document/**",
+    "../semos-agentura-files/**",
+    "../semos-agentura-ui/**",
+]
