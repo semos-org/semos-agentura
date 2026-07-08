@@ -1,6 +1,6 @@
 [project]
 name = "semos-agentura-files"
-version = "0.5.0"
+version = "1.0.0"
 description = "Virtual filesystem with multi-root VFS, SharePoint WebDAV, archive browsing, and MCP/A2A agent"
 readme = "README.md"
 requires-python = ">=3.11"
