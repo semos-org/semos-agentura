@@ -6,6 +6,34 @@ subpackage changes it aggregates. Do not edit below the version-list marker.
 
 <!-- version list -->
 
+## v1.0.0 (2026-07-08)
+
+### Bug Fixes
+
+- And perf: commits release a patch bump (0.5.0 becomes 0.5.1)
+  ([`7da7338`](https://github.com/semos-org/semos-agentura/commit/7da7338c007befa03dfe2db71777f74676c6c3fa))
+
+### Chores
+
+- Migrate to per-package semantic versioning with python-semantic-release
+  ([`7da7338`](https://github.com/semos-org/semos-agentura/commit/7da7338c007befa03dfe2db71777f74676c6c3fa))
+
+- **release**: Semos-agentura-core v1.0.0 [skip ci]
+  ([`a64e90a`](https://github.com/semos-org/semos-agentura/commit/a64e90a5ecb5f2aa3b0ed301de9aa0eb2a33bcde))
+
+- **release**: Semos-agentura-document v1.0.0 [skip ci]
+  ([`47e444a`](https://github.com/semos-org/semos-agentura/commit/47e444a9ded0efdbcc8e4e13dafb40526947c735))
+
+- **release**: Semos-agentura-email v1.0.0 [skip ci]
+  ([`c72bbd4`](https://github.com/semos-org/semos-agentura/commit/c72bbd456ad698a27ff08faa015c3c6255ea398c))
+
+- **release**: Semos-agentura-files v1.0.0 [skip ci]
+  ([`1f80d8d`](https://github.com/semos-org/semos-agentura/commit/1f80d8d7a7a983963863a0cc7cb3e8c6450d2464))
+
+- **release**: Semos-agentura-ui v1.0.0 [skip ci]
+  ([`c968679`](https://github.com/semos-org/semos-agentura/commit/c9686796727866176afb8d5acf4d218e82a6908b))
+
+
 ## v0.5.0 (2026-07-06)
 
 - Baseline: last lockstep-versioned release; subpackage versions are

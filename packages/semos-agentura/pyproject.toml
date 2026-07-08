@@ -1,6 +1,6 @@
 [project]
 name = "semos-agentura"
-version = "0.5.0"
+version = "1.0.0"
 description = "Semos Agentura - umbrella package installing the full multi-agent suite (MCP + A2A)"
 readme = "README.md"
 requires-python = ">=3.11"
