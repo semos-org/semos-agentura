@@ -1,4 +1,4 @@
-# document-agent
+# semos-agentura-document
 
 Document digestion (OCR to Markdown), composition (Markdown to documents), diagram generation, raster image generation, and form filling. Full round-trip support for footnotes, tracked changes, comments, and styles.
 
@@ -11,19 +11,19 @@ Convert PDF, images, and Office documents to Markdown.
 
 ```bash
 # Basic digest (auto-selects pandoc for DOCX, OCR for PDF/images)
-document-agent digest document.docx
+semos-agentura-document digest document.docx
 
 # Show all tracked changes and comments
-document-agent digest document.docx --track-changes all
+semos-agentura-document digest document.docx --track-changes all
 
 # Force OCR pipeline for a scanned DOCX
-document-agent digest scanned.docx --mode ocr
+semos-agentura-document digest scanned.docx --mode ocr
 
 # Inline mode (base64-embedded images, prints to stdout)
-document-agent digest document.pdf --inline
+semos-agentura-document digest document.pdf --inline
 
 # With structured annotation extraction
-document-agent digest document.pdf --schema schema.py --prompt "Extract all line items"
+semos-agentura-document digest document.pdf --schema schema.py --prompt "Extract all line items"
 ```
 
 ### Round-trip metadata
@@ -43,24 +43,24 @@ Convert Markdown to various output formats with style control.
 
 ```bash
 # Basic compose
-document-agent compose input.md output.docx --format docx
+semos-agentura-document compose input.md output.docx --format docx
 
 # With a reference document for style inheritance
-document-agent compose input.md output.docx --format docx \
+semos-agentura-document compose input.md output.docx --format docx \
   --reference-doc template.docx
 
 # With headers/footers from a template (combined with YAML styles)
-document-agent compose input.md output.docx --format docx \
+semos-agentura-document compose input.md output.docx --format docx \
   --header-footer-doc template.docx
 
 # Slides - polished (Marp, limited editability)
-document-agent compose slides.md out.pptx --format pptx --slides
+semos-agentura-document compose slides.md out.pptx --format pptx --slides
 
 # Slides - draft editable (pandoc, fully editable, rough layout)
-document-agent compose slides.md out.pptx --format pptx --slides --draft
+semos-agentura-document compose slides.md out.pptx --format pptx --slides --draft
 
 # Slides - draft + corporate template (requires PowerPoint)
-document-agent compose slides.md out.pptx --format pptx --slides --draft \
+semos-agentura-document compose slides.md out.pptx --format pptx --slides --draft \
   --template corporate.pptx
 ```
 
@@ -120,15 +120,15 @@ Generate and modify diagrams (Mermaid or draw.io) using LLM-powered optimization
 
 ```bash
 # Generate from description
-document-agent diagram "flowchart of CI/CD pipeline" -o diagram.png
+semos-agentura-document diagram "flowchart of CI/CD pipeline" -o diagram.png
 
 # Modify existing draw.io diagram
-document-agent diagram "Change WP3 label to Digital Infrastructure" \
+semos-agentura-document diagram "Change WP3 label to Digital Infrastructure" \
   --source diagram.drawio.png -o updated.drawio.png \
   --code-output updated.drawio
 
 # Mermaid diagram
-document-agent diagram "sequence diagram for auth flow" --type mermaid -o auth.png
+semos-agentura-document diagram "sequence diagram for auth flow" --type mermaid -o auth.png
 ```
 
 draw.io diagrams with embedded raster images are handled automatically:
@@ -175,12 +175,12 @@ Inspect and fill form fields in PDF and DOCX files.
 
 ```bash
 # Inspect form fields
-document-agent inspect form.pdf
-document-agent inspect form.docx --json
+semos-agentura-document inspect form.pdf
+semos-agentura-document inspect form.docx --json
 
 # Fill form fields
-document-agent fill form.pdf filled.pdf --data '{"name": "John", "date": "2026-01-01"}'
-document-agent fill form.docx filled.docx --data fields.json
+semos-agentura-document fill form.pdf filled.pdf --data '{"name": "John", "date": "2026-01-01"}'
+semos-agentura-document fill form.docx filled.docx --data fields.json
 ```
 
 ## Slide Merge
@@ -189,19 +189,19 @@ Cherry-pick and merge slides from multiple PPTX sources.
 
 ```bash
 # Merge specific slides by index
-document-agent merge-slides deck1.pptx:0-5 deck2.pptx:3,7,12 -o merged.pptx
+semos-agentura-document merge-slides deck1.pptx:0-5 deck2.pptx:3,7,12 -o merged.pptx
 
 # Use a different base template for theme/master
-document-agent merge-slides deck1.pptx:0-5 deck2.pptx:3,7 \
+semos-agentura-document merge-slides deck1.pptx:0-5 deck2.pptx:3,7 \
   --base template.pptx -o merged.pptx
 
 # Force python-pptx backend (portable, no PowerPoint needed)
-document-agent merge-slides deck.pptx:0-10 -o subset.pptx --backend pptx
+semos-agentura-document merge-slides deck.pptx:0-10 -o subset.pptx --backend pptx
 ```
 
 Backends: COM (PowerPoint, preserves animations/transitions/media) is preferred.
 Falls back to python-pptx (portable, pure Python) when PowerPoint is unavailable.
-Install optional dependencies: `pip install document-agent[slides]`
+Install optional dependencies: `pip install semos-agentura-document[slides]`
 
 ## Setup
 
@@ -230,7 +230,7 @@ The agent automatically discovers them in `tools/node_modules/.bin/`.
 ## Python API
 
 ```python
-from document_agent import (
+from semos.agentura.document import (
     digest, compose, compose_editable_slides,
     merge_slides, parse_source_args,
     OutputFormat, OutputMode,

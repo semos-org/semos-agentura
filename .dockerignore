@@ -11,4 +11,4 @@ output/
 local-tests/
 docs/
 node_modules/
-document-agent/tools/node_modules/
+packages/semos-agentura-document/tools/node_modules/

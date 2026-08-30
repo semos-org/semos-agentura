@@ -104,7 +104,7 @@ Each agent advertises itself at `/.well-known/agent-card.json`:
 {
   "name": "Filesystem Agent",
   "description": "Browse, search, read, write files across local, WebDAV, SharePoint, and remote archives.",
-  "version": "0.2.0",
+  "version": "0.4.0",
   "skills": [{"id": "filesystem-operations", "name": "Filesystem Operations", ...}],
   "capabilities": {"streaming": false},
   "supported_interfaces": [
@@ -297,16 +297,16 @@ Delegate tasks to other agents via A2A protocol. Supports:
 ### Unified client (`AgenturaClient`)
 Single interface for both MCP tools and A2A task delegation. An orchestrator agent can:
 1. Discover available specialist agents
-2. Delegate file operations to filesystem-agent
-3. Delegate email operations to email-agent
-4. Delegate document operations to document-agent
+2. Delegate file operations to semos-agentura-files
+3. Delegate email operations to semos-agentura-email
+4. Delegate document operations to semos-agentura-document
 5. Synthesize results from multiple agents
 
 ### Pattern: Hub-and-spoke
 ```
 Orchestrator Agent
-  ├── filesystem-agent (A2A): file access, search, editing
-  ├── document-agent (A2A): OCR, composition, form filling
-  ├── email-agent (A2A): Outlook, calendar, contacts
+  ├── semos-agentura-files (A2A): file access, search, editing
+  ├── semos-agentura-document (A2A): OCR, composition, form filling
+  ├── semos-agentura-email (A2A): Outlook, calendar, contacts
   └── external MCP servers: additional capabilities
 ```

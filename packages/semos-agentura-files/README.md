@@ -25,7 +25,7 @@ search_sharepoint.py  CLI: search SharePoint via REST API (cookie auth)
 search_teams.py       CLI: list Teams channels/chats, post messages (token auth)
 test_webdav.py        Quick smoke test for WebDAV connectivity
 
-src/filesystem_agent/
+src/semos/agentura/files/
   vfs.py              VirtualFileSystem, multi-root fsspec abstraction + archive support
   auth.py             Playwright-based cookie/token extraction (smartcard/SSO login)
   config.py           Pydantic settings (reads .env)
@@ -67,7 +67,7 @@ These are downloaded on demand (or browsed via HTTP range requests if the server
 
 ```python
 from fsspec.implementations.local import LocalFileSystem
-from filesystem_agent.vfs import VirtualFileSystem
+from semos.agentura.files.vfs import VirtualFileSystem
 
 vfs = VirtualFileSystem()
 vfs.add_root("local", LocalFileSystem(), base_path="/data/local")

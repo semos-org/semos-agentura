@@ -4,10 +4,10 @@ Usage:
     uv run python run_local.py
 
 Starts:
-    - email-agent on port 8001
-    - document-agent on port 8002
-    - agentura-ui on port 5006 (opens browser)
-      - filesystem-agent on port 8003 (in-process, shared VFS)
+    - semos-agentura-email on port 8001
+    - semos-agentura-document on port 8002
+    - semos-agentura-ui on port 5006 (opens browser)
+      - semos-agentura-files on port 8003 (in-process, shared VFS)
 
 Press Ctrl+C to stop everything.
 """
@@ -25,7 +25,7 @@ import time
 AGENTS = [
     ("semos-agentura-email", "semos.agentura.email.service:app", 8001),
     ("semos-agentura-document", "semos.agentura.document.service:app", 8002),
-    # filesystem-agent is hosted in-process by the UI
+    # semos-agentura-files is hosted in-process by the UI
     # (shares the same VFS instance for session:// files)
 ]
 UI_PORT = 5006
@@ -177,7 +177,7 @@ def main():
 
     print()
     print(f"  UI:               http://localhost:{UI_PORT}")
-    print(f"  filesystem-agent   http://localhost:{fs_port} (in-process)")
+    print(f"  semos-agentura-files   http://localhost:{fs_port} (in-process)")
     for name, _, port in AGENTS:
         print(f"  {name:16s}   http://localhost:{port}")
     print()

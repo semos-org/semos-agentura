@@ -1,4 +1,4 @@
-# email-agent
+# semos-agentura-email
 
 Unified email client with LLM agent. Supports IMAP/SMTP, Outlook COM, CalDAV, and Microsoft Graph API backends.
 
@@ -137,7 +137,7 @@ uv run pytest tests/test_integration.py -v     # integration tests (needs real b
 ## Architecture
 
 ```
-src/email_agent/
+src/semos/agentura/email/
   config.py        Settings (Pydantic BaseSettings)
   models.py        EmailMessage, Attachment, EventInfo
   exceptions.py    Exception hierarchy

@@ -1,1 +1,1 @@
-# agentura-commons
+# semos-agentura-core
